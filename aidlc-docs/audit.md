@@ -423,3 +423,18 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 
 ---
 
+
+## Build and Test — 통합 배선 (App Wiring)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "construction/u4-interface-persona 이 branch 기준으로 mvp 수준으로 구현이 다 되었는지 확인" → "배선작업을 시작하면 실제 앱을 띄울 수 있어?" → "지금 branch 를 base로 별도 통합 브랜치를 만들어서 배선 작업 시작할 수 있지?" → "진행"
+**의사결정(AskUserQuestion)**: 브랜치=`construction/integration`, Queue UI 포함, 계획 후 승인, LLM=둘 다(feature 전환), 서비스=별도 Services managed state, OpenAI 클라이언트 신규 추가
+**AI Response**: G1~G6 배선 미수행을 실제 코드로 확인 → 통합 브랜치 생성 → 배선 계획 승인 → Code Generation Part 2 구현.
+- 블록 A: `OpenAiLlm`(/v1/chat/completions) + `llm::build_client` 팩토리(LLM_PROVIDER 분기, CannedLlm 폴백)
+- 블록 B: `desktop/src/services.rs`(Services managed state) + main.rs에 U4 5 + Queue 2 + local_api_status/set_server_enabled command 등록, unlock/lock 생명주기
+- 블록 C: `src/features/queue/` 신설(포트·Tauri 어댑터·mock·QueueView·테스트)
+- 블록 D: `src/App.tsx` 6탭 셸 + API 주입, styles.css 탭 스타일
+- 블록 E: core 160(default)/162(llm-http) pass, npm 51 pass, tsc clean, vite build 성공(뷰 5종 번들 포함), clippy/fmt clean
+**산출물**: `aidlc-docs/construction/plans/integration-app-wiring-plan.md`, `aidlc-docs/construction/build-and-test/app-wiring-report.md`
+**Context**: CONSTRUCTION - Build and Test 통합 배선 완료. 실물 창 기동은 헤드리스 제약으로 사용자 수동 확인(`npx tauri dev`) 안내.
+
+---

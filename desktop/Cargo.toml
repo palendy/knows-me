@@ -13,9 +13,15 @@ license = "MIT"
 name = "knows-me"
 path = "src/main.rs"
 
+[features]
+# Forward the core's real cloud LLM client. Off by default so the app builds and
+# runs fully offline (canned LLM); turn on with `--features llm-http`.
+llm-http = ["knows-me-core/llm-http"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
 knows-me-core = { path = "../src-tauri" }
 tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["sync"] }

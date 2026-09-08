@@ -1,9 +1,10 @@
 //! knows-me desktop shell (Tauri 2).
 //!
-//! Thin GUI layer: it owns the window, manages a single [`AppState`], and exposes
-//! the U1 command layer to the React frontend as `#[tauri::command]` handlers.
-//! All real logic lives in the verified `knows-me-core` library — these wrappers
-//! only translate `AppError` into a string for the IPC boundary.
+//! Thin GUI layer: it owns the window, manages a single [`AppState`] plus a
+//! [`Services`] registry for the unlocked session, and exposes the command layer
+//! to the React frontend as `#[tauri::command]` handlers. All real logic lives in
+//! the verified `knows-me-core` library — these wrappers only assemble services
+//! and translate `AppError` into a string for the IPC boundary.
 //!
 //! Build/run on a machine with the platform webview toolchain installed:
 //! ```bash
@@ -14,9 +15,15 @@
 // Hide the console window on Windows release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod services;
+
 use knows_me_core::core::commands::{self, AppStatus};
-use knows_me_core::core::types::{AppConfig, TransferPolicy, TransferRecord};
+use knows_me_core::core::types::{
+    AnswerInput, AnswerResult, AppConfig, DashboardDto, Draft, DraftRequest, GraphDto, GraphFilter,
+    MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, TransferPolicy, TransferRecord,
+};
 use knows_me_core::AppState;
+use services::Services;
 use tauri::Manager;
 
 type CmdResult<T> = Result<T, String>;
@@ -24,6 +31,8 @@ type CmdResult<T> = Result<T, String>;
 fn err(e: knows_me_core::AppError) -> String {
     e.to_string()
 }
+
+// --- U1: security & session ------------------------------------------------
 
 #[tauri::command]
 fn get_status(state: tauri::State<'_, AppState>) -> AppStatus {
@@ -38,13 +47,27 @@ async fn setup_password(state: tauri::State<'_, AppState>, password: String) -> 
 }
 
 #[tauri::command]
-async fn unlock(state: tauri::State<'_, AppState>, password: String) -> CmdResult<()> {
-    commands::unlock(state.inner(), &password).await.map_err(err)
+async fn unlock(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    password: String,
+) -> CmdResult<()> {
+    commands::unlock(state.inner(), &password)
+        .await
+        .map_err(err)?;
+    // Assemble the U3/U4 services now that the store is readable.
+    services.activate(state.inner()).await;
+    Ok(())
 }
 
 #[tauri::command]
-fn lock(state: tauri::State<'_, AppState>) {
+async fn lock(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+) -> CmdResult<()> {
+    services.deactivate().await;
     commands::lock(state.inner());
+    Ok(())
 }
 
 #[tauri::command]
@@ -63,20 +86,115 @@ async fn set_transfer_policy(
 }
 
 #[tauri::command]
+async fn set_server_enabled(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    on: bool,
+) -> CmdResult<()> {
+    commands::set_server_enabled(state.inner(), on)
+        .await
+        .map_err(err)?;
+    services.set_server_enabled(on).await;
+    Ok(())
+}
+
+#[tauri::command]
 fn list_transfers(state: tauri::State<'_, AppState>) -> Vec<TransferRecord> {
     commands::list_transfers(state.inner())
+}
+
+#[tauri::command]
+async fn local_api_status(services: tauri::State<'_, Services>) -> CmdResult<Option<u16>> {
+    Ok(services.local_api_port().await)
+}
+
+// --- U4: read views + persona (locked → AppError::Locked) ------------------
+
+#[tauri::command]
+async fn get_dashboard(services: tauri::State<'_, Services>) -> CmdResult<DashboardDto> {
+    services
+        .with(|s| async move { s.query.dashboard().await })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn get_minihome(
+    services: tauri::State<'_, Services>,
+    limit: Option<usize>,
+) -> CmdResult<MiniHomeDto> {
+    services
+        .with(|s| async move { s.query.minihome(limit).await })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn get_graph(
+    services: tauri::State<'_, Services>,
+    filter: GraphFilter,
+) -> CmdResult<GraphDto> {
+    services
+        .with(|s| async move { s.query.graph(filter).await })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn persona_chat(
+    services: tauri::State<'_, Services>,
+    prompt: String,
+) -> CmdResult<PersonaReply> {
+    services
+        .with(|s| async move { s.persona.chat(prompt).await })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn persona_draft(
+    services: tauri::State<'_, Services>,
+    req: DraftRequest,
+) -> CmdResult<Draft> {
+    services
+        .with(|s| async move { s.persona.draft(req).await })
+        .await
+        .map_err(err)
+}
+
+// --- U3: interview queue ----------------------------------------------------
+
+#[tauri::command]
+async fn queue_list(
+    services: tauri::State<'_, Services>,
+    sort: QueueSort,
+) -> CmdResult<Vec<QueueItem>> {
+    services
+        .with(|s| async move { s.interview.list(sort).await })
+        .await
+        .map_err(err)
+}
+
+#[tauri::command]
+async fn queue_answer(
+    services: tauri::State<'_, Services>,
+    id: QueueItemId,
+    input: AnswerInput,
+) -> CmdResult<AnswerResult> {
+    services
+        .with(|s| async move { s.interview.answer(id, input).await })
+        .await
+        .map_err(err)
 }
 
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
             // Per-user encrypted data lives under the OS app-data directory.
-            let data_dir = app
-                .path()
-                .app_data_dir()
-                .expect("resolve app data dir");
+            let data_dir = app.path().app_data_dir().expect("resolve app data dir");
             std::fs::create_dir_all(&data_dir).ok();
             app.manage(AppState::new(data_dir));
+            app.manage(Services::default());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -86,7 +204,16 @@ fn main() {
             lock,
             get_config,
             set_transfer_policy,
+            set_server_enabled,
             list_transfers,
+            local_api_status,
+            get_dashboard,
+            get_minihome,
+            get_graph,
+            persona_chat,
+            persona_draft,
+            queue_list,
+            queue_answer,
         ])
         .run(tauri::generate_context!())
         .expect("error while running knows-me");
