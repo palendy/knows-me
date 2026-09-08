@@ -75,11 +75,11 @@
 ### 🟢 CONSTRUCTION PHASE
 - [x] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
 - [x] U1 Code Generation (full: security + LLM gateway + platform + onboarding UI) — DONE on branch `feat/u1-core-platform-security` (autonomous)
-- [ ] Functional Design — EXECUTE (per-unit; skipped ahead for U1 per autonomous directive)
-- [ ] NFR Requirements — EXECUTE (per-unit)
-- [ ] NFR Design — EXECUTE (per-unit)
+- [~] Functional Design — EXECUTE (per-unit) — **U1 DONE (autonomous), U2 DONE (approved)**; U3/U4 pending
+- [~] NFR Requirements — EXECUTE (per-unit) — **U2 DONE (approved)**; others pending
+- [~] NFR Design — EXECUTE (per-unit) — **U2 DONE (approved)**; others pending
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [ ] Code Generation — EXECUTE (U2/U3/U4 pending; U1 done)
+- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 DONE (build/test/clippy green: 35 tests pass; awaiting approval)**; U3/U4 pending
 - [ ] Build and Test — EXECUTE
 
 ### 🟡 OPERATIONS PHASE

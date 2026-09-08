@@ -192,3 +192,81 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U1 full implementation on feature branch. Per-unit Functional Design/NFR formal gates still skipped ahead per user's autonomous directive (continuation of the Milestone 0 deviation).
 
 ---
+
+## CONSTRUCTION - U2 kickoff (Functional Design start)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "나는 U2 개발자야. 내가 맡은 부분 설명해주고 Construction Phase를 시작해주세요." (mid-turn: "branch 하나 만들어서 작업 올려줘")
+**AI Response**: Created branch `construction/u2-ingestion-processing`. Loaded common + functional-design rules + PBT extension (Partial: PBT-02/03/07/08/09 enforced). Explaining U2 scope (US-1.1~1.5 ingestion, US-2.1~2.3 processing/masking; deps on U1 contracts + U3 mocks already available in src-tauri). Starting per-unit CONSTRUCTION at Functional Design stage for U2.
+**Context**: CONSTRUCTION - U2 per-unit loop begins with Functional Design.
+
+---
+
+## CONSTRUCTION - U2 Functional Design answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "완료" (functional-design-plan.md의 Q1~Q8 모두 A로 응답)
+**AI Response**: 8개 질문 모두 추천안 A 선택. 애매/모호 응답 없음 → 후속 질문 불필요. Functional Design 산출물 3종(domain-entities, business-logic-model, business-rules) 생성 진행. PBT-01 속성(멱등성·마스킹 불변식·마스킹 왕복) 식별 포함.
+**Context**: CONSTRUCTION - U2 Functional Design Step 5 완료(no ambiguity), Step 6 산출물 생성.
+
+---
+
+## CONSTRUCTION - U2 Functional Design APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 Functional Design 승인 수령. aidlc-state에 U2 Functional Design 완료 표시. 다음 단계 NFR Requirements 진행(기술 스택·PBT 프레임워크 PBT-09 선정, 프라이버시/오프라인/성능 NFR 확정).
+**Context**: CONSTRUCTION - U2 Functional Design 완료 게이트 통과 → NFR Requirements.
+
+---
+
+## CONSTRUCTION - U2 NFR Requirements answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "작성완료" (nfr-requirements-plan.md Q1~Q8 모두 A)
+**AI Response**: 8개 질문 모두 추천안 A. 애매 응답 없음. NFR 산출물 2종(nfr-requirements.md, tech-stack-decisions.md) 생성. PBT-09: proptest 선정·문서화.
+**Context**: CONSTRUCTION - U2 NFR Requirements Step 5 완료, Step 6 산출물 생성.
+
+---
+
+## CONSTRUCTION - U2 NFR Requirements APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 NFR Requirements 승인. aidlc-state 갱신. NFR Design 진행(마스킹 파이프라인·오프라인 저하·재시도·멱등 게이트를 U2 논리 컴포넌트에 반영).
+**Context**: CONSTRUCTION - U2 NFR Requirements 게이트 통과 → NFR Design.
+
+---
+
+## CONSTRUCTION - U2 NFR Design answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "모두 추천안" (nfr-design-plan.md Q1~Q4 모두 A)
+**AI Response**: Q1~Q4 추천안. 산출물 2종(nfr-design-patterns.md, logical-components.md) 생성.
+**Context**: CONSTRUCTION - U2 NFR Design Step 6 산출물 생성.
+
+---
+
+## CONSTRUCTION - U2 NFR Design APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 NFR Design 승인. Infrastructure Design은 실행계획상 SKIP. Code Generation Part 1(계획) 진행.
+**Context**: CONSTRUCTION - U2 NFR Design 게이트 통과 → Code Generation.
+
+---
+
+## CONSTRUCTION - U2 Code Generation Plan (Part 1) presented
+**Timestamp**: 2026-09-08T00:00:00Z
+**AI Response (approval prompt)**: U2 code-generation-plan.md 제시(11단계). MVP 범위 결정: 멱등/증분 골격+Session/File(텍스트) 완전구현, Notion/Gmail/PDF/DOCX/비전은 계약 골격+통합 TODO. PBT-02/03/07/08 blocking 반영(proptest). 승인 요청 대기.
+**Context**: CONSTRUCTION - U2 Code Generation Part 1, awaiting plan approval before generation.
+
+---
+
+## CONSTRUCTION - U2 Code Generation Plan APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "1번 계획대로 하고, Notion, gmail... 등등 추가 통합이 필요한 것은 TODO 로 명확하게 남겨두어서 다음 개발할 때 꼭 참고할 수 있게"
+**AI Response**: 계획(옵션1) 승인. Notion/Gmail/PDF/DOCX/비전은 코드에 명확한 TODO 마커 + 별도 통합 가이드 문서(INTEGRATION-TODO)로 정리. Part 2 생성 시작.
+**Context**: CONSTRUCTION - U2 Code Generation Part 2 (Generation) 시작.
+
+---
+
+## CONSTRUCTION - U2 Code Generation (Part 2) DONE
+**Timestamp**: 2026-09-08T00:00:00Z
+**AI Response**: U2 코드 생성 완료. Ingestion(cursor_store/registry/service/connectors: session·file 완전, notion·gmail skeleton) + Processing(transfer_log/llm_gateway/router/pending/service) + tests/u2_pbt.rs. Cargo.toml에 regex/tokio(time)/proptest 추가. macOS 네이티브 cc로 검증: cargo build OK, cargo test 35 pass(32 unit + 3 PBT), cargo clippy --all-targets -D warnings clean. INTEGRATION-TODO.md + code-summary.md 작성(Notion/Gmail/PDF/DOCX/watcher 통합 항목 명시). 계획 체크박스 전부 [x]. 승인 대기.
+**Context**: CONSTRUCTION - U2 Code Generation complete, awaiting approval before next unit / Build & Test.
+
+---

@@ -15,6 +15,9 @@ dist/
 .env.*
 *.local
 
+# Icon-generation source (regenerate with `npx tauri icon`); committed assets live in desktop/icons/
+/app-icon.png
+
 # OS
 .DS_Store
 Thumbs.db

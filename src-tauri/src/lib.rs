@@ -24,6 +24,11 @@ pub mod llm;
 pub mod mocks;
 pub mod security;
 
+// U2 — Ingestion & Processing (Dev B). Implemented against the U1 contracts in
+// `core::traits`, using U1/U3 mocks (`mocks`) during parallel development.
+pub mod ingestion;
+pub mod processing;
+
 pub use core::app_state::AppState;
 pub use core::error::{AppError, Result};
 pub use core::scheduler::Scheduler;
