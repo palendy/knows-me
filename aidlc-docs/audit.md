@@ -208,3 +208,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 Functional Design Step 5 완료(no ambiguity), Step 6 산출물 생성.
 
 ---
+
+## CONSTRUCTION - U2 Functional Design APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 Functional Design 승인 수령. aidlc-state에 U2 Functional Design 완료 표시. 다음 단계 NFR Requirements 진행(기술 스택·PBT 프레임워크 PBT-09 선정, 프라이버시/오프라인/성능 NFR 확정).
+**Context**: CONSTRUCTION - U2 Functional Design 완료 게이트 통과 → NFR Requirements.
+
+---

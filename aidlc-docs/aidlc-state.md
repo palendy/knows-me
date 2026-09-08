@@ -75,8 +75,8 @@
 ### 🟢 CONSTRUCTION PHASE
 - [x] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
 - [x] U1 Code Generation (full: security + LLM gateway + platform + onboarding UI) — DONE on branch `feat/u1-core-platform-security` (autonomous)
-- [ ] Functional Design — EXECUTE (per-unit; skipped ahead for U1 per autonomous directive)
-- [ ] NFR Requirements — EXECUTE (per-unit)
+- [~] Functional Design — EXECUTE (per-unit) — **U1 DONE (autonomous), U2 DONE (approved)**; U3/U4 pending
+- [~] NFR Requirements — EXECUTE (per-unit) — **U2 IN PROGRESS**; others pending
 - [ ] NFR Design — EXECUTE (per-unit)
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
 - [ ] Code Generation — EXECUTE (U2/U3/U4 pending; U1 done)
