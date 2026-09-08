@@ -1,0 +1,21 @@
+[package]
+name = "knows-me"
+version = "0.1.0"
+edition = "2021"
+description = "knows-me desktop app — Tauri 2 shell over the knows-me-core (U1) library"
+license = "MIT"
+
+# Standalone crate (not part of the core's build) so the core library stays fast
+# to build/test without the platform webview toolchain. Requires Tauri's system
+# dependencies (webview2 / webkit2gtk) to build — see README.md.
+
+[[bin]]
+name = "knows-me"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+knows-me-core = { path = "../src-tauri" }
+tauri = { version = "2", features = [] }

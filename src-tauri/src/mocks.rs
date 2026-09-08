@@ -128,10 +128,7 @@ impl KnowledgeApi for InMemoryKnowledge {
         let mut edges = Vec::new();
         for f in facts.values() {
             for l in &f.links {
-                edges.push(GraphEdge {
-                    from: f.id,
-                    to: *l,
-                });
+                edges.push(GraphEdge { from: f.id, to: *l });
             }
         }
         Ok(GraphDto { nodes, edges })
@@ -394,7 +391,10 @@ mod tests {
             expires_at: None,
         };
         let id = iv.enqueue(item).await.unwrap();
-        let res = iv.answer(id, AnswerInput::Choice("yes".into())).await.unwrap();
+        let res = iv
+            .answer(id, AnswerInput::Choice("yes".into()))
+            .await
+            .unwrap();
         assert!(res.confirmed_fact.is_some());
         assert_eq!(res.confirmed_fact.unwrap().title, "deploy");
     }

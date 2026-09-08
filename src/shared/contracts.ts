@@ -135,3 +135,31 @@ export interface IngestReport {
   skipped: number;
   errors: number;
 }
+
+// --- U1: onboarding / security / config / transparency --------------------
+
+export interface Credential {
+  // serde: Credential(pub serde_json::Value) → the inner JSON value directly.
+  [key: string]: unknown;
+}
+
+/** Snapshot the onboarding UI uses to pick the Setup vs. Unlock screen. */
+export interface AppStatus {
+  initialized: boolean;
+  unlocked: boolean;
+}
+
+export interface AppConfig {
+  transfer_policy: TransferPolicy;
+  server_enabled: boolean;
+  llm_model: string;
+}
+
+/** One recorded outbound cloud-LLM call (masked content only). */
+export interface TransferRecord {
+  at: IsoDateTime;
+  purpose: string;
+  model: string;
+  masked_preview: string;
+  bytes_sent: number;
+}

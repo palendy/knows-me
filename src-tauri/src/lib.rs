@@ -1,19 +1,29 @@
 //! knows-me core — U1 (Core Platform & Security)
 //!
-//! Milestone 0 deliverable: the **shared contract layer** that unblocks parallel
-//! development of U2 (Ingestion & Processing), U3 (Knowledge & Interview) and
-//! U4 (Interface & Persona).
+//! The platform + security core, plus the shared contract layer that unblocks
+//! parallel development of U2 (Ingestion & Processing), U3 (Knowledge &
+//! Interview) and U4 (Interface & Persona).
 //!
+//! Shared contracts (Milestone 0):
 //! - [`core::types`] — shared domain types (Fact, QueueItem, DTOs, SourceKind, ...)
 //! - [`core::traits`] — service interfaces every unit codes against
 //! - [`core::error`] — unified error type
-//! - [`mocks`] — in-memory mock implementations so other units can build/test today
+//! - [`mocks`] — in-memory mock implementations so other units can build/test
 //!
-//! The real implementations (crypto Vault, file-based FactStore, connectors, LLM
-//! client, Tauri commands) land in U1 full implementation and the per-unit
-//! CONSTRUCTION stages.
+//! U1 implementation:
+//! - [`security`] — password KDF (Argon2id), AES-256-GCM vault, encrypted store
+//! - [`llm`] — masking gateway, prompts, cloud client, transfer-transparency log
+//! - [`core::app_state`] / [`core::scheduler`] / [`core::commands`] — platform
+//!   wiring, periodic batch runner, and the front-end-facing command layer
+//!
+//! The Tauri desktop shell (windows + `#[tauri::command]` handlers) lives in the
+//! sibling `desktop/` crate; the React frontend lives in `../src/`.
 
 pub mod core;
+pub mod llm;
 pub mod mocks;
+pub mod security;
 
+pub use core::app_state::AppState;
 pub use core::error::{AppError, Result};
+pub use core::scheduler::Scheduler;

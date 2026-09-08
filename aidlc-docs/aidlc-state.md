@@ -4,9 +4,16 @@
 - **Project Name**: knows-me
 - **Project Type**: Greenfield
 - **Start Date**: 2026-09-08T06:46:46Z
-- **Current Stage**: CONSTRUCTION - U1 Milestone 0 (shared contracts + mocks) delivered early per user directive; per-unit design stages pending
+- **Current Stage**: CONSTRUCTION - U1 (Core Platform & Security) FULLY implemented on branch `feat/u1-core-platform-security` (autonomous, per user directive); U2/U3/U4 pending
 
 ## Construction Notes
+- **U1 full implementation done** (branch `feat/u1-core-platform-security`, user directive "내가 U1을 맡았어 … 자율주행"): real security + LLM gateway + platform + onboarding UI on top of the Milestone 0 contracts.
+  - Security: `PasswordKeyManager` (Argon2id → 256-bit key, salt + encrypted verifier, plaintext key never on disk, zeroized in memory), `vault` (AES-256-GCM), `FileEncryptedStore` (encrypted-at-rest KV + `CredentialStore`). `KeyHandle` upgraded to real zeroizing key material.
+  - LLM gateway: `RegexMasker` (fixed-point masking, US-2.2/R1), `prompts`, `TransferLog` (NFR-2 egress transparency), real `AnthropicLlm` behind default-off `llm-http` feature.
+  - Platform: `AppState`, `Scheduler`, `commands` (onboarding/security/settings/transparency); added `AppConfig`/`TransferRecord`/`AppStatus`.
+  - Frontend: React onboarding (Setup/Unlock/Home) + typed IPC bridge w/ browser mock. Desktop: standalone Tauri 2 crate `desktop/`.
+  - Verified in sandbox (zig-cc): `cargo test` 39/39, `cargo clippy -D warnings` clean, `cargo run` demo, `cargo fmt`. Unverifiable-in-sandbox but built on normal toolchains: `llm-http` (ring C build), `desktop/` Tauri + frontend (no webview/node).
+  - Stories US-7.1 (setup+encrypt), US-7.2 (unlock/key re-derive, wrong-pw rejected), US-7.3 (encrypted credentials) implemented + tested. PBT-02/03/07/08/09 satisfied (proptest).
 - **U1 Milestone 0 done early** (user directive "오늘 모인 김에 공통 작업 먼저"): shared contract layer written as code so 4 devs can start in parallel.
   - `src-tauri/` Rust crate `knows_me_core`: core/{error,types,traits}.rs + mocks.rs + smoke tests
   - `src/shared/contracts.ts` frontend type mirror
@@ -66,12 +73,13 @@
 - [x] Units Generation — EXECUTE (unit-of-work + dependency + story-map generated - awaiting approval)
 
 ### 🟢 CONSTRUCTION PHASE
-- [~] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
-- [ ] Functional Design — EXECUTE (per-unit)
+- [x] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
+- [x] U1 Code Generation (full: security + LLM gateway + platform + onboarding UI) — DONE on branch `feat/u1-core-platform-security` (autonomous)
+- [ ] Functional Design — EXECUTE (per-unit; skipped ahead for U1 per autonomous directive)
 - [ ] NFR Requirements — EXECUTE (per-unit)
 - [ ] NFR Design — EXECUTE (per-unit)
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [ ] Code Generation — EXECUTE (per-unit; U1 contracts slice done)
+- [ ] Code Generation — EXECUTE (U2/U3/U4 pending; U1 done)
 - [ ] Build and Test — EXECUTE
 
 ### 🟡 OPERATIONS PHASE

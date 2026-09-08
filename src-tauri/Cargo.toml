@@ -2,19 +2,30 @@
 name = "knows-me-core"
 version = "0.1.0"
 edition = "2021"
-description = "knows-me — U1 Core Platform & Security: shared contracts (types, service traits) + mocks (Milestone 0)"
+description = "knows-me — U1 Core Platform & Security: shared contracts + real security (KDF + AES-256-GCM vault), masking gateway, and LLM client"
 license = "MIT"
 
-# U1 Milestone 0 delivers the shared contract layer as a library so U2/U3/U4 can
-# develop in parallel against traits + mocks. The Tauri application binary and the
-# real service implementations are added during U1 full implementation.
+# U1 owns the shared contract layer AND the platform/security core. This crate is
+# a pure library (no Tauri dependency) so it builds and is fully unit/property
+# tested on any toolchain. The Tauri desktop shell lives in the sibling `desktop/`
+# crate (path-depends on this one); the React frontend lives in `../src/`.
 [lib]
 name = "knows_me_core"
 path = "src/lib.rs"
 
+# Headless demo binary: runs a real onboarding → unlock → encrypt → store →
+# mask round-trip end-to-end (no GUI required), so U1 is demonstrable from a
+# terminal. `cargo run` prints each step.
 [[bin]]
-name = "knows-me-core"
+name = "knows-me-demo"
 path = "src/main.rs"
+
+[features]
+default = []
+# Enables the real cloud LLM client (Anthropic Messages API over HTTPS). Off by
+# default so the core builds/tests fully offline; the canned client is used
+# otherwise. Turn on with `--features llm-http`.
+llm-http = ["dep:reqwest"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -23,6 +34,22 @@ thiserror = "1"
 async-trait = "0.1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde", "clock"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
+
+# Security (all pure-Rust — RustCrypto): password KDF + authenticated encryption.
+argon2 = "0.5"
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = "1"
+base64 = "0.22"
+
+# Masking gateway.
+regex = "1"
+
+# Real cloud LLM client (optional; feature `llm-http`).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+proptest = "1"
+tempfile = "3"

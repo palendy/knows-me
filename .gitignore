@@ -1,5 +1,7 @@
 # Rust / Cargo
 /src-tauri/target/
+/desktop/target/
+/desktop/gen/
 **/*.rs.bk
 Cargo.lock.orig
 

@@ -6,9 +6,12 @@
 //! - Secret-bearing types (`KeyHandle`, `UnmaskMap`, `Credential`) are NOT
 //!   serialized casually and never leave the device unencrypted.
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 // ---------------------------------------------------------------------------
 // Identifiers
@@ -342,21 +345,77 @@ pub struct Draft {
 // Security
 // ---------------------------------------------------------------------------
 
-/// An opaque, in-memory handle to the derived encryption key.
+/// An opaque, in-memory handle to the derived 256-bit encryption key.
 ///
-/// Holds no serializable data. Real implementations wrap zeroizing key material;
-/// the mock uses [`KeyHandle::new_for_test`].
+/// The key material is wrapped in [`Zeroizing`] so it is wiped from memory when
+/// the last handle is dropped, and is exposed only to same-crate crypto
+/// (`security::vault`) — never serialized, logged, or sent off-device.
+/// `Arc` lets the unlocked key be shared cheaply by the store/vault without
+/// copying the secret.
 #[derive(Clone)]
-pub struct KeyHandle(());
+pub struct KeyHandle(Arc<Zeroizing<[u8; 32]>>);
 
 impl KeyHandle {
-    /// Construct a handle for tests/mocks. Real key derivation lives in U1's
-    /// `KeyManager` implementation.
+    /// Wrap raw 32-byte key material. Crate-internal: real key derivation lives
+    /// in U1's [`crate::security::key_manager`].
+    pub(crate) fn from_bytes(bytes: [u8; 32]) -> Self {
+        KeyHandle(Arc::new(Zeroizing::new(bytes)))
+    }
+
+    /// Borrow the raw key bytes for same-crate AEAD operations. Deliberately not
+    /// `pub` — no other unit can read the key.
+    pub(crate) fn expose(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    /// Construct a handle backed by a random key, for tests/mocks that need a
+    /// real (but throwaway) key without going through password setup.
     pub fn new_for_test() -> Self {
-        KeyHandle(())
+        use rand::RngCore;
+        let mut bytes = [0u8; 32];
+        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        KeyHandle::from_bytes(bytes)
     }
 }
 
 /// An external system credential (OAuth token / API key), stored encrypted.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Credential(pub serde_json::Value);
+
+// ---------------------------------------------------------------------------
+// App configuration & transfer transparency
+// ---------------------------------------------------------------------------
+
+/// Persisted, non-secret application configuration held in `AppState`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AppConfig {
+    /// What may be sent to the cloud LLM (default: mask & minimize).
+    pub transfer_policy: TransferPolicy,
+    /// Whether the local persona API server is enabled (U4 owns the server).
+    pub server_enabled: bool,
+    /// Cloud LLM model id used by the shared gateway.
+    pub llm_model: String,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            transfer_policy: TransferPolicy::default(),
+            server_enabled: false,
+            llm_model: "claude-opus-5".to_string(),
+        }
+    }
+}
+
+/// A record of one outbound cloud-LLM call, for transfer transparency (NFR-2,
+/// US-2.3). Only *masked* content is recorded, and only a truncated preview.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TransferRecord {
+    pub at: DateTime<Utc>,
+    /// "summarize" | "classify" | "vision" | "chat".
+    pub purpose: String,
+    pub model: String,
+    /// Truncated, already-masked preview of what left the device.
+    pub masked_preview: String,
+    pub bytes_sent: usize,
+}
