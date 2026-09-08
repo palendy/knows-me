@@ -12,9 +12,19 @@ import type {
   TransferRecord,
 } from "./contracts";
 
-const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const inTauri =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+/**
+ * Invoke a Rust command. Inside Tauri this hits the real handler; in a plain
+ * browser it uses the onboarding mock. Exported so the U3/U4 adapters
+ * (`TauriApi`, `TauriInterviewApi`) can share one bridge — they only run under
+ * Tauri, where every branch reaches the real command layer.
+ */
+export async function call<T>(
+  cmd: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   if (inTauri) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<T>(cmd, args);

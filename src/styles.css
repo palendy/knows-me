@@ -20,12 +20,34 @@ body {
 }
 
 .app {
-  max-width: 560px;
+  max-width: 760px;
   margin: 0 auto;
   padding: 48px 20px;
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+}
+.tabs button[role="tab"] {
+  margin: 0;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: 8px 8px 0 0;
+  padding: 8px 14px;
+}
+.tabs button[role="tab"][aria-selected="true"] {
+  background: var(--card);
+  border-color: var(--border);
+  border-bottom-color: transparent;
 }
 
 .brand { text-align: center; }
