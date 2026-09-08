@@ -31,20 +31,35 @@
 
 ## Tests (26 total: 21 new + 5 pre-existing)
 - **Example-based**: confirmed-only rejection, empty-title rejection, upsert/get/dashboard, history growth + no-op-no-history, Korean+scope search, graph edges within nodes; confirm affirm→fact, confirm reject→no fact, deepen→fact+follow-ups, skip leaves pending, **offline LLM degradation (fact saved, no follow-ups)**, dedup, expire.
-- **Property-based (proptest)**: P1 Fact/QueueItem JSON round-trip (PBT-02); P4 search results satisfy filter+query; P5 priority & newest sort monotonic; P6 no expired after retain; P7 graph edges within nodes; priority range invariant (PBT-03/07/08).
+- **Property-based (proptest)**: P1 Fact/QueueItem JSON round-trip (PBT-02); P4 search results satisfy filter+query; P5 priority & newest sort monotonic; **P6 `expire()` leaves no expired item in the real queue** (invokes the service, not a local filter); P7 graph edges within nodes; priority range invariant (PBT-03/07/08).
 
 ## How to run
 ```
 cd src-tauri
-cargo test        # 26 pass
+cargo test        # 32 pass
 cargo clippy --all-targets -- -D warnings   # clean
 cargo fmt --check
 ```
 
-## Known coordination item (for U1 / Dev A)
-- Interview-answer-derived facts have no natural `SourceKind`. `fact_from_deepen` uses `SourceKind::Session` as a **documented placeholder** (`// TODO(U1): SourceKind::Interview`). Recommend adding a `SourceKind::Interview` variant to the shared contract during integration.
+## Code-review fixes applied (xhigh review)
+All 🔴 (4) + 🟡 (6) findings from the code review were fixed in this iteration:
+- **Lazy index rebuild (P-1)**: `KnowledgeService` now rebuilds the in-memory index from the store on first use (`ensure_index`), plus a public `build_index()`. Fixes "knowledge base appears empty after restart" (search/graph/dashboard were returning empty until an upsert).
+- **Serialized writes (P-6)**: an async `write_lock` (tokio `sync`) is held across `upsert`'s read-modify-write, so concurrent upserts can't lose a history entry.
+- **Metadata gate (KR-2)**: `upsert` now also rejects `confirmed_at == None`.
+- **Empty-answer guard**: blank `Choice`/`Text` answers are rejected (`InvalidInput`) and the item stays pending — no accidental knowledge / discard. `is_affirmative("")` is now `false`.
+- **Follow-ups via `enqueue`**: derived deepen items go through `enqueue` (dedup/priority/TTL apply), no longer `put` directly.
+- **`dedup_key` per-kind**: `confirm:`/`deepen:` prefix so a Confirm title and a Deepen question with the same text no longer collide.
+- **Search token semantics**: a non-empty query that tokenizes to nothing (e.g. `"???"`) returns empty, not the whole DB; only a truly empty query returns all.
+- **`expire()`**: also runs dedup suppression; `list()` filters out expired items so the UI never shows them pre-sweep.
+- **`enqueue` dedup**: decides against the highest-priority duplicate before mutating, so it can't drop both the existing and the incoming item.
+- **P6 property test**: rewritten to actually call `InterviewService::expire()`; `prop_score_priority_in_range` now asserts a real band.
+
+## Known / deferred (tracked, not fixed here)
+- **`SourceKind::Interview` (U1 coordination)**: interview-answer facts still use `SourceKind::Session` placeholder pending a shared-contract addition (Dev A).
+- **Single CJK-character search**: the bigram index can't match a 1-char Korean query (needs ≥2 chars); known limitation, low value — optional CJK-unigram indexing later.
+- **Export renderer (P-8 / NFR-6)**: encrypted-store → human-readable Markdown/JSON export not yet implemented (was out of the code-gen plan scope); tracked as a follow-up.
 
 ## Notes / deviations
-- Priority scoring omits a time-decay term (recency handled by `NewestFirst` sort + TTL expiry instead) — simpler and equivalent for ranking at creation time.
-- Follow-up items are `put` directly (bypassing enqueue dedup) since freshly generated items rarely collide.
+- Priority scoring omits a time-decay term (recency handled by `NewestFirst` sort + TTL expiry) — simpler and equivalent at creation time.
+- Added `tokio` (`default-features = false, features = ["sync"]`) to `[dependencies]` for the async write lock — sync primitives only, executor still from the U1 app shell.
 - Frontend `src/features/queue/` implementation deferred to U1 app-shell integration (FD Q1=A).

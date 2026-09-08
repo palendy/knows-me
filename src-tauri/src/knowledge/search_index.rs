@@ -93,8 +93,12 @@ impl SearchIndex {
     /// Keyword + scope search (KR-6). Empty query returns all (scope-filtered).
     pub fn search(&self, query: &str, filter: &FactFilter) -> Vec<FactSummary> {
         let qtoks = tokenize(query);
-        let ids: Vec<FactId> = if qtoks.is_empty() {
+        let ids: Vec<FactId> = if query.trim().is_empty() {
             self.meta.keys().copied().collect()
+        } else if qtoks.is_empty() {
+            // Non-empty query that produced no searchable tokens ⇒ no matches
+            // (do NOT fall through to "return everything").
+            return Vec::new();
         } else {
             let mut sets: Vec<&HashSet<FactId>> = Vec::with_capacity(qtoks.len());
             for t in &qtoks {

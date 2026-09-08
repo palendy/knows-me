@@ -1,15 +1,23 @@
 //! `KnowledgeService` — implements [`KnowledgeApi`].
 //!
 //! Orchestrates [`FactStore`], [`HistoryTracker`], and the in-memory
-//! [`SearchIndex`]. Write order in `upsert` (P-5): append history (if the body
-//! changed) → write fact → update index. The index is derived/rebuildable, so a
-//! crash between steps self-heals on the next `build_index`. Index locks are
-//! never held across `.await` (P-6, serialized single-writer).
+//! [`SearchIndex`].
+//!
+//! - **Lazy index rebuild (P-1)**: the derived index is (re)built from the
+//!   encrypted store on first use after construction/unlock, so a fresh service
+//!   handle (e.g. after restart) does not report an empty knowledge base. Callers
+//!   may also force a rebuild via [`KnowledgeService::build_index`].
+//! - **Serialized writes (P-6)**: an async write lock is held across the
+//!   `upsert` read-modify-write so concurrent upserts cannot lose a history
+//!   entry. The in-memory index (`std::sync::Mutex`) is only locked for
+//!   non-awaiting critical sections.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use chrono::Utc;
+use tokio::sync::Mutex as AsyncMutex;
 
 use crate::core::error::{AppError, Result};
 use crate::core::traits::{EncryptedStore, KnowledgeApi};
@@ -29,6 +37,10 @@ pub struct KnowledgeService {
     facts: FactStore,
     history: HistoryTracker,
     index: Mutex<SearchIndex>,
+    /// Serializes writes (upsert / index build) so read-modify-write is atomic.
+    write_lock: AsyncMutex<()>,
+    /// Whether the in-memory index has been populated from the store yet.
+    initialized: AtomicBool,
 }
 
 impl KnowledgeService {
@@ -37,18 +49,42 @@ impl KnowledgeService {
             facts: FactStore::new(store.clone()),
             history: HistoryTracker::new(store.clone()),
             index: Mutex::new(SearchIndex::new()),
+            write_lock: AsyncMutex::new(()),
+            initialized: AtomicBool::new(false),
             store,
         }
     }
 
-    /// (Re)build the in-memory index from the encrypted store. Call after unlock.
-    pub async fn build_index(&self) -> Result<()> {
-        let all = self.facts.load_all().await?;
+    fn rebuild_locked(&self, all: &[Fact]) {
         let mut idx = self.index.lock().expect("index mutex poisoned");
         idx.clear();
-        for f in &all {
+        for f in all {
             idx.upsert(f);
         }
+    }
+
+    /// Force a full (re)build of the in-memory index from the store. Call after
+    /// unlock; safe to call again at any time.
+    pub async fn build_index(&self) -> Result<()> {
+        let _w = self.write_lock.lock().await;
+        let all = self.facts.load_all().await?;
+        self.rebuild_locked(&all);
+        self.initialized.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+
+    /// Build the index once, lazily, if it has not been populated yet.
+    async fn ensure_index(&self) -> Result<()> {
+        if self.initialized.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let _w = self.write_lock.lock().await;
+        if self.initialized.load(Ordering::SeqCst) {
+            return Ok(()); // built while we waited for the lock
+        }
+        let all = self.facts.load_all().await?;
+        self.rebuild_locked(&all);
+        self.initialized.store(true, Ordering::SeqCst);
         Ok(())
     }
 }
@@ -56,10 +92,15 @@ impl KnowledgeService {
 #[async_trait]
 impl KnowledgeApi for KnowledgeService {
     async fn upsert(&self, fact: Fact) -> Result<FactId> {
-        // KR-1: only confirmed facts persist. KR-2: title required.
+        // KR-1/KR-2: only confirmed facts, with complete metadata, persist.
         if !fact.metadata.confirmed {
             return Err(AppError::InvalidInput(
                 "only confirmed facts may be stored".into(),
+            ));
+        }
+        if fact.metadata.confirmed_at.is_none() {
+            return Err(AppError::InvalidInput(
+                "confirmed fact must have confirmed_at set".into(),
             ));
         }
         if fact.title.trim().is_empty() {
@@ -68,7 +109,11 @@ impl KnowledgeApi for KnowledgeService {
             ));
         }
 
-        // KR-3: preserve history when the body changes (no-op write ⇒ no entry).
+        self.ensure_index().await?;
+
+        // P-6: serialize the read-modify-write so concurrent upserts of the same
+        // fact cannot lose a history entry (KR-3).
+        let _w = self.write_lock.lock().await;
         if let Some(prev) = self.facts.get(fact.id).await? {
             if prev.body != fact.body {
                 self.history
@@ -84,7 +129,6 @@ impl KnowledgeApi for KnowledgeService {
                     .await?;
             }
         }
-
         self.facts.put(&fact).await?;
         {
             let mut idx = self.index.lock().expect("index mutex poisoned");
@@ -109,16 +153,19 @@ impl KnowledgeApi for KnowledgeService {
     }
 
     async fn search(&self, query: String, filter: FactFilter) -> Result<Vec<FactSummary>> {
+        self.ensure_index().await?;
         let idx = self.index.lock().expect("index mutex poisoned");
         Ok(idx.search(&query, &filter))
     }
 
     async fn graph(&self, filter: GraphFilter) -> Result<GraphDto> {
+        self.ensure_index().await?;
         let idx = self.index.lock().expect("index mutex poisoned");
         Ok(idx.graph(&filter))
     }
 
     async fn dashboard(&self) -> Result<DashboardDto> {
+        self.ensure_index().await?;
         let pending_queue = self.store.list(QUEUE_NS).await?.len();
         let idx = self.index.lock().expect("index mutex poisoned");
         Ok(DashboardDto {
@@ -170,6 +217,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_missing_confirmed_at() {
+        let s = svc();
+        let mut f = fact(FactId::new(), "t", "b", Scope::Personal);
+        f.metadata.confirmed_at = None;
+        assert!(matches!(s.upsert(f).await, Err(AppError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
     async fn rejects_empty_title() {
         let s = svc();
         let f = fact(FactId::new(), "   ", "b", Scope::Personal);
@@ -187,6 +242,38 @@ mod tests {
         let d = s.dashboard().await.unwrap();
         assert_eq!(d.collected_count, 1);
         assert_eq!(d.pending_queue, 0);
+    }
+
+    #[tokio::test]
+    async fn index_rebuilds_after_restart() {
+        // Simulate a restart: a fresh service handle over the same store must
+        // repopulate its in-memory index lazily (fix for empty-after-unlock).
+        let store = Arc::new(InMemoryStore::default());
+        let s1 = KnowledgeService::new(store.clone());
+        s1.upsert(fact(FactId::new(), "hello world", "body", Scope::Personal))
+            .await
+            .unwrap();
+
+        let s2 = KnowledgeService::new(store.clone());
+        let r = s2
+            .search("hello".into(), FactFilter::default())
+            .await
+            .unwrap();
+        assert_eq!(r.len(), 1, "index should rebuild from store on first query");
+        assert_eq!(s2.dashboard().await.unwrap().collected_count, 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn concurrent_upserts_do_not_deadlock() {
+        let s = Arc::new(svc());
+        let (a, b) = (FactId::new(), FactId::new());
+        let s1 = s.clone();
+        let s2 = s.clone();
+        let h1 = tokio::spawn(async move { s1.upsert(fact(a, "a", "1", Scope::Personal)).await });
+        let h2 = tokio::spawn(async move { s2.upsert(fact(b, "b", "2", Scope::Personal)).await });
+        h1.await.unwrap().unwrap();
+        h2.await.unwrap().unwrap();
+        assert_eq!(s.dashboard().await.unwrap().collected_count, 2);
     }
 
     #[tokio::test]
@@ -249,6 +336,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn nonmatching_punctuation_query_returns_empty_not_all() {
+        let s = svc();
+        s.upsert(fact(FactId::new(), "alpha", "beta", Scope::Personal))
+            .await
+            .unwrap();
+        // non-empty query with no searchable tokens ⇒ empty, not the whole DB
+        assert!(s
+            .search("???".into(), FactFilter::default())
+            .await
+            .unwrap()
+            .is_empty());
+        // truly empty query ⇒ all
+        assert_eq!(
+            s.search(String::new(), FactFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
     async fn graph_edges_only_within_nodes() {
         let s = svc();
         let a = FactId::new();
@@ -306,7 +415,6 @@ mod tests {
                 let doc = tokenize(&format!("{} {}", f.title, f.body));
                 prop_assert!(qtoks.iter().all(|t| doc.contains(t)));
             }
-            // the target itself must be found (its own tokens match & scope matches)
             prop_assert!(results.iter().any(|r| r.id == target.id));
         }
 
