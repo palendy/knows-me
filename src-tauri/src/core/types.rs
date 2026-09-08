@@ -69,20 +69,15 @@ pub enum Scope {
 
 /// Policy governing what may be sent to the cloud LLM.
 /// Default reflects the confirmed decision (mask/minimize before sending).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TransferPolicy {
     /// Mask identifiers/secrets and minimize before sending (default).
+    #[default]
     MaskAndMinimize,
     /// Send as-is (convenience; not recommended).
     AllowAll,
     /// Never call the cloud LLM (fully local).
     LocalOnlyNoLlm,
-}
-
-impl Default for TransferPolicy {
-    fn default() -> Self {
-        TransferPolicy::MaskAndMinimize
-    }
 }
 
 // ---------------------------------------------------------------------------

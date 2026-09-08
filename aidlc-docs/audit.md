@@ -168,3 +168,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U1 Milestone 0 delivered. Per-unit design stages still pending per execution plan.
 
 ---
+
+## CONSTRUCTION - U1 Milestone 0 build VERIFIED in sandbox
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "이 환경에 러스트 노드 툴체인을 설치해서 너가 직접해보면되겟네. 이것부터해" (+ mid-turn "깃이그노어 잘했냐")
+**AI Response**: Installed Rust via rustup (minimal). No system C compiler (cc/gcc) and no sudo/apt. Downloaded zig 0.13.0 (static) and used `zig cc` as the linker (CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER + CC). Results: cargo build OK; cargo test 5/5 pass (incl. history-preserving upsert, confirm→fact, key lock/unlock, masker roundtrip); cargo run prints banner; cargo clippy --all-targets -- -D warnings CLEAN after fixing 4 lints (sort_by→sort_by_key×2, map_or→is_none_or×2, TransferPolicy manual Default→derive #[default]). Cargo.lock generated (committed for reproducibility; target/ gitignored). Confirmed .gitignore covers target/node_modules/dist/.env secrets and intentionally keeps Cargo.lock.
+**Context**: CONSTRUCTION - U1 Milestone 0 verified. Committing fixes + Cargo.lock.
+
+---

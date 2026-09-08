@@ -10,7 +10,8 @@
 - **U1 Milestone 0 done early** (user directive "오늘 모인 김에 공통 작업 먼저"): shared contract layer written as code so 4 devs can start in parallel.
   - `src-tauri/` Rust crate `knows_me_core`: core/{error,types,traits}.rs + mocks.rs + smoke tests
   - `src/shared/contracts.ts` frontend type mirror
-  - Build NOT verified in this environment (no Rust/Node toolchain) — run `cargo test` locally to confirm.
+  - Build VERIFIED locally: installed Rust (rustup) + zig-as-cc linker (no system cc available). `cargo build`, `cargo test` (5 pass), `cargo run`, and `cargo clippy --all-targets -- -D warnings` (clean) all green. Cargo.lock committed.
+  - Note: devs with a normal C toolchain just run `cargo test` (the zig linker was only needed in this sandbox).
 - Deviation note: this is a slice of U1 Code Generation produced ahead of the formal per-unit Functional Design/NFR gates, at user request. Remaining U1 impl and per-unit stages (Functional Design → NFR Requirements → NFR Design → Code Generation) still to run per execution plan.
 
 ## Units (4, modular monolith, 1 owner each, contract-first parallel)

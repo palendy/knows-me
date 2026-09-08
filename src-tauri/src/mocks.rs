@@ -110,7 +110,7 @@ impl KnowledgeApi for InMemoryKnowledge {
                 (query.is_empty()
                     || f.title.contains(query.as_str())
                     || f.body.contains(query.as_str()))
-                    && filter.scope.map_or(true, |s| s == f.metadata.scope)
+                    && filter.scope.is_none_or(|s| s == f.metadata.scope)
             })
             .map(summary_of)
             .collect())
@@ -165,8 +165,8 @@ impl InterviewApi for InMemoryInterview {
     async fn list(&self, sort: QueueSort) -> Result<Vec<QueueItem>> {
         let mut v = self.items.lock().unwrap().clone();
         match sort {
-            QueueSort::PriorityDesc => v.sort_by(|a, b| b.priority.cmp(&a.priority)),
-            QueueSort::NewestFirst => v.sort_by(|a, b| b.created_at.cmp(&a.created_at)),
+            QueueSort::PriorityDesc => v.sort_by_key(|a| std::cmp::Reverse(a.priority)),
+            QueueSort::NewestFirst => v.sort_by_key(|a| std::cmp::Reverse(a.created_at)),
         }
         Ok(v)
     }
@@ -195,7 +195,7 @@ impl InterviewApi for InMemoryInterview {
         let now = Utc::now();
         let mut items = self.items.lock().unwrap();
         let before = items.len();
-        items.retain(|i| i.expires_at.map_or(true, |e| e > now));
+        items.retain(|i| i.expires_at.is_none_or(|e| e > now));
         Ok(before - items.len())
     }
 }
