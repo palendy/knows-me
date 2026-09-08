@@ -152,17 +152,23 @@ impl Services {
         F: FnOnce(ServiceRef) -> Fut,
         Fut: std::future::Future<Output = knows_me_core::core::error::Result<T>>,
     {
-        let guard = self.0.lock().await;
-        let set = guard
-            .as_ref()
-            .ok_or(knows_me_core::core::error::AppError::Locked)?;
-        f(ServiceRef {
-            knowledge: set.knowledge.clone(),
-            interview: set.interview.clone(),
-            query: set.query.clone(),
-            persona: set.persona.clone(),
-        })
-        .await
+        // Hold the lock only long enough to clone the (cheap Arc) handles, then
+        // drop the guard BEFORE awaiting `f`. Otherwise a slow command — e.g. a
+        // 30s persona_chat hitting the cloud LLM — would keep the mutex and stall
+        // every other command (including the offline read views) behind it.
+        let refs = {
+            let guard = self.0.lock().await;
+            let set = guard
+                .as_ref()
+                .ok_or(knows_me_core::core::error::AppError::Locked)?;
+            ServiceRef {
+                knowledge: set.knowledge.clone(),
+                interview: set.interview.clone(),
+                query: set.query.clone(),
+                persona: set.persona.clone(),
+            }
+        };
+        f(refs).await
     }
 }
 
