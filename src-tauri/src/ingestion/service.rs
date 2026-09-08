@@ -222,7 +222,9 @@ mod tests {
             items: vec![raw("a")],
         }));
         reg.register(Arc::new(Boom));
-        let cursors = Arc::new(IngestionCursorStore::new(Arc::new(InMemoryStore::default())));
+        let cursors = Arc::new(IngestionCursorStore::new(
+            Arc::new(InMemoryStore::default()),
+        ));
         let sink = Arc::new(BufferSink::default());
         let svc = IngestionService::new(Arc::new(reg), cursors, sink.clone());
 

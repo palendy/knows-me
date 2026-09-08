@@ -92,8 +92,7 @@ impl FileConnector {
                 })
             }
             FileFormat::Image => {
-                let bytes =
-                    fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+                let bytes = fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
                 // Vision text extraction happens in Processing via LlmClient.
                 Ok(RawItem {
                     source: SourceKind::File,

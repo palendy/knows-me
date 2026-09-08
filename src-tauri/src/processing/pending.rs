@@ -90,8 +90,8 @@ fn source_tag(raw: &RawItem) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::InMemoryStore;
     use crate::core::types::SourceKind;
+    use crate::mocks::InMemoryStore;
     use chrono::Utc;
 
     fn raw(id: &str) -> RawItem {
