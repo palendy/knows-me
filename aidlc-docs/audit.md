@@ -270,3 +270,59 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 Code Generation complete, awaiting approval before next unit / Build & Test.
 
 ---
+
+## CONSTRUCTION - U3 (Knowledge & Interview) Functional Design — Part 1 Plan + Questions
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "나는 U3 개발자야. Construction Phase를 시작해주세요. 사전에 필요한 개발환경이 있으면 미리 설치하고 시작합시다."
+**AI Response**: Loaded common rules + construction/functional-design + PBT rule + U3 design artifacts (unit-of-work, story-map, dependency, components, component-methods, services, stories, shared contracts). Environment audit on this macOS machine: rustc/cargo 1.96.1, Apple clang, node 26.7.0, npm 11.19.0, Xcode CLT, Homebrew all present; `knows_me_core` crate builds, 5/5 tests pass, `cargo clippy --all-targets -- -D warnings` clean → backend dev env READY, no install required (earlier zig-linker hack was Linux-sandbox-only). Open items (frontend build scaffold ownership — U1 app-shell territory; Rust PBT framework) surfaced as questions rather than silently installed. Started U3 per-unit Functional Design (first per-unit stage per execution plan: FD → NFR Requirements → NFR Design → [Infra SKIP] → Code Generation). Created `aidlc-docs/construction/plans/u3-knowledge-interview-functional-design-plan.md` with unit context, execution plan checkboxes, preliminary Testable Properties (PBT-01), and 11 clarification questions (2 env/coordination + 9 domain/business-rule) in mandatory [Answer]: format with recommendations. GATE: awaiting answers before generating FD artifacts.
+**Context**: CONSTRUCTION - U3 Functional Design Part 1. GATE: awaiting [Answer]: tags in the plan file.
+
+---
+
+## CONSTRUCTION - U3 Functional Design — Answers + Part 2 Artifacts Generated
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "작성 완료. 모두 권장안으로 선택" (all 11 questions answered A / recommended)
+**AI Response**: Read all 11 answers (Q1–Q11 = A). Consistent, no contradictions → no clarification file needed. Q2=A env pre-reflection: ran `cargo add proptest --dev` → proptest 1.11.0 added to src-tauri/Cargo.toml; re-verified 5/5 lib tests pass. Generated 4 Functional Design artifacts under aidlc-docs/construction/u3-knowledge-interview/functional-design/: domain-entities.md (storage layout: EncryptedStore canonical, ns=facts/fact_history/queue as JSON; in-memory SearchIndex; explicit links; full-body history), business-logic-model.md (KnowledgeService + InterviewService orchestration + algorithms: upsert+history, in-memory inverted-index search, graph derivation, dashboard, enqueue+dedup, answer dispatch per Q9, LLM-driven bounded follow-ups via Masker+LlmClient per Q8, weighted priority scoring + TTL expiry per Q10), business-rules.md (KR-1..8, IR-1..6 with traceability + Testable Properties P1–P9 mapping to PBT categories + PBT compliance summary — no blocking PBT findings), frontend-components.md (InterviewQueueView inline-expansion UX per Q11, props/state, Tauri command integration, stable data-testid). Marked all plan checkboxes [x]. Presenting Functional Design completion GATE (Request Changes / Continue to NFR Requirements).
+**Context**: CONSTRUCTION - U3 Functional Design complete. GATE: awaiting approval before NFR Requirements.
+
+---
+
+## CONSTRUCTION - U3 Functional Design APPROVED → NFR Requirements started
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: (session-continuity Q&A) "이 세션에서 계속 진행할까?" → clarified as a session-hygiene question (keep session vs /clear), answered with recommendation to keep this session for U3; then "승인 진행"
+**AI Response**: Answered session question (keep this session recommended for finishing U3; /clear when switching units or session bloats — state is file-backed via aidlc-state.md/audit.md). On "승인 진행": recorded U3 Functional Design as APPROVED. Marked FD complete for U3 in aidlc-state.md. Proceeding to per-unit NFR Requirements (execute per execution plan). Loaded construction/nfr-requirements.md + requirements.md NFR section (NFR-1..8). Created `aidlc-docs/construction/plans/u3-knowledge-interview-nfr-requirements-plan.md` with NFR assessment plan checkboxes + 6 clarification questions (search scale/latency, tokenization/Korean, LLM-unavailable graceful degradation, portability/export, concurrency/consistency, PBT framework confirmation) in mandatory [Answer]: format with recommendations. GATE: awaiting answers.
+**Context**: CONSTRUCTION - U3 NFR Requirements Part 1. GATE: awaiting [Answer]: tags.
+
+---
+
+## CONSTRUCTION - U3 NFR Requirements — Answers + Artifacts Generated
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "권장안으로 진행할 것" (all 6 NFR questions → A / recommended)
+**AI Response**: Recorded all 6 answers = A in the plan file. Generated 2 NFR artifacts under aidlc-docs/construction/u3-knowledge-interview/nfr-requirements/: nfr-requirements.md (NFR-4 scale/latency: 50k facts, search p95<100ms, in-memory index; NFR-2 privacy: mask-before-LLM + no plaintext outside EncryptedStore; NFR-3 offline: all ops offline except Deepen follow-up gen which degrades gracefully — save fact, skip follow-ups; NFR-5 idempotency; NFR-6 export-based portability; NFR-8 PBT Partial props P1–P7; serialized-write consistency with self-healing index; traceability table) and tech-stack-decisions.md (Rust/async_trait, serde_json JSON canonical, EncryptedStore persistence, in-memory inverted index with std tokenizer + CJK bigrams for Korean, proptest 1.11 as PBT-09 record, deliberately NO tantivy/unicode-segmentation/new-runtime; FE stack deferred to U1 shell). Marked all plan checkboxes [x]. No blocking PBT findings. Presenting NFR Requirements completion GATE (Request Changes / Continue to NFR Design).
+**Context**: CONSTRUCTION - U3 NFR Requirements complete. GATE: awaiting approval before NFR Design.
+
+---
+
+## CONSTRUCTION - U3 NFR Requirements APPROVED + standing instruction saved → NFR Design started
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "혹시 새로운 세션에서 깨끗한 컨텍스트가 필요한 경우 미리 나에게 요청할 것. 이것은 승인함"
+**AI Response**: Recorded U3 NFR Requirements as APPROVED. Saved standing instruction to project memory (feedback: proactively-request-clean-session — ask before any clean-context/new-session reset, never clear or degrade silently; state is file-backed so resume is safe) + project memory (knows-me-u3-construction) + MEMORY.md index. Marked NFR Requirements complete for U3 in aidlc-state.md. Proceeding to per-unit NFR Design (execute — NFR Requirements executed). Loaded construction/nfr-design.md. Created `aidlc-docs/construction/plans/u3-knowledge-interview-nfr-design-plan.md` with NFR design plan checkboxes + 3 focused questions (search index startup strategy, LLM failure/timeout resilience pattern, history/memory loading pattern) in [Answer]: format with recommendations. GATE: awaiting answers.
+**Context**: CONSTRUCTION - U3 NFR Design Part 1. GATE: awaiting [Answer]: tags.
+
+---
+
+## CONSTRUCTION - U3 NFR Design — Answers + Artifacts Generated
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "모두 권장안" (all 3 NFR Design questions → A / recommended)
+**AI Response**: Recorded all 3 answers = A. Generated 2 NFR Design artifacts under aidlc-docs/construction/u3-knowledge-interview/nfr-design/: nfr-design-patterns.md (P-1 in-memory inverted index rebuild-on-unlock; P-2 lazy history load; P-3 CJK bigram tokenization; P-4 graceful LLM degradation fail-open; P-5 self-healing derived index; P-6 serialized single-writer; P-7 mask gate before egress; P-8 on-demand export; P-9 idempotent writes/dedup; pattern→NFR traceability + explicit "not used" list) and logical-components.md (component inventory, U1 dependencies EncryptedStore/Masker/LlmClient, integration diagram + text alternative, single-write-path + no-cyclic-deps notes, intentional absence of infra components). Marked all plan checkboxes [x]. Presenting NFR Design completion GATE (Request Changes / Continue to Code Generation — the last U3 stage).
+**Context**: CONSTRUCTION - U3 NFR Design complete. GATE: awaiting approval before Code Generation.
+
+---
+
+## CONSTRUCTION - U3 NFR Design APPROVED → Code Generation Part 1 (Plan)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "진행"
+**AI Response**: Recorded U3 NFR Design as APPROVED. Marked NFR Design complete for U3 in aidlc-state.md. Entered Code Generation (last U3 stage), Part 1 = Planning. Loaded construction/code-generation.md. Created `aidlc-docs/construction/plans/u3-knowledge-interview-code-generation-plan.md`: numbered steps (module scaffolding + lib.rs registration; repository layer FactStore/HistoryTracker/QueueManager over EncryptedStore+JSON; SearchIndex + CJK-bigram tokenizer; KnowledgeService impl; InterviewService + AnswerIntake impl with mask+LLM follow-ups, priority scoring, TTL/dedup; example tests incl offline degradation; proptest PBT P1–P7 + generators; code summary docs; cargo fmt/build/test/clippy verify) with checkboxes, story traceability (US-3.1..3.3, US-4.1..4.3), unit context/dependencies (U1 EncryptedStore/Masker/LlmClient + mocks), and PBT plan (PBT-01..10). Frontend queue/ implementation deferred to U1 app-shell integration per FD Q1=A (design doc is the U3 artifact; user can override to author the .tsx now). GATE: awaiting plan approval before generation.
+**Context**: CONSTRUCTION - U3 Code Generation Part 1 (Planning). GATE: awaiting plan approval.
+
+---
