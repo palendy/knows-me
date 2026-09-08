@@ -4,7 +4,7 @@
 - **Project Name**: knows-me
 - **Project Type**: Greenfield
 - **Start Date**: 2026-09-08T06:46:46Z
-- **Current Stage**: CONSTRUCTION - U3 (Knowledge & Interview) Code Generation COMPLETE + VERIFIED (build/fmt/clippy clean, 26 tests pass). GATE: awaiting approval — U3 unit complete after this. All U3 per-unit stages (FD, NFR Req, NFR Design, Code Gen) done. Environment ready on macOS (Rust 1.96.1 + node 26.7).
+- **Current Stage**: CONSTRUCTION - U1/U2/U3 머지 완료(main). U4 (Interface & Persona) 완료 + 동료 코드리뷰(xhigh) 반영 — branch `construction/u4-interface-persona`, PR #2. 남은 것: Build and Test(전 유닛 통합).
 
 ## Construction Notes
 - **U1 full implementation done** (branch `feat/u1-core-platform-security`, user directive "내가 U1을 맡았어 … 자율주행"): real security + LLM gateway + platform + onboarding UI on top of the Milestone 0 contracts.
@@ -27,6 +27,13 @@
 - U3 Knowledge & Interview (Dev C) — US-3.x, US-4.x
 - U4 Interface & Persona (Dev D) — US-5.x, US-6.x
 - Integration order: U1 → U3 → U2 → U4 (development parallel via mocks)
+
+## U4 Construction Notes (Dev D)
+- **유닛 경계 준수**: U1(`core/**`, `mocks.rs`, Tauri 셸, `vite.config.ts`), U2(`ingestion/`, `processing/`), U3(`knowledge/`, `interview/`, `src/features/queue/`) 파일을 일절 수정하지 않음. 공용 파일은 `Cargo.toml`(dependency 추가)과 `lib.rs`(`pub mod persona;` 1줄)만 추가 변경.
+- **테스트 툴체인 신규 추가**: `package.json`/`tsconfig.json`/`vitest.config.ts`/`src/test-setup.ts`. 번들러(`vite.config.ts`)와 앱 엔트리는 U1 몫으로 남겨 둠.
+- **Tech stack 추가**: axum 0.7 + tokio(로컬 API), proptest 1(Rust PBT), fast-check 3 + Vitest 2 + RTL(TS PBT/예제 테스트). 그래프는 의존성 없는 자체 SVG.
+- **통합 지침**: `aidlc-docs/construction/u4-interface-persona/code/integration-handoff.md` — U1이 등록할 command 5종, 뷰 마운트 방법, U3 `search` 질의 의미론에 대한 요청 사항 포함.
+- **승인 게이트**: 사용자가 "다 완료하고 푸쉬"로 U4 전 단계 승인을 일괄 위임함(audit.md 기록).
 
 ## Application Design Decisions
 - AD1 Frontend: React + TypeScript (Tauri webview)
@@ -74,13 +81,21 @@
 
 ### 🟢 CONSTRUCTION PHASE
 - [x] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
-- [x] U1 Code Generation (full: security + LLM gateway + platform + onboarding UI) — DONE on branch `feat/u1-core-platform-security` (autonomous)
-- [~] Functional Design — EXECUTE (per-unit) — **U1 DONE (autonomous), U2 DONE (approved), U3 DONE** (4 artifacts); U4 pending
-- [~] NFR Requirements — EXECUTE (per-unit) — **U2 DONE (approved), U3 DONE** (2 artifacts); U1/U4 pending
-- [~] NFR Design — EXECUTE (per-unit) — **U2 DONE (approved), U3 DONE** (2 artifacts); U1/U4 pending
+- [x] U1 Code Generation (full: security + LLM gateway + platform + onboarding UI) — DONE, merged to main
+- [x] Functional Design — **U1 DONE, U2 DONE, U3 DONE, U4 DONE** (4 artifacts each)
+- [x] NFR Requirements — **U2 DONE, U3 DONE, U4 DONE** (2 artifacts each); U1은 본구현과 함께 처리
+- [x] NFR Design — **U2 DONE, U3 DONE, U4 DONE** (2 artifacts each); U1은 본구현과 함께 처리
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 DONE (build/test/clippy green: 35 tests pass; awaiting approval), U3 DONE + verified (knowledge/ + interview/ modules, 26 tests)**; U4 pending
-- [ ] Build and Test — EXECUTE
+- [x] Code Generation — **U1 DONE (merged), U2 DONE (merged, 35 tests), U3 DONE (merged, 26 tests), U4 DONE (PR #2)**
+- [ ] Build and Test — EXECUTE (전 유닛 통합; 마지막 단계)
+
+**U4 — Interface & Persona (Dev D)** — branch `construction/u4-interface-persona`, PR #2
+- [x] Functional Design (domain-entities, business-logic-model, business-rules, frontend-components)
+- [x] NFR Requirements (nfr-requirements, tech-stack-decisions)
+- [x] NFR Design (nfr-design-patterns, logical-components)
+- [x] Code Generation (US-5.1~5.3, US-6.1~6.2)
+- [x] 동료 코드리뷰(xhigh, coolfebreeze) 9건 반영 — 🔴2 · 🟡5 · 🟢2 전부 수정
+- [x] main rebase 후 재검증
 
 ### 🟡 OPERATIONS PHASE
 - [ ] Operations (placeholder)

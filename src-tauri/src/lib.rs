@@ -31,6 +31,10 @@ pub mod security;
 pub mod ingestion;
 pub mod processing;
 
+// U4 — Interface & Persona (Dev D). Read views, persona chat/draft, and the
+// loopback-only local API server.
+pub mod persona;
+
 pub use core::app_state::AppState;
 pub use core::error::{AppError, Result};
 pub use core::scheduler::Scheduler;
