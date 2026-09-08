@@ -1,5 +1,19 @@
 {
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f; [ -n \"$f\" ] || exit 0; case \"$f\" in *.rs) cargo fmt --manifest-path \"${CLAUDE_PROJECT_DIR:-.}/src-tauri/Cargo.toml\" ;; esac; } 2>/dev/null || true",
+            "statusMessage": "cargo fmt"
+          }
+        ]
+      }
+    ]
   }
 }
