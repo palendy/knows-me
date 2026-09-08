@@ -68,15 +68,17 @@ impl InterviewApi for InterviewService {
 
         Self::finalize(&mut item);
 
-        // IR-4: suppress duplicates (per-kind key). Decide against the highest-
-        // priority existing duplicate BEFORE mutating, so we never drop both.
+        // IR-4: suppress duplicates (per-kind key). Ignore expired items (they
+        // are about to be swept and must not block a fresh item). Decide against
+        // the highest-priority live duplicate BEFORE mutating, so we never drop both.
+        let now = Utc::now();
         let key = dedup_key(&item.kind);
         let dups: Vec<QueueItem> = self
             .queue
             .list()
             .await?
             .into_iter()
-            .filter(|e| dedup_key(&e.kind) == key)
+            .filter(|e| !is_expired(e, now) && dedup_key(&e.kind) == key)
             .collect();
         if let Some(best) = dups.iter().max_by_key(|e| e.priority) {
             if best.priority >= item.priority {
@@ -141,13 +143,18 @@ impl InterviewApi for InterviewService {
 
         match item.kind {
             QueueItemKind::Confirm { candidate } => {
-                let affirm = match &answer {
-                    AnswerInput::Choice(c) => is_affirmative(c),
-                    AnswerInput::Text(_) => true,
+                // Choice: affirm/reject as-is. Text: treat as a correction to the
+                // candidate body and confirm the corrected fact (frontend-components §3).
+                let (affirm, correction) = match &answer {
+                    AnswerInput::Choice(c) => (is_affirmative(c), None),
+                    AnswerInput::Text(t) => (true, Some(t.clone())),
                     AnswerInput::Skip => unreachable!("handled above"),
                 };
                 if affirm {
-                    let fact = fact_from_candidate(candidate);
+                    let mut fact = fact_from_candidate(candidate);
+                    if let Some(body) = correction {
+                        fact.body = body;
+                    }
                     self.knowledge.upsert(fact.clone()).await?;
                     confirmed_fact = Some(fact);
                 }
@@ -166,6 +173,8 @@ impl InterviewApi for InterviewService {
                 for mut up in
                     derive_follow_ups(self.masker.as_ref(), self.llm.as_ref(), &text).await
                 {
+                    // Finalize so the item returned in follow_ups carries its scored
+                    // priority/TTL; enqueue re-finalizes its own copy (no-op here).
                     Self::finalize(&mut up);
                     let stored = self.enqueue(up.clone()).await?;
                     if stored == up.id {
@@ -224,7 +233,7 @@ impl InterviewApi for InterviewService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{FactCandidate, MaskedText, Provenance, Scope, SourceKind};
+    use crate::core::types::{FactCandidate, MaskedText, Provenance, Scope, SourceKind, UnmaskMap};
     use crate::knowledge::KnowledgeService;
     use crate::mocks::{CannedLlm, InMemoryStore, NoopMasker};
     use async_trait::async_trait;
@@ -404,6 +413,108 @@ mod tests {
         svc.enqueue(future).await.unwrap();
         assert_eq!(svc.expire().await.unwrap(), 1);
         assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 1);
+    }
+
+    // ---- code-review fix regression tests -----------------------------------
+
+    /// Masker that replaces "alice" with a placeholder, to verify unmasking.
+    struct BracketMasker;
+    impl Masker for BracketMasker {
+        fn mask(&self, text: &str) -> (MaskedText, UnmaskMap) {
+            let mut map = UnmaskMap::new();
+            let masked = if text.contains("alice") {
+                map.insert("[P1]".into(), "alice".into());
+                text.replace("alice", "[P1]")
+            } else {
+                text.to_string()
+            };
+            (MaskedText { text: masked }, map)
+        }
+        fn unmask(&self, masked: &MaskedText, map: &UnmaskMap) -> String {
+            let mut s = masked.text.clone();
+            for (ph, orig) in map.entries() {
+                s = s.replace(ph.as_str(), orig.as_str());
+            }
+            s
+        }
+    }
+
+    /// LLM double whose classify echoes the (masked) input as a label.
+    struct EchoClassifyLlm;
+    #[async_trait]
+    impl LlmClient for EchoClassifyLlm {
+        async fn summarize(&self, i: &MaskedText) -> Result<String> {
+            Ok(i.text.clone())
+        }
+        async fn classify(&self, i: &MaskedText) -> Result<Vec<String>> {
+            Ok(vec![i.text.clone()])
+        }
+        async fn vision_extract(&self, _: &[u8]) -> Result<MaskedText> {
+            Ok(MaskedText {
+                text: String::new(),
+            })
+        }
+        async fn chat(&self, _: &str, i: &MaskedText) -> Result<String> {
+            Ok(i.text.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn confirm_text_is_treated_as_correction() {
+        let (svc, kn) = service_with(Arc::new(CannedLlm));
+        let id = svc.enqueue(confirm_item()).await.unwrap(); // candidate body "make deploy"
+        let res = svc
+            .answer(id, AnswerInput::Text("corrected body".into()))
+            .await
+            .unwrap();
+        let fact = res.confirmed_fact.expect("fact created");
+        assert_eq!(
+            fact.body, "corrected body",
+            "correction text must be applied"
+        );
+        assert_eq!(kn.get(fact.id).await.unwrap().body, "corrected body");
+    }
+
+    #[tokio::test]
+    async fn enqueue_ignores_expired_duplicate() {
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        let mut stale = confirm_item(); // title "deploy"
+        stale.expires_at = Some(Utc::now() - Duration::days(1)); // expired, unswept
+        svc.enqueue(stale).await.unwrap();
+        let fresh_id = svc.enqueue(confirm_item()).await.unwrap(); // same key, fresh
+        let listed = svc.list(QueueSort::NewestFirst).await.unwrap();
+        assert_eq!(
+            listed.len(),
+            1,
+            "fresh item must not be blocked by an expired dup"
+        );
+        assert_eq!(listed[0].id, fresh_id);
+    }
+
+    #[tokio::test]
+    async fn dashboard_pending_excludes_expired() {
+        let (svc, kn) = service_with(Arc::new(CannedLlm));
+        let mut past = confirm_item_titled("old");
+        past.expires_at = Some(Utc::now() - Duration::days(1));
+        svc.enqueue(past).await.unwrap();
+        svc.enqueue(confirm_item_titled("new")).await.unwrap();
+        assert_eq!(kn.dashboard().await.unwrap().pending_queue, 1);
+    }
+
+    #[tokio::test]
+    async fn follow_up_questions_are_unmasked() {
+        let ups = derive_follow_ups(&BracketMasker, &EchoClassifyLlm, "alice moved").await;
+        assert_eq!(ups.len(), 1);
+        match &ups[0].kind {
+            QueueItemKind::Deepen { question, .. } => {
+                assert!(
+                    question.contains("alice"),
+                    "placeholder not unmasked: {question}"
+                );
+                assert!(!question.contains("[P1]"));
+            }
+            _ => panic!("expected deepen follow-up"),
+        }
     }
 
     // ---- property-based tests -----------------------------------------------

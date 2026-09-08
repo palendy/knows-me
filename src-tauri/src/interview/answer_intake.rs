@@ -12,8 +12,8 @@ use chrono::Utc;
 
 use crate::core::traits::{LlmClient, Masker};
 use crate::core::types::{
-    Fact, FactCandidate, FactId, FactMetadata, Provenance, QueueItem, QueueItemId, QueueItemKind,
-    Scope, SourceKind,
+    Fact, FactCandidate, FactId, FactMetadata, MaskedText, Provenance, QueueItem, QueueItemId,
+    QueueItemKind, Scope, SourceKind,
 };
 
 /// Max follow-up questions generated per answered deepen item (IR-6 bound).
@@ -80,7 +80,7 @@ pub async fn derive_follow_ups(
     llm: &dyn LlmClient,
     answer: &str,
 ) -> Vec<QueueItem> {
-    let (masked, _map) = masker.mask(answer);
+    let (masked, map) = masker.mask(answer);
     let labels = match llm.classify(&masked).await {
         Ok(labels) => labels,
         Err(_) => return Vec::new(), // graceful degradation — fact still persists
@@ -88,15 +88,20 @@ pub async fn derive_follow_ups(
     labels
         .into_iter()
         .take(MAX_FOLLOW_UPS)
-        .map(|label| QueueItem {
-            id: QueueItemId::new(),
-            kind: QueueItemKind::Deepen {
-                question: format!("{label}에 대해 더 알려주세요"),
-                hypothesis: None,
-            },
-            priority: 0, // scored on enqueue
-            created_at: Utc::now(),
-            expires_at: None, // TTL applied on enqueue
+        .map(|label| {
+            // Restore any mask placeholders so questions show real terms (e.g. a
+            // name) rather than tokens like "[PERSON_1]".
+            let restored = masker.unmask(&MaskedText { text: label }, &map);
+            QueueItem {
+                id: QueueItemId::new(),
+                kind: QueueItemKind::Deepen {
+                    question: format!("{restored}에 대해 더 알려주세요"),
+                    hypothesis: None,
+                },
+                priority: 0, // scored on enqueue
+                created_at: Utc::now(),
+                expires_at: None, // TTL applied on enqueue
+            }
         })
         .collect()
 }

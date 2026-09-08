@@ -342,3 +342,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U3 code review fixes applied + verified. Committing.
 
 ---
+
+## CONSTRUCTION - U3 second code review (xhigh) — final verification + fixes
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: `/code-review xhigh 리뷰 결과를 반영하셔 수정하였다. 최종 검증`
+**AI Response**: Ran second /code-review xhigh (background subagent): 7 findings. Verified each against source — 6 valid, fixed; 1 pushed back with reasoning. Fixed: (1) Confirm+Text now treated as a correction (replaces candidate body) instead of silently dropping the typed text; (2) enqueue filters expired items from dedup consideration so a stale expired dup cannot drop a fresh item; (3) upsert reordered to put fact BEFORE appending history — failed/retried write no longer orphans/duplicates history (P2/KR-3); (4) dashboard.pending_queue now counts only non-expired items (deserializes queue values), consistent with list(); (5) derive_follow_ups keeps the unmask map and unmasks classify labels so follow-up questions show real terms not placeholders; (6) removed dead pub fn parse_id + unused uuid import from fact_store.rs. Pushed back on (7) "redundant finalize": the outer finalize sets priority/TTL on the item RETURNED in follow_ups; enqueue's finalize is a no-op on an already-finalized clone — removing it would regress the returned values. Added 4 regression tests (correction applied, enqueue ignores expired dup, dashboard excludes expired, follow-up unmasked). VERIFIED: cargo fmt clean, clippy -D warnings clean, cargo test 36/36 pass (32→36). Updated summary.md. Committing.
+**Context**: CONSTRUCTION - U3 second-review fixes applied + verified (36 tests). Committing.
+
+---
