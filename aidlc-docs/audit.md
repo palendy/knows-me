@@ -240,3 +240,18 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 NFR Design Step 6 산출물 생성.
 
 ---
+
+## CONSTRUCTION - U2 NFR Design APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 NFR Design 승인. Infrastructure Design은 실행계획상 SKIP. Code Generation Part 1(계획) 진행.
+**Context**: CONSTRUCTION - U2 NFR Design 게이트 통과 → Code Generation.
+
+---
+
+## CONSTRUCTION - U2 Code Generation Plan (Part 1) presented
+**Timestamp**: 2026-09-08T00:00:00Z
+**AI Response (approval prompt)**: U2 code-generation-plan.md 제시(11단계). MVP 범위 결정: 멱등/증분 골격+Session/File(텍스트) 완전구현, Notion/Gmail/PDF/DOCX/비전은 계약 골격+통합 TODO. PBT-02/03/07/08 blocking 반영(proptest). 승인 요청 대기.
+**Context**: CONSTRUCTION - U2 Code Generation Part 1, awaiting plan approval before generation.
+
+---
