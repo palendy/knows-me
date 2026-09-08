@@ -334,3 +334,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U3 Code Generation complete + verified. GATE: awaiting approval (U3 unit complete after this).
 
 ---
+
+## CONSTRUCTION - U3 code committed + xhigh code review + fixes
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "좋아 그럼 먼저 커밋만 해줘. 내가 리뷰하겠음" → then `/code-review xhigh` (U3 요구사항 적합성 + U1 연관성) → then (findings presented) "권장안으로 진행"
+**AI Response**: Committed U3 impl to main (04b6583). Ran /code-review xhigh (background subagent): 14 findings, all verified valid (no false positives). Presented prioritized (🔴4/🟡6/⚪ deferred). On "권장안으로 진행" applied all 🔴+🟡: (1) lazy index rebuild ensure_index + public build_index — fixes empty-after-restart; (2) async write_lock (tokio sync dep) across upsert RMW — serialized writes per P-6; (3) reject empty Choice/Text answers, is_affirmative("")→false; (4) rewrote P6 proptest to actually call expire() + real score-range assert; (5) follow-ups routed through enqueue (dedup/priority/TTL); (6) dedup_key namespaced by kind (confirm:/deepen:); (7) non-empty-but-tokenless query returns empty not all; (8) upsert rejects confirmed_at=None (KR-2); (9) expire() runs dedup + list() filters expired; (10) enqueue decides before mutating (no both-lost). Added tokio sync feature to [dependencies]. Deferred/tracked (⚪): SourceKind::Interview (U1 coord), single-CJK-char search (bigram limit), export renderer P-8. VERIFIED: cargo fmt clean, clippy -D warnings clean, cargo test 32/32 pass (26→32, +6 fix tests incl index_rebuilds_after_restart, concurrent_upserts_do_not_deadlock, empty_answer_rejected, confirm/deepen no-collide, missing confirmed_at). Updated code summary.md. Committing fixes.
+**Context**: CONSTRUCTION - U3 code review fixes applied + verified. Committing.
+
+---

@@ -28,8 +28,9 @@ fn is_negative(choice: &str) -> bool {
 }
 
 /// Interpret a `Choice` answer to a Confirm item as affirmative or not.
+/// An empty/whitespace choice is NOT affirmative (avoids confirming on a blank).
 pub fn is_affirmative(choice: &str) -> bool {
-    !is_negative(choice)
+    !choice.trim().is_empty() && !is_negative(choice)
 }
 
 /// Build a confirmed fact from an accepted candidate.

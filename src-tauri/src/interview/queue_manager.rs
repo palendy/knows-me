@@ -86,11 +86,17 @@ pub fn ttl_days(kind: &QueueItemKind) -> i64 {
     }
 }
 
-/// Normalized key used to suppress duplicate pending items (IR-4).
+/// Normalized key used to suppress duplicate pending items (IR-4). Namespaced by
+/// kind so a Confirm candidate and a Deepen question with the same text do not
+/// collide.
 pub fn dedup_key(kind: &QueueItemKind) -> String {
     match kind {
-        QueueItemKind::Confirm { candidate } => candidate.title.trim().to_lowercase(),
-        QueueItemKind::Deepen { question, .. } => question.trim().to_lowercase(),
+        QueueItemKind::Confirm { candidate } => {
+            format!("confirm:{}", candidate.title.trim().to_lowercase())
+        }
+        QueueItemKind::Deepen { question, .. } => {
+            format!("deepen:{}", question.trim().to_lowercase())
+        }
     }
 }
 

@@ -4,6 +4,7 @@
 //! single [`KnowledgeApi::upsert`] path (services.md). Deepen answers also derive
 //! bounded follow-up questions (mask-first, best-effort — P-4).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -67,23 +68,39 @@ impl InterviewApi for InterviewService {
 
         Self::finalize(&mut item);
 
-        // IR-4: suppress duplicates — keep the higher-priority pending item.
+        // IR-4: suppress duplicates (per-kind key). Decide against the highest-
+        // priority existing duplicate BEFORE mutating, so we never drop both.
         let key = dedup_key(&item.kind);
-        for existing in self.queue.list().await? {
-            if dedup_key(&existing.kind) == key {
-                if existing.priority >= item.priority {
-                    return Ok(existing.id);
-                }
-                self.queue.remove(existing.id).await?;
+        let dups: Vec<QueueItem> = self
+            .queue
+            .list()
+            .await?
+            .into_iter()
+            .filter(|e| dedup_key(&e.kind) == key)
+            .collect();
+        if let Some(best) = dups.iter().max_by_key(|e| e.priority) {
+            if best.priority >= item.priority {
+                return Ok(best.id); // incoming loses; leave existing untouched
             }
         }
-
+        // incoming wins: remove all existing duplicates, then store it.
+        for e in &dups {
+            self.queue.remove(e.id).await?;
+        }
         self.queue.put(&item).await?;
         Ok(item.id)
     }
 
     async fn list(&self, sort: QueueSort) -> Result<Vec<QueueItem>> {
-        let mut items = self.queue.list().await?;
+        let now = Utc::now();
+        // Never surface expired items even before the sweep runs (US-4.3).
+        let mut items: Vec<QueueItem> = self
+            .queue
+            .list()
+            .await?
+            .into_iter()
+            .filter(|i| !is_expired(i, now))
+            .collect();
         sort_queue(&mut items, sort);
         Ok(items)
     }
@@ -101,6 +118,22 @@ impl InterviewApi for InterviewService {
                 confirmed_fact: None,
                 follow_ups: vec![],
             });
+        }
+
+        // Guard empty/whitespace answers BEFORE mutating: an accidental blank
+        // answer must not silently create knowledge or discard an item.
+        match &answer {
+            AnswerInput::Choice(c) if c.trim().is_empty() => {
+                return Err(AppError::InvalidInput(
+                    "answer choice must not be empty".into(),
+                ));
+            }
+            AnswerInput::Text(t) if t.trim().is_empty() => {
+                return Err(AppError::InvalidInput(
+                    "answer text must not be empty".into(),
+                ));
+            }
+            _ => {}
         }
 
         let mut confirmed_fact = None;
@@ -128,14 +161,16 @@ impl InterviewApi for InterviewService {
                 let fact = fact_from_deepen(&question, &text);
                 self.knowledge.upsert(fact.clone()).await?;
                 confirmed_fact = Some(fact);
-                // IR-2/IR-6: bounded follow-ups (best-effort). Direct put bypasses
-                // dedup — freshly generated items are unlikely to collide.
+                // IR-2/IR-6: bounded follow-ups (best-effort). Route through
+                // enqueue so dedup/priority/TTL apply consistently (IR-4).
                 for mut up in
                     derive_follow_ups(self.masker.as_ref(), self.llm.as_ref(), &text).await
                 {
                     Self::finalize(&mut up);
-                    self.queue.put(&up).await?;
-                    follow_ups.push(up);
+                    let stored = self.enqueue(up.clone()).await?;
+                    if stored == up.id {
+                        follow_ups.push(up); // only report items actually added
+                    }
                 }
             }
         }
@@ -150,11 +185,37 @@ impl InterviewApi for InterviewService {
     async fn expire(&self) -> Result<usize> {
         let now = Utc::now();
         let mut removed = 0;
+
+        // 1) TTL expiry (IR-5).
+        let mut alive = Vec::new();
         for item in self.queue.list().await? {
             if is_expired(&item, now) {
                 self.queue.remove(item.id).await?;
                 removed += 1;
+            } else {
+                alive.push(item);
             }
+        }
+
+        // 2) Dedup suppression (IR-4): keep the highest-priority item per key.
+        let mut best: HashMap<String, (QueueItemId, u8)> = HashMap::new();
+        let mut to_remove = Vec::new();
+        for item in &alive {
+            let key = dedup_key(&item.kind);
+            match best.get(&key).copied() {
+                Some((bid, bpri)) if item.priority > bpri => {
+                    to_remove.push(bid);
+                    best.insert(key, (item.id, item.priority));
+                }
+                Some(_) => to_remove.push(item.id),
+                None => {
+                    best.insert(key, (item.id, item.priority));
+                }
+            }
+        }
+        for id in to_remove {
+            self.queue.remove(id).await?;
+            removed += 1;
         }
         Ok(removed)
     }
@@ -163,7 +224,7 @@ impl InterviewApi for InterviewService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{FactCandidate, Provenance, QueueItemId, Scope, SourceKind};
+    use crate::core::types::{FactCandidate, MaskedText, Provenance, Scope, SourceKind};
     use crate::knowledge::KnowledgeService;
     use crate::mocks::{CannedLlm, InMemoryStore, NoopMasker};
     use async_trait::async_trait;
@@ -174,16 +235,16 @@ mod tests {
 
     #[async_trait]
     impl LlmClient for FailingLlm {
-        async fn summarize(&self, _: &crate::core::types::MaskedText) -> Result<String> {
+        async fn summarize(&self, _: &MaskedText) -> Result<String> {
             Err(AppError::External("offline".into()))
         }
-        async fn classify(&self, _: &crate::core::types::MaskedText) -> Result<Vec<String>> {
+        async fn classify(&self, _: &MaskedText) -> Result<Vec<String>> {
             Err(AppError::External("offline".into()))
         }
-        async fn vision_extract(&self, _: &[u8]) -> Result<crate::core::types::MaskedText> {
+        async fn vision_extract(&self, _: &[u8]) -> Result<MaskedText> {
             Err(AppError::External("offline".into()))
         }
-        async fn chat(&self, _: &str, _: &crate::core::types::MaskedText) -> Result<String> {
+        async fn chat(&self, _: &str, _: &MaskedText) -> Result<String> {
             Err(AppError::External("offline".into()))
         }
     }
@@ -199,12 +260,12 @@ mod tests {
         (svc, knowledge)
     }
 
-    fn confirm_item() -> QueueItem {
+    fn confirm_item_titled(title: &str) -> QueueItem {
         QueueItem {
             id: QueueItemId::new(),
             kind: QueueItemKind::Confirm {
                 candidate: FactCandidate {
-                    title: "deploy".into(),
+                    title: title.into(),
                     body: "make deploy".into(),
                     provenance: Provenance {
                         source: SourceKind::Session,
@@ -217,6 +278,10 @@ mod tests {
             created_at: Utc::now(),
             expires_at: None,
         }
+    }
+
+    fn confirm_item() -> QueueItem {
+        confirm_item_titled("deploy")
     }
 
     fn deepen_item(question: &str) -> QueueItem {
@@ -282,6 +347,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn empty_answer_is_rejected_and_item_kept() {
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        let cid = svc.enqueue(confirm_item()).await.unwrap();
+        assert!(matches!(
+            svc.answer(cid, AnswerInput::Choice("  ".into())).await,
+            Err(AppError::InvalidInput(_))
+        ));
+        let did = svc.enqueue(deepen_item("질문?")).await.unwrap();
+        assert!(matches!(
+            svc.answer(did, AnswerInput::Text("".into())).await,
+            Err(AppError::InvalidInput(_))
+        ));
+        // both items must still be pending
+        assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
     async fn offline_llm_still_saves_fact_without_follow_ups() {
         let (svc, kn) = service_with(Arc::new(FailingLlm));
         let id = svc.enqueue(deepen_item("근황?")).await.unwrap();
@@ -300,6 +382,15 @@ mod tests {
         svc.enqueue(deepen_item("같은 질문")).await.unwrap();
         svc.enqueue(deepen_item("같은 질문")).await.unwrap();
         assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn confirm_and_deepen_same_text_do_not_collide() {
+        // A Confirm titled "배포" and a Deepen asking "배포" are distinct (per-kind key).
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        svc.enqueue(confirm_item_titled("배포")).await.unwrap();
+        svc.enqueue(deepen_item("배포")).await.unwrap();
+        assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
@@ -387,26 +478,36 @@ mod tests {
             }
         }
 
-        // Range invariant: scored priority always fits u8 (never panics/overflows).
+        // Range invariant: scored priority stays within the expected band.
         #[test]
         fn prop_score_priority_in_range(item in arb_queue_item()) {
-            let _p: u8 = score_priority(&item); // type guarantees 0..=255
-            prop_assert!(true);
+            let p = score_priority(&item);
+            prop_assert!((100..=255).contains(&p));
         }
 
-        // P6 (PBT-03): the retain predicate leaves no expired item behind.
+        // P6 (PBT-03): after expire(), the real queue contains no expired item.
         #[test]
-        fn prop_no_expired_after_retain(
-            offsets in prop::collection::vec(-5i64..5, 0..15)
-        ) {
-            let now = Utc::now();
-            let items: Vec<QueueItem> = offsets.iter().map(|d| {
-                let mut it = deepen_item("q");
-                it.expires_at = Some(now + Duration::days(*d));
-                it
-            }).collect();
-            let kept: Vec<&QueueItem> = items.iter().filter(|i| !is_expired(i, now)).collect();
-            prop_assert!(kept.iter().all(|i| !is_expired(i, now)));
+        fn prop_expire_removes_all_past_due(offsets in prop::collection::vec(-3i64..3i64, 0..10)) {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
+                let (svc, _kn) = service_with(Arc::new(CannedLlm));
+                let now = Utc::now();
+                for (i, d) in offsets.iter().enumerate() {
+                    let mut it = deepen_item(&format!("q{i}"));
+                    it.expires_at = Some(now + Duration::days(*d));
+                    svc.enqueue(it).await.unwrap();
+                }
+                svc.expire().await.unwrap();
+                // Inspect the RAW stored queue (list() would filter expired itself).
+                let check = Utc::now();
+                for it in svc.queue.list().await.unwrap() {
+                    prop_assert!(!is_expired(&it, check));
+                }
+                Ok(())
+            })?;
         }
     }
 }
