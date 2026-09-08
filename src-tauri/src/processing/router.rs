@@ -94,8 +94,8 @@ fn title_of(summary: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::core::types::SourceKind;
+    use chrono::Utc;
 
     fn raw() -> RawItem {
         RawItem {
@@ -115,7 +115,11 @@ mod tests {
 
     #[test]
     fn uncertain_is_confirm() {
-        let d = route(&["uncertain".into(), "personal".into()], "maybe uses vim", &raw());
+        let d = route(
+            &["uncertain".into(), "personal".into()],
+            "maybe uses vim",
+            &raw(),
+        );
         match d {
             ProcessingDecision::Confirm(c) => assert_eq!(c.suggested_scope, Scope::Personal),
             _ => panic!("expected confirm"),

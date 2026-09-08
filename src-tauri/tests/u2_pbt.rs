@@ -17,8 +17,8 @@ use std::sync::Arc;
 
 use knows_me_core::core::traits::{Connector, IngestionApi, Masker};
 use knows_me_core::core::types::{Cursor, RawItem, SourceKind};
-use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::ingestion::service::BufferSink;
+use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::mocks::{InMemoryStore, NoopMasker};
 
 use async_trait::async_trait;
@@ -99,7 +99,9 @@ impl Connector for FixedConnector {
 fn build_service(items: Vec<RawItem>) -> (IngestionService, Arc<BufferSink>) {
     let mut reg = ConnectorRegistry::new();
     reg.register(Arc::new(FixedConnector { items }));
-    let cursors = Arc::new(IngestionCursorStore::new(Arc::new(InMemoryStore::default())));
+    let cursors = Arc::new(IngestionCursorStore::new(
+        Arc::new(InMemoryStore::default()),
+    ));
     let sink = Arc::new(BufferSink::default());
     let svc = IngestionService::new(Arc::new(reg), cursors, sink.clone());
     (svc, sink)

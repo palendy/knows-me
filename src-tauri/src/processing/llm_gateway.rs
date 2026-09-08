@@ -203,14 +203,21 @@ mod tests {
                 Ok(vec![])
             }
             async fn vision_extract(&self, _i: &[u8]) -> Result<MaskedText> {
-                Ok(MaskedText { text: String::new() })
+                Ok(MaskedText {
+                    text: String::new(),
+                })
             }
             async fn chat(&self, _s: &str, _i: &MaskedText) -> Result<String> {
                 Ok(String::new())
             }
         }
         let log = Arc::new(TransferLog::new(Arc::new(InMemoryStore::default())));
-        let gw = LlmGateway::new(Arc::new(Flaky { calls: AtomicU32::new(0) }), log);
+        let gw = LlmGateway::new(
+            Arc::new(Flaky {
+                calls: AtomicU32::new(0),
+            }),
+            log,
+        );
         let out = gw
             .summarize(SourceKind::Session, &MaskedText { text: "x".into() })
             .await

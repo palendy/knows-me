@@ -93,9 +93,12 @@ impl ProcessingService {
         // 4. Local unmask for the stored body (US-2.2 AC2). For the image path
         //    there is no reverse map, so the summary is used as-is.
         let body = match &unmap {
-            Some(map) => self
-                .masker
-                .unmask(&MaskedText { text: summary_masked }, map),
+            Some(map) => self.masker.unmask(
+                &MaskedText {
+                    text: summary_masked,
+                },
+                map,
+            ),
             None => summary_masked,
         };
 
@@ -113,7 +116,9 @@ impl ProcessingService {
                 question,
                 hypothesis,
             } => {
-                self.interview.enqueue(deepen_item(question, hypothesis)).await?;
+                self.interview
+                    .enqueue(deepen_item(question, hypothesis))
+                    .await?;
                 report.queue_items_created += 1;
             }
             ProcessingDecision::Drop { .. } => {
@@ -203,8 +208,10 @@ fn deepen_item(question: String, hypothesis: Option<String>) -> QueueItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mocks::{CannedLlm, InMemoryInterview, InMemoryKnowledge, InMemoryStore, NoopMasker};
     use crate::core::types::SourceKind;
+    use crate::mocks::{
+        CannedLlm, InMemoryInterview, InMemoryKnowledge, InMemoryStore, NoopMasker,
+    };
     use std::sync::atomic::{AtomicBool, Ordering};
 
     struct Toggle(AtomicBool);
@@ -255,7 +262,10 @@ mod tests {
     async fn empty_labels_route_to_confirm_queue() {
         // CannedLlm.classify returns ["general"] → certain → Store. Verify a fact lands.
         let (svc, knowledge, _iv, _p, _t) = service(true);
-        let r = svc.process(vec![raw("a", "ran the deploy script")]).await.unwrap();
+        let r = svc
+            .process(vec![raw("a", "ran the deploy script")])
+            .await
+            .unwrap();
         assert_eq!(r.facts_created, 1);
         let dash = knowledge.dashboard().await.unwrap();
         assert_eq!(dash.collected_count, 1);
@@ -264,7 +274,10 @@ mod tests {
     #[tokio::test]
     async fn offline_parks_then_resume_processes() {
         let (svc, knowledge, _iv, pending, probe) = service(false);
-        let r = svc.process(vec![raw("a", "x"), raw("b", "y")]).await.unwrap();
+        let r = svc
+            .process(vec![raw("a", "x"), raw("b", "y")])
+            .await
+            .unwrap();
         assert_eq!(r.facts_created, 0);
         assert_eq!(pending.len().await.unwrap(), 2);
 

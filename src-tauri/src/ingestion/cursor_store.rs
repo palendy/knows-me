@@ -69,9 +69,18 @@ impl IngestionCursorStore {
 
     /// Mark `(source, external_id)` collected. Idempotent: re-marking is a no-op
     /// with respect to the seen-set (monotonic — BR-I2, PBT-03 seen monotonicity).
-    pub async fn mark_seen(&self, source: SourceKind, external_id: &str, at_rfc3339: &str) -> Result<()> {
+    pub async fn mark_seen(
+        &self,
+        source: SourceKind,
+        external_id: &str,
+        at_rfc3339: &str,
+    ) -> Result<()> {
         self.store
-            .put(NS_SEEN, &seen_key(source, external_id), at_rfc3339.as_bytes())
+            .put(
+                NS_SEEN,
+                &seen_key(source, external_id),
+                at_rfc3339.as_bytes(),
+            )
             .await
     }
 }
@@ -93,7 +102,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            cs.load_cursor(SourceKind::Session).await.unwrap().unwrap().0,
+            cs.load_cursor(SourceKind::Session)
+                .await
+                .unwrap()
+                .unwrap()
+                .0,
             "c1"
         );
     }
