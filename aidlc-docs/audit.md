@@ -192,3 +192,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U1 full implementation on feature branch. Per-unit Functional Design/NFR formal gates still skipped ahead per user's autonomous directive (continuation of the Milestone 0 deviation).
 
 ---
+
+## CONSTRUCTION - U2 kickoff (Functional Design start)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "나는 U2 개발자야. 내가 맡은 부분 설명해주고 Construction Phase를 시작해주세요." (mid-turn: "branch 하나 만들어서 작업 올려줘")
+**AI Response**: Created branch `construction/u2-ingestion-processing`. Loaded common + functional-design rules + PBT extension (Partial: PBT-02/03/07/08/09 enforced). Explaining U2 scope (US-1.1~1.5 ingestion, US-2.1~2.3 processing/masking; deps on U1 contracts + U3 mocks already available in src-tauri). Starting per-unit CONSTRUCTION at Functional Design stage for U2.
+**Context**: CONSTRUCTION - U2 per-unit loop begins with Functional Design.
+
+---
