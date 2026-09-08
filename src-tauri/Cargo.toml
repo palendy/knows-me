@@ -61,8 +61,8 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # ---------------------------------------------------------------------------
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 # Property-based testing (PBT-09). proptest supports custom strategies,
 # automatic shrinking, and seed-based reproducibility (.proptest-regressions).
 proptest = "1"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 tempfile = "3"
