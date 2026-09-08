@@ -5,8 +5,6 @@
 
 use std::sync::Arc;
 
-use uuid::Uuid;
-
 use crate::core::error::{AppError, Result};
 use crate::core::traits::EncryptedStore;
 use crate::core::types::{Fact, FactId};
@@ -61,9 +59,4 @@ impl FactStore {
     pub async fn delete(&self, id: FactId) -> Result<()> {
         self.store.delete(NS, &key(id)).await
     }
-}
-
-/// Parse a stored key back into a `FactId` (tolerant: skips malformed keys).
-pub fn parse_id(key: &str) -> Option<FactId> {
-    Uuid::parse_str(key).ok().map(FactId)
 }

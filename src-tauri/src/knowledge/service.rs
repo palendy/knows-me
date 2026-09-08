@@ -23,6 +23,7 @@ use crate::core::error::{AppError, Result};
 use crate::core::traits::{EncryptedStore, KnowledgeApi};
 use crate::core::types::{
     DashboardDto, Fact, FactChange, FactFilter, FactId, FactSummary, GraphDto, GraphFilter,
+    QueueItem,
 };
 use crate::knowledge::fact_store::FactStore;
 use crate::knowledge::history::HistoryTracker;
@@ -114,7 +115,11 @@ impl KnowledgeApi for KnowledgeService {
         // P-6: serialize the read-modify-write so concurrent upserts of the same
         // fact cannot lose a history entry (KR-3).
         let _w = self.write_lock.lock().await;
-        if let Some(prev) = self.facts.get(fact.id).await? {
+        let prev = self.facts.get(fact.id).await?;
+        // Persist the fact first, then append history: if the write fails and is
+        // retried, we neither orphan nor duplicate a history entry (P2/KR-3).
+        self.facts.put(&fact).await?;
+        if let Some(prev) = prev {
             if prev.body != fact.body {
                 self.history
                     .append(
@@ -129,7 +134,6 @@ impl KnowledgeApi for KnowledgeService {
                     .await?;
             }
         }
-        self.facts.put(&fact).await?;
         {
             let mut idx = self.index.lock().expect("index mutex poisoned");
             idx.upsert(&fact);
@@ -166,7 +170,18 @@ impl KnowledgeApi for KnowledgeService {
 
     async fn dashboard(&self) -> Result<DashboardDto> {
         self.ensure_index().await?;
-        let pending_queue = self.store.list(QUEUE_NS).await?.len();
+        // Count only non-expired queue items, consistent with InterviewService::list.
+        let now = Utc::now();
+        let mut pending_queue = 0;
+        for k in self.store.list(QUEUE_NS).await? {
+            if let Some(bytes) = self.store.get(QUEUE_NS, &k).await? {
+                if let Ok(item) = serde_json::from_slice::<QueueItem>(&bytes) {
+                    if item.expires_at.is_none_or(|e| e > now) {
+                        pending_queue += 1;
+                    }
+                }
+            }
+        }
         let idx = self.index.lock().expect("index mutex poisoned");
         Ok(DashboardDto {
             collected_count: idx.len(),

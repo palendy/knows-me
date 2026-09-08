@@ -36,7 +36,7 @@
 ## How to run
 ```
 cd src-tauri
-cargo test        # 32 pass
+cargo test        # 36 pass
 cargo clippy --all-targets -- -D warnings   # clean
 cargo fmt --check
 ```
@@ -53,6 +53,18 @@ All 🔴 (4) + 🟡 (6) findings from the code review were fixed in this iterati
 - **`expire()`**: also runs dedup suppression; `list()` filters out expired items so the UI never shows them pre-sweep.
 - **`enqueue` dedup**: decides against the highest-priority duplicate before mutating, so it can't drop both the existing and the incoming item.
 - **P6 property test**: rewritten to actually call `InterviewService::expire()`; `prop_score_priority_in_range` now asserts a real band.
+
+## Second review pass (final verification)
+A second `/code-review xhigh` found 7 more items; 6 fixed, 1 pushed back:
+- **Confirm + Text now applies the correction**: a typed correction on a Confirm card replaces the candidate body instead of being silently dropped.
+- **`enqueue` ignores expired duplicates**: a stale, unswept expired item can no longer block/drop a fresh valid item.
+- **`upsert` persists the fact before appending history**: a failed/retried write can no longer orphan or duplicate a history entry (P2/KR-3).
+- **`dashboard.pending_queue` excludes expired items**: now consistent with `list()` (was overcounting).
+- **Follow-up questions are unmasked**: `derive_follow_ups` restores mask placeholders so questions show real terms, not `[PERSON_1]`.
+- **Removed dead `parse_id`** from `fact_store.rs`.
+- **Pushed back (not a defect)**: the "redundant" pre-`finalize` on follow-ups is required so the *returned* `follow_ups` carry priority/TTL; `enqueue`'s finalize is a no-op on an already-finalized item.
+
+Test count 26 → 32 → **36** (added: correction-applies, enqueue-ignores-expired-dup, dashboard-excludes-expired, follow-up-unmasked). All green (fmt/clippy/test).
 
 ## Known / deferred (tracked, not fixed here)
 - **`SourceKind::Interview` (U1 coordination)**: interview-answer facts still use `SourceKind::Session` placeholder pending a shared-contract addition (Dev A).
