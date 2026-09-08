@@ -224,3 +224,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 NFR Requirements Step 5 완료, Step 6 산출물 생성.
 
 ---
+
+## CONSTRUCTION - U2 NFR Requirements APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "승인"
+**AI Response**: U2 NFR Requirements 승인. aidlc-state 갱신. NFR Design 진행(마스킹 파이프라인·오프라인 저하·재시도·멱등 게이트를 U2 논리 컴포넌트에 반영).
+**Context**: CONSTRUCTION - U2 NFR Requirements 게이트 통과 → NFR Design.
+
+---
