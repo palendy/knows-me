@@ -235,14 +235,23 @@ mod openai_impl {
         /// the assistant text. `content` is the user message content (string or
         /// the OpenAI content-parts array for vision).
         async fn call(&self, system: &str, content: Value, max_tokens: u32) -> Result<String> {
-            let body = json!({
+            // Reasoning-era models (o1/o3/o4, gpt-5) reject the legacy
+            // `max_tokens` field and require `max_completion_tokens`; chat models
+            // (gpt-4o, …) still take `max_tokens`. Pick the key by model family so
+            // pointing OPENAI_MODEL at a newer model doesn't 400.
+            let token_key = if uses_completion_tokens(&self.config.model) {
+                "max_completion_tokens"
+            } else {
+                "max_tokens"
+            };
+            let mut body = json!({
                 "model": self.config.model,
-                "max_tokens": max_tokens,
                 "messages": [
                     { "role": "system", "content": system },
                     { "role": "user", "content": content },
                 ],
             });
+            body[token_key] = json!(max_tokens);
 
             let resp = self
                 .client
@@ -280,6 +289,13 @@ mod openai_impl {
                 .unwrap_or("")
                 .to_string()
         }
+    }
+
+    /// Whether a model belongs to the reasoning families that require
+    /// `max_completion_tokens` instead of the legacy `max_tokens`.
+    fn uses_completion_tokens(model: &str) -> bool {
+        let m = model.to_ascii_lowercase();
+        m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4") || m.starts_with("gpt-5")
     }
 
     #[async_trait]
@@ -349,6 +365,21 @@ mod openai_impl {
                 OpenAiLlm::extract_text(&json!({ "choices": [ { "message": {} } ] })),
                 ""
             );
+        }
+
+        #[test]
+        fn token_key_matches_model_family() {
+            // Chat models keep the legacy field.
+            assert!(!uses_completion_tokens("gpt-4o"));
+            assert!(!uses_completion_tokens("gpt-4o-mini"));
+            assert!(!uses_completion_tokens("gpt-4-turbo"));
+            // Reasoning-era models require max_completion_tokens.
+            assert!(uses_completion_tokens("o1"));
+            assert!(uses_completion_tokens("o1-mini"));
+            assert!(uses_completion_tokens("o3-mini"));
+            assert!(uses_completion_tokens("o4-mini"));
+            assert!(uses_completion_tokens("gpt-5"));
+            assert!(uses_completion_tokens("GPT-5-mini")); // case-insensitive
         }
     }
 }

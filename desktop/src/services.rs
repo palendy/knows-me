@@ -13,7 +13,9 @@
 
 use std::sync::Arc;
 
-use knows_me_core::core::traits::{EncryptedStore, InterviewApi, KnowledgeApi, Masker, PersonaApi};
+use knows_me_core::core::traits::{
+    EncryptedStore, InterviewApi, KeyManager, KnowledgeApi, Masker, PersonaApi,
+};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
 use knows_me_core::persona::{
@@ -96,15 +98,28 @@ pub struct Services(Mutex<Option<ServiceSet>>);
 
 impl Services {
     /// Assemble services after a successful unlock, replacing any prior set.
+    ///
+    /// Tears down any prior set BEFORE building the new one so a re-activate
+    /// can't have two servers contend for the same port (the old one would keep
+    /// 8765 and push the new one to 8766). After building — which reads the store
+    /// and may take a moment — it re-checks that the vault is still unlocked
+    /// before installing, so a `lock` that lands mid-build doesn't leave live
+    /// services behind a locked status.
     pub async fn activate(&self, state: &AppState) {
-        let set = ServiceSet::build(state).await;
+        // 1. Drop any prior session first (frees the local API port).
+        self.deactivate().await;
+
+        // 2. Build the new set (starts the local API on the now-free port).
+        let mut set = ServiceSet::build(state).await;
+
+        // 3. Install only if still unlocked; otherwise discard what we just built
+        //    (and stop the server we may have started).
         let mut guard = self.0.lock().await;
-        if let Some(mut old) = guard.take() {
-            if let Some(handle) = old.local_api.as_mut() {
-                handle.stop().await;
-            }
+        if state.key_manager().is_unlocked() {
+            *guard = Some(set);
+        } else if let Some(handle) = set.local_api.as_mut() {
+            handle.stop().await;
         }
-        *guard = Some(set);
     }
 
     /// Tear down services on lock, gracefully stopping the local API.
