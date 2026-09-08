@@ -216,3 +216,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 Functional Design 완료 게이트 통과 → NFR Requirements.
 
 ---
+
+## CONSTRUCTION - U2 NFR Requirements answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "작성완료" (nfr-requirements-plan.md Q1~Q8 모두 A)
+**AI Response**: 8개 질문 모두 추천안 A. 애매 응답 없음. NFR 산출물 2종(nfr-requirements.md, tech-stack-decisions.md) 생성. PBT-09: proptest 선정·문서화.
+**Context**: CONSTRUCTION - U2 NFR Requirements Step 5 완료, Step 6 산출물 생성.
+
+---
