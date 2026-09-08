@@ -160,3 +160,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: INCEPTION - Units Generation complete. Committing to main, then APPROVAL GATE before CONSTRUCTION.
 
 ---
+
+## CONSTRUCTION - U1 Milestone 0 (Shared Contracts) — early per user directive
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "일단 오늘 모인김에 공통 작업은 미리 끝내야해서, U1의 마일스톤 0은 지금 너가 시작하자. 그리고 이어서 unit-of-work-dependency.md 이것도 바로 또렷하게 다듬는거까지 하자. 그리고 커밋 푸시까지하자." (preceded by a clarifying Q&A confirming the parallel model)
+**AI Response**: Toolchain check: no cargo/rustc/node in this env → wrote code carefully, build NOT locally verified (devs run `cargo test`). Created U1 Milestone 0 shared contract layer: src-tauri/Cargo.toml, src/lib.rs, src/main.rs, src/core/{mod,error,types,traits}.rs, src/mocks.rs (in-memory mocks + 5 smoke tests incl. history-preserving upsert and confirm→fact), plus frontend mirror src/shared/contracts.ts, .gitignore, src-tauri/README.md. Refined unit-of-work-dependency.md with a crisp "한눈에 보는 병렬 모델" summary (U1 contracts first → all 4 parallel → integrate U1→U3→U2→U4). Updated aidlc-state (CONSTRUCTION started; deviation noted: U1 contract slice produced ahead of formal per-unit Functional Design/NFR gates at user request). Committing + pushing to main.
+**Context**: CONSTRUCTION - U1 Milestone 0 delivered. Per-unit design stages still pending per execution plan.
+
+---

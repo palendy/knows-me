@@ -4,7 +4,14 @@
 - **Project Name**: knows-me
 - **Project Type**: Greenfield
 - **Start Date**: 2026-09-08T06:46:46Z
-- **Current Stage**: INCEPTION - Units Generation complete — awaiting approval to proceed to CONSTRUCTION (per-unit)
+- **Current Stage**: CONSTRUCTION - U1 Milestone 0 (shared contracts + mocks) delivered early per user directive; per-unit design stages pending
+
+## Construction Notes
+- **U1 Milestone 0 done early** (user directive "오늘 모인 김에 공통 작업 먼저"): shared contract layer written as code so 4 devs can start in parallel.
+  - `src-tauri/` Rust crate `knows_me_core`: core/{error,types,traits}.rs + mocks.rs + smoke tests
+  - `src/shared/contracts.ts` frontend type mirror
+  - Build NOT verified in this environment (no Rust/Node toolchain) — run `cargo test` locally to confirm.
+- Deviation note: this is a slice of U1 Code Generation produced ahead of the formal per-unit Functional Design/NFR gates, at user request. Remaining U1 impl and per-unit stages (Functional Design → NFR Requirements → NFR Design → Code Generation) still to run per execution plan.
 
 ## Units (4, modular monolith, 1 owner each, contract-first parallel)
 - U1 Core Platform & Security (Dev A) — US-7.x + shared contracts/crypto/LLM gateway
@@ -58,11 +65,12 @@
 - [x] Units Generation — EXECUTE (unit-of-work + dependency + story-map generated - awaiting approval)
 
 ### 🟢 CONSTRUCTION PHASE
+- [~] U1 Milestone 0 (shared contracts + mocks) — DONE (early, per user directive)
 - [ ] Functional Design — EXECUTE (per-unit)
 - [ ] NFR Requirements — EXECUTE (per-unit)
 - [ ] NFR Design — EXECUTE (per-unit)
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [ ] Code Generation — EXECUTE (per-unit)
+- [ ] Code Generation — EXECUTE (per-unit; U1 contracts slice done)
 - [ ] Build and Test — EXECUTE
 
 ### 🟡 OPERATIONS PHASE

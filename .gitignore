@@ -1,0 +1,18 @@
+# Rust / Cargo
+/src-tauri/target/
+**/*.rs.bk
+Cargo.lock.orig
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Local env / secrets (never commit)
+.env
+.env.*
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
