@@ -255,3 +255,18 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 Code Generation Part 1, awaiting plan approval before generation.
 
 ---
+
+## CONSTRUCTION - U2 Code Generation Plan APPROVED
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "1번 계획대로 하고, Notion, gmail... 등등 추가 통합이 필요한 것은 TODO 로 명확하게 남겨두어서 다음 개발할 때 꼭 참고할 수 있게"
+**AI Response**: 계획(옵션1) 승인. Notion/Gmail/PDF/DOCX/비전은 코드에 명확한 TODO 마커 + 별도 통합 가이드 문서(INTEGRATION-TODO)로 정리. Part 2 생성 시작.
+**Context**: CONSTRUCTION - U2 Code Generation Part 2 (Generation) 시작.
+
+---
+
+## CONSTRUCTION - U2 Code Generation (Part 2) DONE
+**Timestamp**: 2026-09-08T00:00:00Z
+**AI Response**: U2 코드 생성 완료. Ingestion(cursor_store/registry/service/connectors: session·file 완전, notion·gmail skeleton) + Processing(transfer_log/llm_gateway/router/pending/service) + tests/u2_pbt.rs. Cargo.toml에 regex/tokio(time)/proptest 추가. macOS 네이티브 cc로 검증: cargo build OK, cargo test 35 pass(32 unit + 3 PBT), cargo clippy --all-targets -D warnings clean. INTEGRATION-TODO.md + code-summary.md 작성(Notion/Gmail/PDF/DOCX/watcher 통합 항목 명시). 계획 체크박스 전부 [x]. 승인 대기.
+**Context**: CONSTRUCTION - U2 Code Generation complete, awaiting approval before next unit / Build & Test.
+
+---

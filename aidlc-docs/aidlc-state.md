@@ -79,7 +79,7 @@
 - [~] NFR Requirements — EXECUTE (per-unit) — **U2 DONE (approved)**; others pending
 - [~] NFR Design — EXECUTE (per-unit) — **U2 DONE (approved)**; others pending
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 Part 1 (Planning) IN PROGRESS**; U3/U4 pending
+- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 DONE (build/test/clippy green: 35 tests pass; awaiting approval)**; U3/U4 pending
 - [ ] Build and Test — EXECUTE
 
 ### 🟡 OPERATIONS PHASE

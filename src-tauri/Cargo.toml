@@ -43,13 +43,26 @@ rand = "0.8"
 zeroize = "1"
 base64 = "0.22"
 
-# Masking gateway.
+# Masking gateway (U1) + U2 deterministic masking-rule matching (offline, no network).
 regex = "1"
 
 # Real cloud LLM client (optional; feature `llm-http`).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 
+# --- U2 INTEGRATION-TODO: external connectors / parsers ---------------------
+# These are intentionally NOT enabled yet. The U2 connectors (Notion/Gmail) and
+# heavy file parsers (PDF/DOCX) ship as contract-satisfying skeletons so the
+# crate builds & tests offline. Uncomment + wire up during integration.
+#   oauth2       = "4"          # OAuth2 token flow (credentials via U1 CredentialStore)
+#   notify       = "6"          # filesystem watch for File connector (US-1.5)
+#   pdf-extract  = "0.7"        # PDF body parsing (US-1.5)
+#   docx-rs      = "0.4"        # DOCX body parsing (US-1.5)
+# (Notion/Gmail HTTP via reqwest — already a dependency above under `llm-http`.)
+# ---------------------------------------------------------------------------
+
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+# Property-based testing (PBT-09). proptest supports custom strategies,
+# automatic shrinking, and seed-based reproducibility (.proptest-regressions).
 proptest = "1"
 tempfile = "3"
