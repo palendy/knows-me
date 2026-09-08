@@ -46,16 +46,6 @@ Claude Code는 프로젝트마다 메모리를 따로 둔다. 폴더를 옮기�
 - Agent Factory 아바타 카드의 개인 실행 프로필을 이 DB에서 만든다
 - 사람마다 쌓인 맥락 DB가 모이면 팀 맥락이 된다
 
-## 이 리포에 있는 것
-
-| 경로 | 내용 |
-|---|---|
-| `docs/requirements.md` | 요구사항 (grill-me 인터뷰로 확정) |
-| `docs/me-ontology-review.md` | 사전 검토 — AI native 도입에서 메모리의 위치, 업계 조사 |
-| `docs/aidlc-workflows.md` · `docs/aidlc-explained.md` | AWS AI-DLC 분석 |
-| `docs/avatar-x-aidlc.md` | 아바타 카드 × AI-DLC 검토 |
-| `docs/bedrock-setup.md` · `scripts/` | Claude Code ↔ Bedrock 연결 (해커톤 환경) |
-
 맥락 DB 자체(`~/.claude/me/`)는 이 리포에 없다. 여기에는 도구·문서·시연만 둔다.
 
 ## 상태
