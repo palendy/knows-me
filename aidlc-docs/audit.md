@@ -232,3 +232,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 NFR Requirements 게이트 통과 → NFR Design.
 
 ---
+
+## CONSTRUCTION - U2 NFR Design answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "모두 추천안" (nfr-design-plan.md Q1~Q4 모두 A)
+**AI Response**: Q1~Q4 추천안. 산출물 2종(nfr-design-patterns.md, logical-components.md) 생성.
+**Context**: CONSTRUCTION - U2 NFR Design Step 6 산출물 생성.
+
+---

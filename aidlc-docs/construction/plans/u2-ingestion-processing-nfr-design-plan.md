@@ -5,8 +5,8 @@
 > 이 단계 목적: 그 NFR을 **논리 컴포넌트/패턴**으로 U2 설계에 못박기.
 
 ## 산출물 체크리스트 (Step 6에서 생성)
-- [ ] `nfr-design/nfr-design-patterns.md` — 마스킹 게이트웨이, 재시도(백오프)+오프라인 pending, 멱등 게이트, 소스오류 격리, append-only 투명성 로그, 플러그형 커넥터 레지스트리
-- [ ] `nfr-design/logical-components.md` — U2 논리 컴포넌트와 책임·경계·계약 매핑
+- [x] `nfr-design/nfr-design-patterns.md` — P1~P9 패턴(마스킹 게이트웨이, 재시도+pending, 멱등 게이트, 오류 격리, 실행잠금, 투명성 로그, 커넥터 레지스트리, 결정적 마스킹)
+- [x] `nfr-design/logical-components.md` — U2 논리 컴포넌트 11종 + 계약 매핑 + 관계도
 
 ## 카테고리 적용성 (증거 기반)
 - **Resilience**: 적용 — 재시도/타임아웃, pending 큐, 소스 격리 (U2-NFR-REL/OFF)
