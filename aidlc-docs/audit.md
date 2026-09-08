@@ -104,3 +104,59 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: INCEPTION - Workflow Planning. APPROVAL GATE: awaiting approval before Application Design.
 
 ---
+
+## Workflow Planning - Approved + Git Commit
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "지금까지한거 일단 깃 메인에 커밋 푸시부터하고, 승인"
+**AI Response**: Committed and pushed all inception artifacts to main (commit 8196951, 11 files). Workflow Plan approved. Proceeding to Application Design. Loaded application-design.md. Creating application-design-plan.md with design questions.
+**Context**: INCEPTION - Transition to Application Design.
+
+---
+
+## Application Design - Plan + Questions Created
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: (n/a - awaiting answers)
+**AI Response**: Created application-design-plan.md with preliminary component map (Ingestion/Processing/Knowledge/Interview/Interface/PersonaService+LocalApiServer/Security) and 5 design questions (frontend framework, backend composition, connector structure, local API server form, component communication style) each with architect recommendation. GATE: awaiting answers.
+**Context**: INCEPTION - Application Design. GATE: awaiting design plan answers.
+
+---
+
+## Application Design - Answers + Artifacts Generated (Approval Gate)
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "해왔어" + answers: Q1=A (React+TS), Q2=A (Rust core single), Q3=A (common Connector trait), Q4=A (Rust embedded HTTP server), Q5=A (layered + service orchestration). All = recommended, no ambiguity.
+**AI Response**: Generated application-design artifacts: components.md, component-methods.md, services.md, component-dependency.md (dependency matrix + validated Mermaid + text data flow), application-design.md (consolidated). Recorded AD1-AD5. Updated aidlc-state. Presenting approval gate. Next = Units Generation.
+**Context**: INCEPTION - Application Design. APPROVAL GATE: awaiting approval before Units Generation.
+
+---
+
+## Application Design - Approved
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "승인"
+**AI Response**: Application Design approved. Proceeding to Units Generation (Part 1: Planning). Loaded units-generation.md. Creating unit-of-work-plan.md with decomposition questions.
+**Context**: INCEPTION - Transition to Units Generation.
+
+---
+
+## Units Generation - Part 1 Plan + Questions Created
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: (n/a - awaiting answers)
+**AI Response**: Created unit-of-work-plan.md. Preliminary decomposition = modular monolith, 7 domain units (U1 Security/U2 Knowledge/U3 Ingestion/U4 Processing/U5 Interview/U6 Interface/U7 Persona) with dependency order U1→U2→{U3,U4}→U5→{U6,U7}. 4 questions (unit granularity, build order, directory structure, frontend placement) with recommendations. GATE: awaiting answers.
+**Context**: INCEPTION - Units Generation Part 1. GATE: awaiting decomposition answers.
+
+---
+
+## Units Generation - Part 1 Answers + Team/Parallel Directive + Judging Criteria
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "답변 작성해왔고, 우리가 4명에서 작업할꺼라 유닛을 쪼갤때 4명에서 병렬 개발할수 있도록 플랜을 조정해주면 감사할 것 같아." (answers: Q1=B coarse 3-4, Q2=A dependency order, Q3=A Tauri standard single crate, Q4=A single interface unit) — followed by full judging criteria (final score = AI 40% + human vote 60%; 6 AI items: process traceability, problem clarity, differentiation, working-code+screenshots in screenshots//result/, usability/onboarding, maintainability incl. secret management).
+**AI Response**: Adjusted decomposition to exactly 4 units (1 owner each) for parallel dev: U1 Core Platform & Security (shared types+traits+crypto+LLM/Masker gateway), U2 Ingestion & Processing, U3 Knowledge & Interview, U4 Interface & Persona. Parallelization = contract-first (U1 Milestone 0 publishes types/traits/mocks; U2/U3/U4 develop in parallel against mocks; integration order U1→U3→U2→U4). Noted Q4 adjustment (Interface merged with Persona). Recorded finalized decomposition in unit-of-work-plan.md. Saved judging criteria to project memory; will fold items 4/5/6 into Code Generation & Build/Test. Presenting Part 1 approval gate.
+**Context**: INCEPTION - Units Generation Part 1. GATE: awaiting plan approval before generation.
+
+---
+
+## Units Generation - Part 1 Approved + Part 2 Generated
+**Timestamp**: 2026-09-08T06:46:46Z
+**User Input**: "승인" then (mid-turn) "작성후에 일단 메인에 커밋푸시부터해줘"
+**AI Response**: Plan approved. Generated unit-of-work.md, unit-of-work-dependency.md (matrix + parallel/integration order + validated Mermaid), unit-of-work-story-map.md (all stories mapped). During verification found story-count error: stories.md header said 21 but actual = 22 (E1:5,E2:3,E3:3,E4:3,E5:3,E6:2,E7:3); corrected stories.md and story-map. Marked plan checkboxes [x], updated aidlc-state. Committing and pushing to main per user request before presenting completion gate.
+**Context**: INCEPTION - Units Generation complete. Committing to main, then APPROVAL GATE before CONSTRUCTION.
+
+---
