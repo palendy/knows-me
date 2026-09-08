@@ -200,3 +200,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U2 per-unit loop begins with Functional Design.
 
 ---
+
+## CONSTRUCTION - U2 Functional Design answers received
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "완료" (functional-design-plan.md의 Q1~Q8 모두 A로 응답)
+**AI Response**: 8개 질문 모두 추천안 A 선택. 애매/모호 응답 없음 → 후속 질문 불필요. Functional Design 산출물 3종(domain-entities, business-logic-model, business-rules) 생성 진행. PBT-01 속성(멱등성·마스킹 불변식·마스킹 왕복) 식별 포함.
+**Context**: CONSTRUCTION - U2 Functional Design Step 5 완료(no ambiguity), Step 6 산출물 생성.
+
+---

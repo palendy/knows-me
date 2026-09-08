@@ -6,10 +6,11 @@
 > 활성 확장: Property-Based Testing (Partial — PBT-02/03/07/08/09 blocking)
 
 ## 설계 산출물 체크리스트 (Step 6에서 생성)
-- [ ] `functional-design/domain-entities.md` — U2 내부 도메인 엔티티(수집 커서, 전송로그, 가공 결정)와 공유 타입과의 관계
-- [ ] `functional-design/business-logic-model.md` — 수집 파이프라인(증분·멱등) + 가공 파이프라인(마스킹→요약·분류→라우팅) 흐름
-- [ ] `functional-design/business-rules.md` — 멱등 규칙, "내 것" 필터, 잡음/불확실 판정, 마스킹 정책, 투명성 로깅, 오프라인 저하
-- [ ] PBT-01: 속성 식별(멱등성·마스킹 불변식·마스킹 왕복) 문서화 (본 단계에서 식별, 테스트는 Code Generation)
+- [x] `functional-design/domain-entities.md` — U2 내부 도메인 엔티티(수집 커서, 전송로그, 가공 결정)와 공유 타입과의 관계
+- [x] `functional-design/business-logic-model.md` — 수집 파이프라인(증분·멱등) + 가공 파이프라인(마스킹→요약·분류→라우팅) 흐름
+- [x] `functional-design/business-rules.md` — 멱등 규칙, "내 것" 필터, 잡음/불확실 판정, 마스킹 정책, 투명성 로깅, 오프라인 저하
+- [x] PBT-01: 속성 식별(멱등성·마스킹 불변식·마스킹 왕복) 문서화 (business-logic-model.md §E — 테스트는 Code Generation)
+- [N/A] `functional-design/frontend-components.md` — U2는 백엔드 서비스 로직 전담. 수동 트리거 UI 등 프론트 화면은 U4/shared 영역이며 U2 command만 노출.
 
 ---
 
@@ -23,7 +24,7 @@
 - B. `(SourceKind, external_id, content_hash)` — 내용이 바뀌면 재수집(변경분 반영)
 - C. 소스마다 다름 (세션=파일경로+offset, Notion/Gmail=API id+last_edited)
 
-[Answer]:
+[Answer]: A
 
 ### Q2. 세션 수집 대상 경로 (US-1.1, FR-1.1)
 Claude Code / Codex 세션 트랜스크립트를 어디서 읽나요?
@@ -31,14 +32,14 @@ Claude Code / Codex 세션 트랜스크립트를 어디서 읽나요?
 - B. 사용자가 반드시 경로를 지정해야 함(자동 탐지 없음)
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q3. "내 것" 필터 판정 (US-1.3 Notion / US-1.4 Gmail)
 - A. Gmail=내 주소 기준 보낸/받은 메일, Notion=내가 소유/편집자인 페이지 (커넥터별 규칙 내장) ★
 - B. 단순화: 인증된 계정으로 접근 가능한 전부(별도 소유자 필터 없음)
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q4. 잡음/불확실 판정 주체 (US-2.1 AC2/AC3)
 "저장 vs 필터 vs Queue 이관"을 무엇이 결정하나요?
@@ -46,7 +47,7 @@ Claude Code / Codex 세션 트랜스크립트를 어디서 읽나요?
 - B. U2 자체 휴리스틱(키워드/빈도)만으로 결정, LLM은 요약만
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q5. 마스킹 매핑(UnmaskMap)의 수명/저장 (US-2.2 AC2)
 `UnmaskMap`은 원문 복원용 매핑입니다(기기 밖 유출 금지).
@@ -54,14 +55,14 @@ Claude Code / Codex 세션 트랜스크립트를 어디서 읽나요?
 - B. 사실(Fact)과 함께 `EncryptedStore`에 암호화 저장하여 나중에도 복원 가능
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q6. 전송 투명성 로그(TransferLog) 저장 위치 (US-2.3)
 - A. `EncryptedStore`에 append-only로 저장(마스킹 후 요약/대상/시각) ★
 - B. 별도 파일 로그
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q7. 파일 수집 지원 형식 (US-1.5)
 MVP에서 파싱할 형식 범위는?
@@ -69,7 +70,7 @@ MVP에서 파싱할 형식 범위는?
 - B. 텍스트+이미지만 (오피스는 향후)
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
 
 ### Q8. 오프라인 저하 동작 (NFR-3)
 LLM 미연결 시 가공(요약/분류/비전)은?
@@ -77,4 +78,4 @@ LLM 미연결 시 가공(요약/분류/비전)은?
 - B. 가공 시도 후 실패 기록, 다음 배치에서 재시도
 - C. 기타(서술):
 
-[Answer]:
+[Answer]: A
