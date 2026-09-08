@@ -40,10 +40,19 @@ fn get_status(state: tauri::State<'_, AppState>) -> AppStatus {
 }
 
 #[tauri::command]
-async fn setup_password(state: tauri::State<'_, AppState>, password: String) -> CmdResult<()> {
+async fn setup_password(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    password: String,
+) -> CmdResult<()> {
     commands::setup_password(state.inner(), &password)
         .await
-        .map_err(err)
+        .map_err(err)?;
+    // First-run leaves the vault unlocked (KeyManager::setup), so the app routes
+    // straight into the unlocked shell — assemble the services now, exactly as
+    // unlock does, or every tab would greet a new user with "locked".
+    services.activate(state.inner()).await;
+    Ok(())
 }
 
 #[tauri::command]
