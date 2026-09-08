@@ -411,3 +411,15 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 
 ---
 
+## CONSTRUCTION - Build and Test (전 유닛 통합 검증)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "내께 마지막인데 그럼 전부 합쳐지는건데 전체 문제 없는지 검증해봐"
+**AI Response**: U4가 마지막 유닛이므로 병합 후 전체 상태를 검증. 브랜치가 `origin/main`의 fast-forward 후손이라 현재 브랜치 = 병합 후 상태임을 먼저 확인.
+**자동 검증(전부 로컬 실행)**: `cargo fmt --check` clean · `cargo clippy --all-targets -D warnings` clean · `cargo test --lib` 148 pass · `cargo test --test u2_pbt` 3 pass · `cargo check`(desktop/Tauri2) 통과 · `npm test` 41 pass · `tsc --noEmit` clean · `npm run build` 성공 · 시크릿 스캔 무검출 · `0.0.0.0` 바인딩 무검출.
+**신규 통합 테스트**: `src-tauri/tests/integration_all_units.rs` 9건 작성·통과. mock이 아닌 실물끼리 결합 — U1 PasswordKeyManager(Argon2)+FileEncryptedStore(AES-256-GCM, 실제 디스크)+RegexMasker → U3 KnowledgeService+InterviewService → U4 QueryService+PersonaService+LocalApiServer. 네트워크만 테스트 더블. 검증 항목: 조회 3종 실동작, Queue 확인→확정→페르소나 답변 전 구간, 실제 마스커로 이메일·전화번호 미유출 및 로컬 복원, LLM 미주입 상태에서 조회 동작(NFR-3), 확정 0개일 때 클라우드 미호출(BR-P4), 로컬 API 초안 생성 + 비-loopback Host 403, 잠금 시 조회 거부, **디스크 전체를 훑어 사실 평문 부재 확인**, 그리고 U2 ProcessingService까지 포함한 4유닛 전 구간(원본→가공→저장/Queue→페르소나 + 전송 로그에도 원문 식별자 부재).
+**❌ 발견 — 앱 배선 누락**: 라이브러리는 전부 정상이나 실행되는 앱은 U1만 노출. 근거는 추측이 아니라 빌드 산출물 직접 조회 — `dist/assets/*.js`에 온보딩 문자열은 있으나 대시보드·미니홈피·지식 그래프·페르소나 챗 문자열이 전무(Vite가 미import 모듈을 제거하므로 App.tsx가 렌더하지 않는다는 뜻). 세부: G1 App.tsx 라우팅 없음, G2 desktop/main.rs가 U1 command 7개만 등록, G3 AppState가 U1 컴포넌트만 보유, G4 `src/features/queue/` 부재(U3 Queue UI 미구현), G5 LocalApiServer 기동 지점 없음(US-6.2 AC1 전제 미충족), G6 TransferLog가 llm::/processing:: 2종 공존. G1·G2·G3·G5는 U1 소유 파일이라 U4가 단독 수정하면 유닛 경계 위반 → **수정하지 않고 보고**.
+**산출물**: `aidlc-docs/construction/build-and-test/{integration-verification-report,build-instructions,test-instructions}.md`, aidlc-state.md 갱신.
+**Context**: CONSTRUCTION - Build and Test 부분 완료(검증 ✅ / 배선 ❌). 배선은 U1·U3 오너 작업 또는 별도 합의 필요.
+
+---
+
