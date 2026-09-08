@@ -20,6 +20,8 @@
 //! sibling `desktop/` crate; the React frontend lives in `../src/`.
 
 pub mod core;
+pub mod interview;
+pub mod knowledge;
 pub mod llm;
 pub mod mocks;
 pub mod security;

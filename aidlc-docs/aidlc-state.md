@@ -4,7 +4,7 @@
 - **Project Name**: knows-me
 - **Project Type**: Greenfield
 - **Start Date**: 2026-09-08T06:46:46Z
-- **Current Stage**: CONSTRUCTION - U3 (Knowledge & Interview) Code Generation — Part 1 (Planning): plan created, awaiting plan approval (GATE) before generation. Functional Design + NFR Requirements + NFR Design APPROVED. Environment ready on macOS (Rust 1.96.1 + node 26.7; proptest added; crate builds, 5/5 tests, clippy clean).
+- **Current Stage**: CONSTRUCTION - U3 (Knowledge & Interview) Code Generation COMPLETE + VERIFIED (build/fmt/clippy clean, 26 tests pass). GATE: awaiting approval — U3 unit complete after this. All U3 per-unit stages (FD, NFR Req, NFR Design, Code Gen) done. Environment ready on macOS (Rust 1.96.1 + node 26.7).
 
 ## Construction Notes
 - **U1 full implementation done** (branch `feat/u1-core-platform-security`, user directive "내가 U1을 맡았어 … 자율주행"): real security + LLM gateway + platform + onboarding UI on top of the Milestone 0 contracts.
@@ -79,7 +79,7 @@
 - [~] NFR Requirements — EXECUTE (per-unit) — **U2 DONE (approved), U3 DONE** (2 artifacts); U1/U4 pending
 - [~] NFR Design — EXECUTE (per-unit) — **U2 DONE (approved), U3 DONE** (2 artifacts); U1/U4 pending
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
-- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 DONE (build/test/clippy green: 35 tests pass; awaiting approval), U3 Part 1 (plan) awaiting approval**; U4 pending
+- [~] Code Generation — EXECUTE (per-unit; U1 full impl done) — **U2 DONE (build/test/clippy green: 35 tests pass; awaiting approval), U3 DONE + verified (knowledge/ + interview/ modules, 26 tests)**; U4 pending
 - [ ] Build and Test — EXECUTE
 
 ### 🟡 OPERATIONS PHASE

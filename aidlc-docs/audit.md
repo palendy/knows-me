@@ -326,3 +326,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U3 Code Generation Part 1 (Planning). GATE: awaiting plan approval.
 
 ---
+
+## CONSTRUCTION - U3 checkpoint commit + Code Generation Part 2 (Generation) COMPLETE
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "일단 여기서 커밋 한번하고 계속 진행하자"
+**AI Response**: Treated as plan approval + commit request. Committed checkpoint to main (6d763f8: U3 design artifacts + code-gen plan + proptest) — noted main-branch per project convention. Then executed Code Generation Part 2 per plan. Created Rust modules: src-tauri/src/knowledge/{mod,fact_store,history,search_index,service}.rs and src-tauri/src/interview/{mod,queue_manager,answer_intake,service}.rs; registered `pub mod knowledge; pub mod interview;` in lib.rs. Implemented KnowledgeService (KnowledgeApi) + InterviewService (InterviewApi) exactly per FD/NFR designs (encrypted JSON storage, in-memory inverted index + CJK-bigram tokenizer, lazy history, confirmed-only + history-on-change, dashboard queue-count via store, dedup+priority+TTL, answer dispatch, mask-first bounded follow-ups with graceful offline degradation). Wrote 21 tests (example + proptest P1/P4/P5/P6/P7 + generators). Fixed 2 clippy lints (unnecessary_sort_by → sort_by_key+Reverse). VERIFIED: cargo build ok, cargo fmt --check clean, cargo clippy --all-targets -D warnings clean, cargo test 26/26 pass. Wrote code summary doc. Marked all 9 plan steps [x] and all US-3.x/US-4.x stories done. Flagged coordination item for U1 (SourceKind::Interview needed; Session used as documented placeholder). Presenting Code Generation completion GATE.
+**Context**: CONSTRUCTION - U3 Code Generation complete + verified. GATE: awaiting approval (U3 unit complete after this).
+
+---
