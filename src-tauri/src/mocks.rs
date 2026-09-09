@@ -130,6 +130,7 @@ impl KnowledgeApi for InMemoryKnowledge {
             .map(|f| GraphNode {
                 id: f.id,
                 label: f.title.clone(),
+                kind: GraphNodeKind::Fact,
             })
             .collect();
         let mut edges = Vec::new();

@@ -7,7 +7,7 @@
 // mixed in, since removing those is what normalization is for).
 
 import fc from "fast-check";
-import type { Fact, GraphDto, GraphEdge, GraphNode, Scope } from "../../shared/contracts";
+import type { Fact, GraphDto, GraphEdge, GraphNode, GraphNodeKind, Scope } from "../../shared/contracts";
 
 export const arbUuid = (): fc.Arbitrary<string> =>
   fc
@@ -69,7 +69,14 @@ export const arbFacts = (): fc.Arbitrary<Fact[]> =>
  */
 export const arbGraph = (): fc.Arbitrary<GraphDto> =>
   fc
-    .array(fc.record({ id: arbUuid(), label: arbText() }), { maxLength: 12 })
+    .array(
+      fc.record({
+        id: arbUuid(),
+        label: arbText(),
+        kind: fc.constantFrom<GraphNodeKind>("fact", "topic"),
+      }),
+      { maxLength: 12 },
+    )
     .chain((rawNodes) => {
       // Ids may repeat by construction; dedupe so "nodes" is a real node set.
       const nodes: GraphNode[] = [];

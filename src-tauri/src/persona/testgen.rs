@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::core::types::{
     DraftKind, DraftRequest, Fact, FactId, FactMetadata, GraphDto, GraphEdge, GraphNode,
-    Provenance, Scope, SourceKind,
+    GraphNodeKind, Provenance, Scope, SourceKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -148,7 +148,11 @@ pub fn arb_graph() -> impl Strategy<Value = GraphDto> {
         let mut seen = std::collections::HashSet::new();
         for (id, label) in raw {
             if seen.insert(id.0) {
-                nodes.push(GraphNode { id, label });
+                nodes.push(GraphNode {
+                    id,
+                    label,
+                    kind: GraphNodeKind::Fact,
+                });
             }
         }
         let ids: Vec<FactId> = nodes.iter().map(|n| n.id).collect();

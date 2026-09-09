@@ -85,7 +85,7 @@ export class MockApi implements KnowsMeApi {
     );
     const present = new Set(visible.map((f) => f.id));
     return {
-      nodes: visible.map((f) => ({ id: f.id, label: f.title })),
+      nodes: visible.map((f) => ({ id: f.id, label: f.title, kind: "fact" as const })),
       edges: visible.flatMap((f) =>
         f.links
           .filter((l) => present.has(l))

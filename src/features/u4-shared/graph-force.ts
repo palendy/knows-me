@@ -6,13 +6,15 @@
 // library wants, reusing `normalizeGraph` for the cleanup/cap invariants so
 // self-loops, duplicates, and dangling edges never reach the simulation.
 
-import type { FactId, GraphDto } from "../../shared/contracts";
+import type { FactId, GraphDto, GraphNodeKind } from "../../shared/contracts";
 import { normalizeGraph, type NormalizedGraph } from "./graph-layout";
 
 /** A node handed to the force simulation. `x`/`y`/`vx`/`vy` are added by d3. */
 export interface ForceNode {
   id: FactId;
   label: string;
+  /** Whether this is a fact or a topic hub, used to style it. */
+  kind: GraphNodeKind;
   /** Connection count, used to size the node. */
   degree: number;
 }
@@ -53,6 +55,7 @@ export function toForceGraph(dto: GraphDto): ForceGraphData {
     nodes: normalized.nodes.map((n) => ({
       id: n.id,
       label: n.label,
+      kind: n.kind,
       degree: deg.get(n.id) ?? 0,
     })),
     links: normalized.edges.map((e) => ({ source: e.from, target: e.to })),

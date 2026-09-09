@@ -412,6 +412,81 @@ mod tests {
         assert_eq!(g.edges[0].to, b);
     }
 
+    #[tokio::test]
+    async fn facts_sharing_a_topic_link_through_a_hub() {
+        use crate::core::types::GraphNodeKind;
+        let s = svc();
+        let a = FactId::new();
+        let b = FactId::new();
+        let mut fa = fact(a, "A", "", Scope::Personal);
+        fa.metadata.topics = vec!["deploy".into()];
+        let mut fb = fact(b, "B", "", Scope::Personal);
+        fb.metadata.topics = vec!["deploy".into()];
+        s.upsert(fa).await.unwrap();
+        s.upsert(fb).await.unwrap();
+
+        let g = s.graph(GraphFilter::default()).await.unwrap();
+
+        let facts = g.nodes.iter().filter(|n| n.kind == GraphNodeKind::Fact);
+        let hubs: Vec<_> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == GraphNodeKind::Topic)
+            .collect();
+        assert_eq!(facts.count(), 2);
+        assert_eq!(hubs.len(), 1, "the shared topic becomes one hub");
+        assert_eq!(hubs[0].label, "deploy");
+
+        // Both facts wire to the hub; there is no fact-to-fact edge.
+        let hub = hubs[0].id;
+        assert_eq!(g.edges.len(), 2);
+        assert!(g
+            .edges
+            .iter()
+            .all(|e| e.to == hub && (e.from == a || e.from == b)));
+    }
+
+    #[tokio::test]
+    async fn topic_spelling_variants_share_one_hub() {
+        use crate::core::types::GraphNodeKind;
+        let s = svc();
+        for (title, topic) in [("A", "ai-dlc"), ("B", "ai-dlc"), ("C", "aidlc")] {
+            let mut f = fact(FactId::new(), title, "", Scope::Personal);
+            f.metadata.topics = vec![topic.into()];
+            s.upsert(f).await.unwrap();
+        }
+        let g = s.graph(GraphFilter::default()).await.unwrap();
+
+        let hubs: Vec<_> = g
+            .nodes
+            .iter()
+            .filter(|n| n.kind == GraphNodeKind::Topic)
+            .collect();
+        assert_eq!(hubs.len(), 1, "ai-dlc and aidlc are the same subject");
+        assert_eq!(hubs[0].label, "ai-dlc", "the common spelling names the hub");
+        assert_eq!(
+            g.edges.iter().filter(|e| e.to == hubs[0].id).count(),
+            3,
+            "all three facts connect to the single hub"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_lone_topic_makes_no_hub() {
+        use crate::core::types::GraphNodeKind;
+        let s = svc();
+        let mut f = fact(FactId::new(), "A", "", Scope::Personal);
+        f.metadata.topics = vec!["solo".into()];
+        s.upsert(f).await.unwrap();
+
+        let g = s.graph(GraphFilter::default()).await.unwrap();
+        assert!(
+            g.nodes.iter().all(|n| n.kind == GraphNodeKind::Fact),
+            "a topic with a single fact links nothing, so no hub is made"
+        );
+        assert!(g.edges.is_empty());
+    }
+
     // ---- property-based tests (proptest) ------------------------------------
 
     fn arb_scope() -> impl Strategy<Value = Scope> {
