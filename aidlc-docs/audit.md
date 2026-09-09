@@ -450,3 +450,11 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - Build and Test 문서를 실측 상태로 정리. 코드 변경 없음. 남은 것: G6 TransferLog 일원화 결정, stale 브랜치 정리, Build and Test 최종 승인.
 
 ---
+## Construction — U4 · 리베이스 통합 (claude-cli 백엔드 + 챗 UX + 다중 사실 추출)
+**Timestamp**: 2026-09-09T13:10:00Z
+**User Input**: "한번 /compact 하고 진행하자"
+**AI Response**: "로컬 3커밋(18feac8 claude-cli 기본 백엔드 / d50e13d 챗 Enter·마크다운·대화 유지 / 519b6d0 세션당 다중 사실+Concept)을 origin/main(10커밋 선행) 위로 리베이스. 충돌 2건 해소 — desktop/Cargo.toml(원격 dotenvy·serde_json 주석 채택), desktop/src/main.rs(원격 소스 연결 커맨드 3종 ∪ 내 persona_history_load/save, 양쪽 모두 generate_handler에 등록됨). 원격이 새로 추가한 active_model_label()이 build_client의 구 선택 로직을 미러링하고 있어 기본 빌드에서 '오프라인'을 표시하는 오표시가 발생 — selected_provider()/is_claude_cli()를 공유하고 순수 model_label(provider)를 분리해 수정(cd75404)."
+**Context**: Construction / U4 / 리베이스 + 통합 검증
+**검증**: cargo test 223+9+3 통과 · clippy 기본/llm-http 무경고 · cargo fmt --check 통과 · tsc 통과 · npm test 75 통과 · npm run build 성공 · cargo check(desktop) 기본/llm-http 통과
+
+---
