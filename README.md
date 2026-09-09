@@ -88,6 +88,45 @@ Queue 항목은 두 종류다.
 
 아무 프로젝트 폴더에서 새 세션을 열고 "이거 어떻게 띄워? 규칙은?"을 물으면 설명 없이 답한다.
 
+## 구현 현황
+
+이 리포는 위 아이디어를 **로컬 전용 데스크탑 앱(Tauri 2)**으로 구현한 것이다. Rust 코어 + React/TypeScript 프론트엔드로 되어 있고, 4개 유닛으로 나뉜다.
+
+| 유닛 | 범위 | 위치 |
+|---|---|---|
+| **U1** 코어 & 보안 | 공통 계약, Argon2id 키 유도 + AES-256-GCM 암호화 저장, LLM 게이트웨이(식별자 마스킹·전송 로그), 온보딩/잠금 | `src-tauri/src/{core,security,llm}/`, `src/features/onboarding/` |
+| **U2** 수집 & 가공 | 소스 커넥터(세션/파일/Notion/Gmail), 증분 수집, 요약·분류 후 Queue 적재 | `src-tauri/src/{ingestion,processing}/` |
+| **U3** 지식 & 인터뷰 | 사실(fact) 저장·변경 이력·검색, 인터뷰 Queue(확인형·심화형), 답변 반영 | `src-tauri/src/{knowledge,interview}/`, `src/features/queue/` |
+| **U4** 인터페이스 & 페르소나 | 대시보드·미니홈피·지식 그래프 뷰, 페르소나 챗, 로컬 REST API | `src-tauri/src/persona/`, `src/features/{dashboard,minihome,graph,persona-chat}/` |
+
+앱은 온보딩(비밀번호 설정)·잠금 해제를 거치면 6개 화면 탭을 연다: **대시보드 · 대기열 · 미니홈피 · 지식 그래프 · 페르소나 · 설정**.
+
+보안은 요구사항대로 로컬 전용이다. 비밀번호에서 Argon2id로 키를 유도하고, 평문 키는 디스크에 남기지 않으며(메모리에서 zeroize), 맥락 데이터와 외부 자격증명은 모두 암호화 저장한다. LLM 클라우드 호출은 기본 비활성(`llm-http` feature)이고, 켜더라도 전송 전 식별자를 마스킹하고 전송 내역을 로그로 남긴다.
+
+## 실행
+
+전제: Rust(stable), Node.js, Tauri 시스템 의존성(플랫폼 webview). 자세한 것은 <https://tauri.app/start/prerequisites/>.
+
+```bash
+npm install
+npx tauri dev      # Vite + 데스크탑 창 실행
+npx tauri build    # 배포 번들
+```
+
+Tauri 없이 프론트만 브라우저에서 보려면 `npm run dev` — 이때는 목(mock) 어댑터가 주입되어 전 화면을 둘러볼 수 있다.
+
+테스트:
+
+```bash
+# Rust 코어 (Tauri 의존성 없음 — 어느 툴체인에서나 실행)
+cd src-tauri && cargo test
+
+# 프론트엔드 (Vitest + RTL + fast-check)
+npm test
+```
+
+세부 문서: 요구사항은 `requirements/REQUIREMENTS.md`, 설계·유닛·진행 상태는 `aidlc-docs/`, 코어/셸 안내는 `src-tauri/README.md`·`desktop/README.md`.
+
 ## 활용 방향 (다음 단계)
 
 - AI-DLC의 `team.md` · `project.md`를 이 DB에서 채운다 → practices-discovery가 다시 묻지 않는다
@@ -95,7 +134,3 @@ Queue 항목은 두 종류다.
 - 사람마다 쌓인 맥락 DB가 모이면 팀 맥락이 된다
 
 맥락 DB 자체(`~/.claude/me/`)는 이 리포에 없다. 여기에는 도구·문서·시연만 둔다.
-
-## 상태
-
-**초안 (draft)** — 2026-09-08. 요구사항을 정리하는 단계이며 내용은 바뀔 수 있다. 설계·구현 전.

@@ -1,16 +1,21 @@
-# knows-me-core — U1 (Core Platform & Security)
+# knows-me-core — Rust core (all units)
 
-This crate is **Unit U1**. It is a pure Rust library (no Tauri dependency) so it
-builds and runs its full test suite on any toolchain. It provides:
+This crate is the `knows-me-core` library. It is a pure Rust library (no Tauri
+dependency) so it builds and runs its full test suite on any toolchain. It began
+as **Unit U1** and now hosts every unit's logic behind the shared contracts; the
+Tauri desktop shell in `../desktop/` only bridges it to the frontend.
 
-**Shared contract layer** (Milestone 0 — unblocks U2/U3/U4 parallel work):
+Module map:
 
-- `src/core/types.rs` — shared domain types (`Fact`, `QueueItem`, DTOs, `SourceKind`, …)
-- `src/core/traits.rs` — service interfaces every unit codes against
-- `src/core/error.rs` — unified `AppError` / `Result`
-- `src/mocks.rs` — in-memory mocks (so U2/U3/U4 build & test today)
+- `src/core/` — U1: shared domain types (`Fact`, `QueueItem`, DTOs, `SourceKind`, …),
+  service traits, unified `AppError` / `Result`, `AppState`, scheduler, commands
+- `src/security/`, `src/llm/` — U1: crypto + LLM gateway (below)
+- `src/ingestion/`, `src/processing/` — U2: source connectors + summarize/classify
+- `src/knowledge/`, `src/interview/` — U3: fact store/history/search + interview queue
+- `src/persona/` — U4: read-view queries, persona chat, local REST API
+- `src/mocks.rs` — in-memory mocks (from Milestone 0, still used by unit tests)
 
-**U1 implementation:**
+**U1 implementation (crypto + LLM gateway):**
 
 - `src/security/` — `PasswordKeyManager` (Argon2id KDF, lock/unlock, in-memory
   key), `vault` (AES-256-GCM), `FileEncryptedStore` (encrypted-at-rest KV +
@@ -56,13 +61,14 @@ Framework: **proptest** (PBT-09). Covered:
 
 | Trait(s) | Owner unit |
 |---|---|
-| `EncryptedStore`, `CredentialStore`, `KeyManager`, `Masker`, `LlmClient` | **U1 — implemented** |
+| `EncryptedStore`, `CredentialStore`, `KeyManager`, `Masker`, `LlmClient` | U1 |
 | `Connector`, `IngestionApi`, `ProcessingApi` | U2 |
 | `KnowledgeApi`, `InterviewApi` | U3 |
 | `PersonaApi` | U4 |
 
-**Parallel rule**: develop against the traits + mocks now; integrate in order
-**U1 → U3 → U2 → U4** (see `../aidlc-docs/inception/application-design/unit-of-work-dependency.md`).
+All four units are implemented and integrated (development ran in parallel
+against the traits + mocks, integrated in order **U1 → U3 → U2 → U4**; see
+`../aidlc-docs/inception/application-design/unit-of-work-dependency.md`).
 
 ## Security note (judging criterion: maintainability)
 
