@@ -199,7 +199,9 @@ async fn set_llm_config(
     let mut cfg = state.config();
     cfg.llm_provider = provider.clone();
     cfg.llm_model = model;
-    cfg.llm_base_url = base_url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+    cfg.llm_base_url = base_url
+        .map(|u| u.trim().to_string())
+        .filter(|u| !u.is_empty());
     state.save_config(cfg).await.map_err(err)?;
 
     // 3. Reflect the (possibly just-changed) key for the selected provider.
