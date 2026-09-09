@@ -78,3 +78,101 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
   .workspace-topbar { height: 49px; padding: 0 20px; } .workspace-content { padding: 26px 20px 40px; } h2 { font-size: 25px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Memory garden — sunset cream, lavender and moss. */
+:root {
+  --bg: #f8f5f0; --card: #fffdf9; --border: #e5ded8; --text: #37323e;
+  --muted: #77707b; --accent: #72608e; --accent-ink: #fffdf9;
+}
+body { background: radial-gradient(ellipse at 95% 0, #eee7f4 0, transparent 45%), var(--bg); }
+button, input:not([type='radio']):not([type='checkbox']), textarea, select { border-radius: 11px; }
+.workspace { grid-template-columns: 230px minmax(0, 1fr); }
+.sidebar { background: linear-gradient(170deg, #eee8f1, #f4ece7 63%, #e9eddf); border-color: #ded6df; padding: 28px 18px 24px; }
+.wordmark { margin: 0; padding: 0; }
+.wordmark-img { max-width: 190px; }
+.sidebar-tagline { text-align: center; font-size: 11px; color: #796e80; letter-spacing: .08em; margin: 0; }
+.workspace-label { margin: 48px 12px 14px; color: #82758b; }
+.workspace-label span { font-size: 7px; letter-spacing: 1px; }
+.tabs { gap: 8px; }
+.tabs button[role='tab'] { color: #756c7e; border-radius: 13px; padding: 13px 15px; }
+.tabs button[role='tab'][aria-selected='true'] { background: #74618d; color: #fff9f1; box-shadow: 0 5px 13px #6d557327; }
+.tabs button[role='tab']:not([aria-selected='true']):hover { background: #e7dfea; color: #594668; }
+.sidebar-foot { padding: 20px 10px 0; }
+.journey-note { border-top: 1px solid #d6ced6; padding-top: 23px; }
+.journey-note > span { font-size: 30px; color: #897299; }
+.sidebar-foot .journey-note p { font-size: 12px; line-height: 1.9; color: #746b74; margin: 8px 0 27px; }
+.version { color: #7d7580; letter-spacing: .04em; }
+.workspace-topbar { height: 66px; border-color: #e6dfe5; background: #fffdf733; padding-inline: 40px; }
+.topbar-motto { color: #8b7b92; letter-spacing: .14em; font-size: 9px; }
+.topbar-motto > span { margin-left: 14px; font-size: 20px; color: #a98a65; }
+.workspace-content { padding: 32px 40px 60px; max-width: 1460px; }
+.dashboard-view, .settings-view { color: var(--text); }
+.dashboard-heading { margin-bottom: 22px; }
+.dashboard-heading h2 { font-size: 25px; font-weight: 650; }
+.dashboard-refresh { border-color: var(--border); background: #fffdf980; color: var(--muted); border-radius: 20px; }
+.journey-hero { position: relative; isolation: isolate; overflow: hidden; min-height: 298px; border-radius: 24px; border: 1px solid #ead8c8; margin-bottom: 24px; background: #eadccf; box-shadow: 0 12px 30px #7858450a; }
+.journey-hero::before { content: ''; position: absolute; z-index: -2; inset: 0; background: url('./assets/memory-garden.png') 40% 48% / cover; background-size: max(115%, 620px) auto; }
+.journey-hero::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, #fbebd7 0%, #fbebd7f5 24%, #f9e7d9c9 43%, #e9dddb10 70%); }
+.journey-hero-copy { padding: 30px 36px; max-width: 540px; }
+.journey-eyebrow { margin: 0 0 14px; color: #75576c; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+.journey-eyebrow span { color: #9c774e; margin-right: 7px; }
+.journey-hero h3 { font-size: clamp(28px, 2.7vw, 38px); line-height: 1.28; letter-spacing: -.05em; font-weight: 600; margin: 0; color: #493b4e; }
+.journey-description { color: #6d5c64; font-size: 12px; line-height: 1.9; margin: 15px 0 19px; word-break: keep-all; }
+.journey-action { background: #fffaf0e8; color: #594467; border: 1px solid #c6a995; padding: 10px 15px; border-radius: 30px; font-size: 12px; box-shadow: 0 3px 8px #67475a08; }
+.journey-action span { margin-left: 20px; }
+.journey-caption { position: absolute; right: 20px; bottom: 17px; background: #3f3944cc; color: #fff5e6; padding: 6px 12px; border: 1px solid #fff5e659; border-radius: 20px; font-size: 8px; letter-spacing: .16em; }
+.dashboard-stats { background: transparent; border: 0; padding: 0; gap: 14px; margin-bottom: 30px; }
+.dashboard-stat { position: relative; overflow: hidden; padding: 20px 24px; background: #f0ebf5; border: 1px solid #e1d8eb; border-radius: 17px; }
+.dashboard-stat:nth-child(2) { background: #faeddf; border-color: #eedbc9; }
+.dashboard-stat:last-child { background: #eaf0e6; border: 1px solid #d8e2d2; }
+.dashboard-stat::after { content: '✧'; position: absolute; right: 21px; top: 17px; font-size: 27px; color: #9c86b0; }
+.dashboard-stat:nth-child(2)::after { color: #bf9569; }
+.dashboard-stat:last-child::after { color: #8b9e7d; }
+.dashboard-stat-label { color: #66576e; }
+.dashboard-stat-value { color: #51415f; font-size: 31px; margin-top: 8px; }
+.dashboard-stat:nth-child(2) .dashboard-stat-value { color: #8b6145; }
+.dashboard-stat:last-child .dashboard-stat-value { color: #52694b; }
+.dashboard-stat p, .dashboard-stat-value span { color: #756b75; }
+.dashboard-body { gap: 24px; grid-template-columns: minmax(0, 1fr) 258px; }
+.context-card { background: var(--card); border-color: var(--border); border-radius: 16px; box-shadow: 0 4px 12px #54405604; }
+.context-card-index, .context-confirmed, .context-visibility { color: #7d7580; }
+.context-scope, .context-kind { border-radius: 6px; }
+.context-scope-personal { background: #eee6f5; color: #79608e; }
+.context-scope-company { background: #e8eee2; color: #5b7051; }
+.context-card h4 { color: var(--text); }
+.dashboard-composition, .dashboard-next, .dashboard-conversation { border: 1px solid var(--border); border-radius: 18px; background: var(--card); padding: 21px; }
+.dashboard-composition h3, .dashboard-next h3, .dashboard-conversation h3 { margin-top: 0; font-size: 15px; }
+.dashboard-next { background: linear-gradient(135deg, #ece3f3, #f8ede5); border-color: #e3d6e8; }
+.dashboard-aside p { color: #776b7c; }
+.dashboard-primary { border-color: var(--accent); background: var(--accent); border-radius: 10px; }
+.dashboard-text-link { color: #765c90; }
+.dashboard-scope-fill-personal { background: #ad97c1; }
+.dashboard-scope-fill-company { background: #91a682; }
+.dashboard-scope-track { background: #efebe8; height: 6px; }
+.dashboard-recent { padding: 23px; border: 1px solid var(--border); border-radius: 18px; background: #fffdf980; margin-top: 24px; }
+.dashboard-facts, .dashboard-facts li, .dashboard-graph { border-color: var(--border); }
+.dashboard-fact-dot { background: #ae93c0; box-shadow: 0 0 0 3px #efe8f4; }
+.card, .queue-card, .chat-composer, .graph-panel { border-radius: 18px; box-shadow: 0 5px 20px #6c4b6505; }
+.chat-monogram { color: #78618e; background: linear-gradient(140deg, #e8ddf4, #f8dfcd); border-radius: 22px; }
+.chat-message--user .chat-bubble { background: #eee6f4; border-color: #e5d9ef; }
+.chat-bubble { background: var(--card); }
+.chat-suggestions button { border-radius: 15px; }
+.chat-composer:focus-within { outline-color: #a68bb9; }
+button.work-primary:hover:not(:disabled) { background: #604c7c; }
+.graph-canvas-region, .graph-inspector, .graph-canvas-loading { background: #f8f5fa; }
+.settings-tabs button[aria-selected='true'] { border-color: var(--accent); color: var(--accent); }
+.settings-policy.is-selected, .settings-provider.is-selected { background: #f1eaf6; }
+.auth-app .card { background: #fffdf9e8; box-shadow: 0 14px 60px #80617c12; }
+@media (min-width: 1500px) { .workspace-content { padding-top: 38px; } .journey-hero { min-height: 320px; } .journey-hero-copy { padding: 36px 42px; } }
+@media (max-width: 1180px) { .dashboard-body { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 1050px) { .workspace { grid-template-columns: 200px minmax(0, 1fr); } .workspace-content { padding: 28px 25px 48px; } .workspace-topbar { padding-inline: 25px; } .topbar-motto { font-size: 8px; letter-spacing: .05em; } .workspace-label span { display: none; } }
+@media (max-width: 720px) {
+  .workspace { display: block; } .sidebar { padding: 14px 18px; } .wordmark-img { width: 148px; } .sidebar-tagline { display: none; }
+  .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; gap: 4px; } .tabs button[role='tab'] { justify-content: center; padding: 10px 3px; gap: 4px; font-size: 11px; white-space: nowrap; }
+  .workspace-topbar { height: 45px; padding-inline: 20px; } .topbar-motto { display: none; }
+  .workspace-content { padding: 24px 18px 40px; } .journey-hero { border-radius: 19px; }
+  .journey-hero-copy { padding: 26px; } .journey-hero::after { background: linear-gradient(90deg, #fbebd7fa, #fbebd7e6 52%, #fbebd760); }
+  .journey-caption { display: none; } .dashboard-stats { gap: 8px; } .dashboard-stat { padding: 17px 13px; border-radius: 13px; }
+  .dashboard-stat::after { display: none; } .dashboard-stat-value { font-size: 27px; } .dashboard-stat-label { font-size: 11px; }
+  .dashboard-recent { padding: 18px; } .dashboard-section-heading { flex-wrap: wrap; }
+}

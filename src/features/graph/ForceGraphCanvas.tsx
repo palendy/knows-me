@@ -20,17 +20,17 @@ interface Props {
   onSelect: (id: FactId | null) => void;
 }
 
-// knows-me light palette (matches --accent #365d4b).
-const NODE_IDLE = "#91a491";
+// Memory garden palette: lavender facts, warm topic landmarks.
+const NODE_IDLE = "#ad97c1";
 // Topic hubs get a warm hue so they read as landmarks against the green facts.
-const TOPIC_IDLE = "#b98b3e";
-const NODE_SELECTED = "#365d4b";
-const NODE_NEIGHBOR = "#5f7d64";
-const LABEL_INK = "#252923";
+const TOPIC_IDLE = "#bf9569";
+const NODE_SELECTED = "#72608e";
+const NODE_NEIGHBOR = "#789169";
+const LABEL_INK = "#37323e";
 const LABEL_BG = "rgba(255,255,255,0.82)";
-const LINK_IDLE = "#c7d1c8";
-const LINK_ACTIVE = "#365d4b";
-const BG = "#fafbf8";
+const LINK_IDLE = "#d8ccdf";
+const LINK_ACTIVE = "#72608e";
+const BG = "#f8f5fa";
 
 /** Radius grows gently with connection count. Kept small relative to the
  *  simulation's link distance (~48) so nodes read as points, not blobs. Topic

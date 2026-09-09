@@ -44,6 +44,15 @@ export function DashboardView({ api, onNavigate }: Props) {
           <span aria-hidden="true">↻</span> 새로고침
         </button>
       </header>
+      <section className="journey-hero" aria-label="나를 알아가는 모험">
+        <div className="journey-hero-copy">
+          <p className="journey-eyebrow"><span aria-hidden="true">✦</span> 나를 알아가는 모험</p>
+          <h3>작은 기록에서,<br />더 선명한 나로.</h3>
+          <p className="journey-description">흩어진 기억을 잇고, 나만의 맥락을 발견하는 곳.<br />오늘도 나의 세계를 조금 더 넓혀보세요.</p>
+          {onNavigate && <button className="journey-action" onClick={() => onNavigate("persona")}>나의 기록과 대화하기 <span aria-hidden="true">↗</span></button>}
+        </div>
+        <span className="journey-caption" aria-hidden="true">✧ &nbsp; YOUR WORLD, UNFOLDING</span>
+      </section>
       <StateShell state={state} emptyMessage="아직 수집된 내용이 없습니다. 소스를 연결하면 여기에 현황이 표시됩니다." onRetry={refresh}>
         {(d) => (
           <>

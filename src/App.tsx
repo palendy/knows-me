@@ -106,7 +106,8 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
     <div className="workspace">
       <aside className="sidebar">
         <a className="wordmark" href="#" onClick={(event) => { event.preventDefault(); setTab("dashboard"); }} aria-label="Knows Me 대시보드"><img className="wordmark-img" src={wordmarkUrl} alt="Knows Me" /></a>
-        <div className="workspace-label">내 공간</div>
+        <p className="sidebar-tagline">나를 알아가는 모험</p>
+        <div className="workspace-label">내 공간 <span>MY LITTLE WORLD</span></div>
       <nav role="tablist" aria-label="화면" className="tabs">
         {TABS.map((t) => (
           <button
@@ -122,10 +123,10 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
           </button>
         ))}
       </nav>
-      <div className="sidebar-foot"><span className="version">Knows Me · v0.1</span></div>
+      <div className="sidebar-foot"><div className="journey-note"><span aria-hidden="true">✧</span><p>작은 흔적이 모여,<br />나를 이해하는 여정.</p></div><span className="version">Knows Me · v0.1</span></div>
       </aside>
       <div className="workspace-body">
-      <div className="workspace-topbar"><span>내 공간 <span className="breadcrumb-divider">/</span> <strong>{TABS.find(t => t.id === tab)?.label}</strong></span></div>
+      <div className="workspace-topbar"><span>내 공간 <span className="breadcrumb-divider">/</span> <strong>{TABS.find(t => t.id === tab)?.label}</strong></span><span className="topbar-motto">SMALL TRACES, BIG UNDERSTANDING <span aria-hidden="true">✧</span></span></div>
       <div role="tabpanel" id="workspace-panel" aria-labelledby={`tab-${tab}`} className="workspace-content">
         {tab === "dashboard" && <DashboardView key={dataVersion} api={api} onNavigate={(next) => { if (next === "settings") setSettingsTab("sources"); setTab(next); }} />}
         {tab === "queue" && <QueueView api={interview} onChanged={bump} />}

@@ -20,8 +20,8 @@
 .context-count { color: #898c81; font-size: 11px; white-space: nowrap; }
 .context-grid { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .context-card { background: #fffefa; border: 1px solid #e1e2d9; border-radius: 8px; padding: 17px; display: flex; flex-direction: column; min-height: 150px; }
-.context-card-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.context-card-index { color: #b1b5a9; font-size: 10px; font-variant-numeric: tabular-nums; }
+.context-card-top { display: flex; justify-content: flex-start; gap: 5px; align-items: center; }
+.context-card-index { margin-left: auto; color: #b1b5a9; font-size: 10px; font-variant-numeric: tabular-nums; }
 .context-scope { display: inline-flex; align-items: center; width: fit-content; font-size: 10px; padding: 3px 6px; border-radius: 4px; line-height: 1.4; color: #7b7d73; background: #f0f0e9; white-space: nowrap; }
 .context-scope-company { color: #617469; background: #edf1e9; }
 .context-scope-personal { color: #967854; background: #f5eee3; }
