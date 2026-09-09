@@ -52,6 +52,12 @@ struct TokenRecord {
     /// Categories this token may read. Combined with `visibility == Shared` by
     /// [`Token::can_access`] — this set alone never widens the owner's exposure.
     granted: BTreeSet<Category>,
+    /// When the token was minted. Retained for the owner's audit/UI (step 5) and
+    /// as the basis for a future TTL; tokens are otherwise valid until explicitly
+    /// revoked (the deliberate model — a leaked secret is handled by [revoking],
+    /// not by expiry). [Deserialize]-only for now.
+    ///
+    /// [revoking]: TokenStore::revoke
     issued_at: DateTime<Utc>,
     /// Once true, [`TokenStore::resolve`] refuses the token immediately.
     revoked: bool,
@@ -122,15 +128,29 @@ impl TokenStore {
         let keys = self.store.list(NS).await?;
         let mut revoked_any = false;
         for key in keys {
-            let Some(bytes) = self.store.get(NS, &key).await? else {
-                continue;
+            // A record we cannot read or parse cannot authenticate either
+            // ([`resolve`] fails it the same way), so it can never be a live token
+            // for `id`; skip it rather than let one corrupt or foreign entry abort
+            // the scan and leave `id`'s *other* tokens live — a silent revocation
+            // failure is the last thing a security operation should do. A locked
+            // vault is different: we cannot revoke anything, so surface it.
+            //
+            // [`resolve`]: Self::resolve
+            let mut record: TokenRecord = match self.store.get(NS, &key).await {
+                Ok(Some(bytes)) => match serde_json::from_slice(&bytes) {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                },
+                Ok(None) => continue,
+                Err(AppError::Locked) => return Err(AppError::Locked),
+                Err(_) => continue,
             };
-            let mut record: TokenRecord =
-                serde_json::from_slice(&bytes).map_err(|e| AppError::Serde(e.to_string()))?;
             if record.id == id && !record.revoked {
                 record.revoked = true;
                 let bytes =
                     serde_json::to_vec(&record).map_err(|e| AppError::Serde(e.to_string()))?;
+                // A genuine write failure on a token we *are* revoking is surfaced
+                // (not swallowed); a retry skips the ones already flipped.
                 self.store.put(NS, &key, &bytes).await?;
                 revoked_any = true;
             }
@@ -220,6 +240,25 @@ mod tests {
         ts.revoke("alice").await.unwrap();
         assert!(ts.resolve(&alice.secret).await.unwrap().is_none());
         assert!(ts.resolve(&bob.secret).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn revoke_skips_corrupt_records_and_still_revokes_the_target() {
+        // A corrupt or foreign entry in the namespace must not abort revocation of
+        // a live token — a silent revocation failure would leave access open.
+        let backing = Arc::new(InMemoryStore::default());
+        let ts = TokenStore::new(backing.clone());
+        let issued = ts.issue("alice", [cat("deploy")]).await.unwrap();
+        backing
+            .put(NS, "corrupt-key", b"not valid json")
+            .await
+            .unwrap();
+
+        assert!(
+            ts.revoke("alice").await.unwrap(),
+            "alice is revoked despite the corrupt neighbor record"
+        );
+        assert!(ts.resolve(&issued.secret).await.unwrap().is_none());
     }
 
     #[tokio::test]
