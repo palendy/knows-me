@@ -88,6 +88,14 @@ impl KnowledgeService {
         self.initialized.store(true, Ordering::SeqCst);
         Ok(())
     }
+
+    /// Every stored fact, owner-scope — the raw material the sharing surface
+    /// (`crate::sharing`) filters through a token. Enforcing a caller's scope is
+    /// the sharing layer's job (its single authorization point), not this
+    /// method's; this deliberately returns everything, `Private` included.
+    pub async fn all_facts(&self) -> Result<Vec<Fact>> {
+        self.facts.load_all().await
+    }
 }
 
 #[async_trait]
