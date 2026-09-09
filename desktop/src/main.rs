@@ -83,7 +83,12 @@ async fn lock(
 
 #[tauri::command]
 fn get_config(state: tauri::State<'_, AppState>) -> AppConfig {
-    state.config()
+    let mut config = state.config();
+    // The stored `llm_model` is a provider-agnostic default; surface the model
+    // actually in effect (provider + key + env) so the settings screen doesn't
+    // claim "claude-opus-5" while a cloud call really hits Gemini/OpenRouter.
+    config.llm_model = knows_me_core::llm::active_model_label();
+    config
 }
 
 #[tauri::command]
