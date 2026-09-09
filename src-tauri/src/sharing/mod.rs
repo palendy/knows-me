@@ -16,7 +16,9 @@ use async_trait::async_trait;
 
 use crate::core::types::{Category, Fact, FactId, FactSummary, Visibility};
 
+pub mod envelope;
 mod knowledge;
+pub mod mcp;
 pub use knowledge::KnowledgeSharing;
 
 /// Contract error codes (`mcp-contract.md` §5). Which layer produces each:

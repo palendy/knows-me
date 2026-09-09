@@ -8,7 +8,7 @@
 //! transport, token minting, and the `<knows-me:content>` envelope layer on top
 //! of this in later steps of the vertical.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -30,6 +30,61 @@ pub struct KnowledgeSharing {
 impl KnowledgeSharing {
     pub fn new(knowledge: Arc<KnowledgeService>) -> Self {
         Self { knowledge }
+    }
+
+    /// (`mcp-contract.md` §3.1) The token-visible categories, each with the count
+    /// of pages the token can read. `page_count` is derived from the same
+    /// [`accessible`] predicate as every other read, so a `Private`/ungranted page
+    /// can never leak into a count. Sorted by category name (`BTreeMap`).
+    ///
+    /// The richer form behind [`SharingApi::list_categories`], which yields only
+    /// names: the MCP serialization layer needs counts the frozen projection
+    /// cannot carry. Authorization is unchanged — the one predicate, one place.
+    pub async fn category_counts(
+        &self,
+        token: &Token,
+    ) -> Result<Vec<(String, usize)>, AccessError> {
+        let facts = self.knowledge.all_facts().await.map_err(to_access_error)?;
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for f in accessible(token, &facts) {
+            if let Some(c) = f.metadata.category.as_ref() {
+                *counts.entry(c.as_str().to_string()).or_default() += 1;
+            }
+        }
+        Ok(counts.into_iter().collect())
+    }
+
+    /// (`mcp-contract.md` §3.4) The token-visible pages of one category, full
+    /// form, in stable (title, then id) order. `NotFound` when the category has
+    /// no visible page — indistinguishable from an ungranted category (§5.1) and
+    /// consistent with [`Self::category_counts`], which likewise omits a category
+    /// with nothing visible.
+    ///
+    /// The richer form behind [`SharingApi::get_guide`] (which yields a composed
+    /// `String`): the MCP layer needs structured pages. Mirrors the frozen
+    /// `get_guide` step for step (grant check → filter → NotFound-if-empty →
+    /// stable sort), on the same [`accessible`] predicate as [`SharingApi::get_page`]
+    /// — no second authorization point.
+    pub async fn guide_pages(
+        &self,
+        token: &Token,
+        category: &Category,
+    ) -> Result<Vec<Fact>, AccessError> {
+        // Existence of an ungranted category is never revealed (§3.4); short-circuit
+        // before touching the store, exactly as the frozen `get_guide` does.
+        if !token.grants(category) {
+            return Err(AccessError::NotFound);
+        }
+        let facts = self.knowledge.all_facts().await.map_err(to_access_error)?;
+        let mut pages: Vec<Fact> = accessible(token, &facts)
+            .filter(|f| f.metadata.category.as_ref() == Some(category))
+            .cloned()
+            .collect();
+        if pages.is_empty() {
+            return Err(AccessError::NotFound);
+        }
+        pages.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
+        Ok(pages)
     }
 }
 
@@ -237,6 +292,73 @@ mod tests {
             s.list_categories(&t).await.unwrap(),
             vec!["deploy".to_string(), "workstyle".to_string()]
         );
+    }
+
+    #[tokio::test]
+    async fn category_counts_owner_counts_all_pages_per_category() {
+        let (s, _) = seeded().await;
+        let t = Token::owner();
+        // deploy: "a"(Private)+"b"(Shared)=2; workstyle: "c"=1; "d" has no category.
+        assert_eq!(
+            s.category_counts(&t).await.unwrap(),
+            vec![("deploy".to_string(), 2), ("workstyle".to_string(), 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn category_counts_consumer_never_leaks_private_pages() {
+        let (s, _) = seeded().await;
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        // Only "b" (Shared + deploy) is visible; the Private "a" must not be counted.
+        assert_eq!(
+            s.category_counts(&t).await.unwrap(),
+            vec![("deploy".to_string(), 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn guide_pages_owner_returns_all_category_pages_sorted() {
+        let (s, _) = seeded().await;
+        let t = Token::owner();
+        let titles: Vec<String> = s
+            .guide_pages(&t, &cat("deploy"))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.title)
+            .collect();
+        assert_eq!(titles, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn guide_pages_consumer_excludes_private_and_hides_ungranted() {
+        let (s, _) = seeded().await;
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        // deploy is granted: only the Shared "b" comes back, never the Private "a".
+        let pages = s.guide_pages(&t, &cat("deploy")).await.unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].title, "b");
+        // workstyle is not granted → NotFound (never reveal it exists).
+        assert!(matches!(
+            s.guide_pages(&t, &cat("workstyle")).await,
+            Err(AccessError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn guide_pages_notfound_when_granted_but_nothing_visible() {
+        // Granted a category whose only page is Private ⇒ nothing visible ⇒
+        // NotFound, agreeing with `category_counts` (which omits it).
+        let svc = Arc::new(KnowledgeService::new(Arc::new(InMemoryStore::default())));
+        svc.upsert(fact("x", Visibility::Private, Some("secret")))
+            .await
+            .unwrap();
+        let s = KnowledgeSharing::new(svc);
+        let t = Token::consumer("teammate", [cat("secret")]);
+        assert!(matches!(
+            s.guide_pages(&t, &cat("secret")).await,
+            Err(AccessError::NotFound)
+        ));
     }
 
     #[tokio::test]
