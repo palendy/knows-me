@@ -131,6 +131,10 @@ npx tauri dev      # Vite + 데스크탑 창 실행
 npx tauri build    # 배포 번들
 ```
 
+LLM은 **로컬에 설치된 Claude Code를 그대로 쓴다** — API 키도 계정 연결도 없다.
+`claude`가 로그인돼 있기만 하면 된다(`echo ping | claude -p`로 확인). 처음
+연결하는 순서는 [`docs/collecting.md` §1](docs/collecting.md).
+
 Tauri 없이 프론트만 브라우저에서 보려면 `npm run dev` — 이때는 목(mock) 어댑터가 주입되어 전 화면을 둘러볼 수 있다.
 
 테스트:
