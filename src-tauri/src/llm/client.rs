@@ -17,6 +17,15 @@
 #[cfg(feature = "llm-http")]
 const CLASSIFY_MAX_TOKENS: u32 = 1024;
 
+/// Token budget for extraction calls.
+///
+/// The output is a title plus a few sentences, but on a reasoning model the
+/// budget is spent on reasoning first and the answer gets what is left — at
+/// 1024 the summary came back cut mid-sentence, and a half-sentence stored as a
+/// fact is worse than no fact.
+#[cfg(feature = "llm-http")]
+const SUMMARIZE_MAX_TOKENS: u32 = 4096;
+
 /// Normalize a configured base URL so both `https://host` and `https://host/v1`
 /// work.
 ///
@@ -52,7 +61,7 @@ mod http_impl {
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
 
-    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS};
+    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS, SUMMARIZE_MAX_TOKENS};
 
     const API_VERSION: &str = "2023-06-01";
     const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -149,8 +158,12 @@ mod http_impl {
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);
-            self.call(prompts::SUMMARIZE_SYSTEM, json!(input.text), 1024)
-                .await
+            self.call(
+                prompts::SUMMARIZE_SYSTEM,
+                json!(input.text),
+                SUMMARIZE_MAX_TOKENS,
+            )
+            .await
         }
 
         async fn classify(&self, input: &MaskedText) -> Result<Vec<String>> {
@@ -210,7 +223,7 @@ mod http_impl {
 /// pointing `OPENAI_BASE_URL` at them. Same masking/transfer-log contract as the
 /// Anthropic client: callers pass already-masked text and every call is logged.
 #[cfg(feature = "llm-http")]
-mod openai_impl {
+pub(crate) mod openai_impl {
     use std::sync::Arc;
 
     use async_trait::async_trait;
@@ -224,7 +237,7 @@ mod openai_impl {
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
 
-    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS};
+    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS, SUMMARIZE_MAX_TOKENS};
 
     const DEFAULT_BASE_URL: &str = "https://api.openai.com";
     const DEFAULT_MODEL: &str = "gpt-4o";
@@ -314,6 +327,16 @@ mod openai_impl {
                 return Err(AppError::External(format!("LLM API {status}: {msg}")));
             }
 
+            // A response cut off at the budget is a partial answer. Passing it
+            // upward stores half a sentence as a fact; failing here parks the
+            // item in the pending queue, where it is retried instead of lost.
+            if Self::was_truncated(&payload) {
+                return Err(AppError::External(format!(
+                    "LLM response hit the {max_tokens}-token limit and was cut off (model {})",
+                    self.config.model
+                )));
+            }
+
             let text = Self::extract_text(&payload);
             if text.trim().is_empty() {
                 // A 200 with empty content is not a usable answer. Reasoning
@@ -328,6 +351,15 @@ mod openai_impl {
                 )));
             }
             Ok(text)
+        }
+
+        /// Whether generation stopped because the budget ran out.
+        pub(super) fn was_truncated(payload: &Value) -> bool {
+            payload["choices"]
+                .as_array()
+                .and_then(|c| c.first())
+                .and_then(|c| c["finish_reason"].as_str())
+                .is_some_and(|r| r == "length")
         }
 
         /// Pull `choices[0].message.content` out of a chat-completions response.
@@ -354,8 +386,12 @@ mod openai_impl {
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);
-            self.call(prompts::SUMMARIZE_SYSTEM, json!(input.text), 1024)
-                .await
+            self.call(
+                prompts::SUMMARIZE_SYSTEM,
+                json!(input.text),
+                SUMMARIZE_MAX_TOKENS,
+            )
+            .await
         }
 
         async fn classify(&self, input: &MaskedText) -> Result<Vec<String>> {
@@ -439,6 +475,27 @@ mod openai_impl {
             assert!(uses_completion_tokens("gpt-5"));
             assert!(uses_completion_tokens("GPT-5-mini")); // case-insensitive
         }
+    }
+}
+
+#[cfg(all(test, feature = "llm-http"))]
+mod truncation_tests {
+    use super::openai_impl::OpenAiLlm;
+    use serde_json::json;
+
+    #[test]
+    fn a_response_cut_at_the_budget_is_not_a_complete_answer() {
+        // Storing a half-sentence as a fact is worse than failing and retrying.
+        let cut = json!({"choices":[{"finish_reason":"length","message":{"content":"이를 위해 데이터"}}]});
+        assert!(OpenAiLlm::was_truncated(&cut));
+
+        let whole =
+            json!({"choices":[{"finish_reason":"stop","message":{"content":"완결된 문장."}}]});
+        assert!(!OpenAiLlm::was_truncated(&whole));
+
+        // A provider that omits the field must not be read as truncated.
+        let silent = json!({"choices":[{"message":{"content":"본문"}}]});
+        assert!(!OpenAiLlm::was_truncated(&silent));
     }
 }
 
