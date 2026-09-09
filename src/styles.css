@@ -23,8 +23,8 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .app { min-height: 100vh; }
 .workspace { min-height: 100vh; display: grid; grid-template-columns: 224px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 31px 18px 24px; background: #f1f2ec; border-right: 1px solid var(--border); }
-.wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-size: 23px; font-weight: 650; letter-spacing: -.8px; padding: 0 13px; }
-.brand-symbol { display: inline-grid; place-items: center; width: 32px; height: 32px; background: var(--accent); color: white; border-radius: 9px; font-family: Georgia, serif; font-size: 25px; }
+.wordmark { display: flex; align-items: center; gap: 10px; color: var(--text); text-decoration: none; font-size: 23px; font-weight: 650; letter-spacing: -.8px; padding: 0 13px; white-space: nowrap; }
+.brand-symbol { display: inline-grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; background: var(--accent); color: white; border-radius: 9px; font-family: Georgia, serif; font-size: 25px; line-height: 1; }
 .workspace-label { margin: 46px 13px 13px; color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: space-between; }
 .workspace-label span { font-size: 8px; letter-spacing: 1.3px; }
 .tabs { display: flex; flex-direction: column; gap: 5px; }
@@ -58,7 +58,7 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .foot { text-align: center; font-size: 11px; }
 .auth-app { max-width: 470px; margin: auto; padding: 80px 20px 40px; }
 .brand { margin-bottom: 32px; text-align: center; }
-.brand h1 { font-size: 31px; letter-spacing: -1px; margin: 0; }
+.brand h1 { font-size: 31px; letter-spacing: -1px; margin: 0; white-space: nowrap; overflow-wrap: normal; }
 .tagline { color: var(--muted); font-size: 12px; }
 .auth-app form > button { margin-top: 20px; width: 100%; }
 .auth-app .foot { margin-top: 24px; }
