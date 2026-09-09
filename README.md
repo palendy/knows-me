@@ -143,7 +143,7 @@ cd src-tauri && cargo test
 npm test
 ```
 
-세부 문서: 설계·유닛·진행 상태는 `aidlc-docs/`, 코어/셸 안내는 `src-tauri/README.md`·`desktop/README.md`, 팀 공유 안내는 `docs/team-sharing.md`.
+세부 문서: 설계·유닛·진행 상태는 `aidlc-docs/`, 코어/셸 안내는 `src-tauri/README.md`·`desktop/README.md`, 수집을 직접 돌리고 진단하는 법은 [`docs/collecting.md`](docs/collecting.md), 팀 공유 안내는 `docs/team-sharing.md`.
 
 ## 우선순위
 

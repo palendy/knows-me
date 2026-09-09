@@ -37,11 +37,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("vault      : {data_dir}");
     println!(
-        "llm        : provider={} model={}",
-        std::env::var("LLM_PROVIDER").unwrap_or_else(|_| "(default anthropic)".into()),
-        std::env::var("OPENAI_MODEL")
-            .or_else(|_| std::env::var("ANTHROPIC_MODEL"))
-            .unwrap_or_else(|_| "(default)".into())
+        // `active_model_label` shares `build_client`'s selection logic, so this
+        // reports the backend that actually runs. Guessing from env vars said
+        // "(default anthropic)" while every call went to the local Claude CLI.
+        "llm        : {}",
+        knows_me_core::llm::active_model_label()
     );
 
     // --- U1 ----------------------------------------------------------------

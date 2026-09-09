@@ -1,41 +1,56 @@
-//! Ingest a *specified* set of transcript roots, for diagnosing extraction.
+//! Collect *named* session roots into an existing vault without disturbing the
+//! collection cursor — for pulling specific sessions into the app's own vault.
 //!
-//! [`ingest_sessions`](ingest_sessions) scans wherever the owner's transcripts
-//! actually live and takes them a batch at a time, which is right for the app
-//! but useless for answering "why did *this* session yield nothing about X?" —
-//! the session in question may simply not have been reached yet. This variant
-//! takes the roots as an argument so one transcript can be run through the real
-//! pipeline and the extracted facts read directly.
+//! The normal path ([`ingest_roots`]) goes through `IngestionService`, which
+//! persists the connector's two watermarks. Those advance monotonically: the
+//! backfill frontier only ever moves *older*. So pointing a normal sync at an
+//! old project directory drags that frontier down past every session in
+//! between, and the app then treats all of them as already covered — the
+//! backlog is silently discarded rather than collected later.
+//!
+//! Here the connector is driven directly with a null cursor (so every file
+//! under the given roots is in scope) and the cursor it returns is dropped.
+//! The vault gains the facts; the app's collection state is untouched.
 //!
 //! ```bash
-//! KNOWSME_SESSION_ROOTS=~/.claude/projects/<one-project-dir> \
-//!   KNOWSME_DATA_DIR=/tmp/vault-x \
-//!   cargo run --release --example ingest_roots
+//! read -rs KNOWSME_DEMO_PASSWORD && export KNOWSME_DEMO_PASSWORD
+//! KNOWSME_SESSION_ROOTS=/abs/project-dir \
+//!   KNOWSME_DATA_DIR="$HOME/Library/Application Support/app.knowsme.desktop" \
+//!   cargo run --release --example ingest_into_vault
 //! ```
 //!
-//! Roots are colon-separated. Writes to `$KNOWSME_DATA_DIR` (default
-//! `./.knowsme-roots`), never the real app data directory.
+//! Close the app first: the encrypted store is files on disk with no lock, and
+//! two writers are two writers.
 
 use std::sync::Arc;
 
 use knows_me_core::core::traits::{
-    CredentialStore, EncryptedStore, IngestionApi, InterviewApi, KeyManager, KnowledgeApi, Masker,
+    Connector, CredentialStore, EncryptedStore, InterviewApi, KeyManager, KnowledgeApi, Masker,
+    ProcessingApi,
 };
-use knows_me_core::core::types::{FactFilter, QueueSort, SourceKind};
+use knows_me_core::core::types::{FactFilter, QueueSort};
 use knows_me_core::ingestion::connectors::SessionConnector;
-use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
 use knows_me_core::llm::RegexMasker;
 use knows_me_core::processing::service::AlwaysOnline;
-use knows_me_core::processing::{PendingQueue, ProcessingService, ProcessingSink, TransferLog};
+use knows_me_core::processing::{PendingQueue, ProcessingService, TransferLog};
 use knows_me_core::security::{FileEncryptedStore, PasswordKeyManager};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let data_dir = std::env::var("KNOWSME_DATA_DIR").unwrap_or_else(|_| ".knowsme-roots".into());
-    let password =
-        std::env::var("KNOWSME_DEMO_PASSWORD").unwrap_or_else(|_| "demo-password".into());
+    let data_dir = std::env::var("KNOWSME_DATA_DIR").unwrap_or_else(|_| {
+        eprintln!("KNOWSME_DATA_DIR is required (the vault to write into)");
+        std::process::exit(2);
+    });
+    // No default: guessing a password against a real vault just fails with a
+    // confusing error, and a wrong default silently creating a *second* vault
+    // would be worse.
+    let password = std::env::var("KNOWSME_DEMO_PASSWORD").unwrap_or_else(|_| {
+        eprintln!("KNOWSME_DEMO_PASSWORD is required (the vault's unlock password)");
+        eprintln!("  read -rs KNOWSME_DEMO_PASSWORD && export KNOWSME_DEMO_PASSWORD");
+        std::process::exit(2);
+    });
     std::fs::create_dir_all(&data_dir)?;
 
     println!("vault      : {data_dir}");
@@ -87,14 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(PendingQueue::new(store.clone())),
         Arc::new(AlwaysOnline),
     ));
-    let sink = Arc::new(ProcessingSink::new(processing));
-
-    let mut registry = ConnectorRegistry::new();
-    // The whole point of this example: explicit roots instead of auto-detection.
-    // `SourceConfig` is the connector's own override channel, so this exercises
-    // the same code path the app uses when the owner points it elsewhere —
-    // rather than faking `$HOME`, which would also relocate the Claude CLI's
-    // credentials and break the LLM backend.
+    // No `ProcessingSink` here: the sink exists to bridge the ingestion
+    // service's push interface, and this example calls processing directly.
     let roots: Vec<serde_json::Value> = std::env::var("KNOWSME_SESSION_ROOTS")
         .unwrap_or_default()
         .split(':')
@@ -106,34 +115,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(2);
     }
     println!("roots      : {} 개", roots.len());
-    let config = knows_me_core::core::types::SourceConfig(serde_json::json!({ "roots": roots }));
-    registry.register(Arc::new(SessionConnector::from_config(Some(&config))));
-    let ingestion = IngestionService::new(
-        Arc::new(registry),
-        Arc::new(IngestionCursorStore::new(store)),
-        sink.clone(),
-    );
+    let root_paths: Vec<std::path::PathBuf> = roots
+        .iter()
+        .filter_map(|v| v.as_str())
+        .map(std::path::PathBuf::from)
+        .collect();
+    let connector = SessionConnector::new(root_paths);
 
     // --- run ---------------------------------------------------------------
     let started = std::time::Instant::now();
     println!("\n수집 시작…");
-    let report = ingestion
-        .trigger(
-            Some(SourceKind::Session),
-            &knows_me_core::core::traits::NoProgress,
-        )
+    // `None` cursor = every file under these roots is in scope. The returned
+    // cursor is deliberately dropped (see the module docs); nothing here writes
+    // to the cursor store, so the app's own backfill position is preserved.
+    let (items, _discarded_cursor) = connector
+        .sync(None, &knows_me_core::core::traits::NoProgress)
         .await?;
-    let processed = sink.take();
+    let collected = items.len();
+    let report = processing.process(items).await?;
 
     println!("\n=== 수집 ===");
-    println!(
-        "  수집 {} · 건너뜀 {} · 오류 {}",
-        report.collected, report.skipped, report.errors
-    );
+    println!("  수집 {collected}건 (커서 미변경)");
     println!("=== 가공 ===");
     println!(
         "  확정 사실 {} · 질문 {} · 걸러냄 {}",
-        processed.facts_created, processed.queue_items_created, processed.filtered
+        report.facts_created, report.queue_items_created, report.filtered
     );
     println!("  소요 {:.1}초", started.elapsed().as_secs_f64());
 
