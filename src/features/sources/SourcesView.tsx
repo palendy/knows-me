@@ -13,7 +13,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
-import type { IngestProgress, IngestSummary, SourcesApi } from "./api";
+import type {
+  IngestProgress,
+  IngestSummary,
+  SessionProject,
+  SourcesApi,
+} from "./api";
 import { messageOf } from "../u4-shared/view-state";
 import { ConnectDialog } from "./ConnectDialog";
 import "./sources.css";
@@ -100,7 +105,7 @@ const CARDS: CardModel[] = [
 
 type RunState =
   | { status: "idle" }
-  | { status: "running"; card: string | "all" }
+  | { status: "running"; card: string | "all"; drain: boolean }
   | { status: "done"; card: string | "all"; summary: IngestSummary }
   | { status: "error"; card: string | "all"; message: string };
 
@@ -112,6 +117,7 @@ export function SourcesView({ api, onIngested }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [run, setRun] = useState<RunState>({ status: "idle" });
   const [connecting, setConnecting] = useState<SourceStatus | null>(null);
+  const [scoping, setScoping] = useState(false);
   // Live progress for the card currently syncing (done/total), or null.
   const [progress, setProgress] = useState<IngestProgress | null>(null);
   // The card that started the current run, so progress events (keyed by
@@ -148,13 +154,21 @@ export function SourcesView({ api, onIngested }: Props) {
     void refresh();
   }, [refresh]);
 
-  async function sync(card?: CardModel) {
+  /** One capped batch (`drain: false`) or the whole backlog (`drain: true`).
+   *
+   * The distinction is the difference between "collect" doing something and
+   * doing everything: one batch is bounded and quick, draining walks the entire
+   * history and can run for a long time. Both are offered because both are
+   * wanted — a quick top-up, and a first full collection you walk away from. */
+  async function sync(card?: CardModel, drain = false) {
     const key = card?.id ?? "all";
     runningCard.current = card ?? "all";
     setProgress(null);
-    setRun({ status: "running", card: key });
+    setRun({ status: "running", card: key, drain });
     try {
-      const summary = await api.triggerIngest(card?.sourceKind);
+      const summary = drain
+        ? await api.triggerIngestAll(card?.sourceKind)
+        : await api.triggerIngest(card?.sourceKind);
       setRun({ status: "done", card: key, summary });
       onIngested?.();
     } catch (e) {
@@ -183,10 +197,29 @@ export function SourcesView({ api, onIngested }: Props) {
         <button
           type="button"
           className="source-btn-sm"
-          onClick={() => void sync()}
+          onClick={() => void sync(undefined, false)}
           disabled={busy}
+          title="각 소스에서 한 묶음씩 가져옵니다. 금방 끝납니다."
         >
-          {busy && run.card === "all" ? "수집 중…" : "전체 수집"}
+          {busy && run.status === "running" && run.card === "all" && !run.drain ? "수집 중…" : "새로 온 것만"}
+        </button>
+        <button
+          type="button"
+          className="source-btn-sm"
+          onClick={() => void sync(undefined, true)}
+          disabled={busy}
+          title="남은 기록을 끝까지 가져옵니다. 처음 수집이라면 오래 걸립니다."
+        >
+          {busy && run.status === "running" && run.card === "all" && run.drain ? "끝까지 수집 중…" : "끝까지 수집"}
+        </button>
+        <button
+          type="button"
+          className="source-btn-sm"
+          onClick={() => setScoping(true)}
+          disabled={busy}
+          title="어떤 프로젝트의 세션을 모을지 고릅니다"
+        >
+          범위
         </button>
         {run.status !== "idle" && (
           <SyncToast run={run} progress={progress} label={runLabel(run.card)} />
@@ -197,6 +230,10 @@ export function SourcesView({ api, onIngested }: Props) {
         <p role="alert" style={{ color: "#c0392b" }}>
           {loadError}
         </p>
+      )}
+
+      {scoping && (
+        <SessionScopeDialog api={api} onClose={() => setScoping(false)} />
       )}
 
       {status === null ? (
@@ -344,12 +381,182 @@ export function SourcesView({ api, onIngested }: Props) {
 }
 
 /** The label for the card a run belongs to ("전체" for a collect-all run). */
+/**
+ * Pick which project directories collection reads from.
+ *
+ * The list is every project on disk, not just the ones currently in scope —
+ * a picker that hides what you excluded gives you no way to put it back. An
+ * empty selection means "everything", which is both the natural reading of an
+ * untouched picker and the only choice that cannot leave the owner with a
+ * source that silently collects nothing.
+ */
+function SessionScopeDialog({
+  api,
+  onClose,
+}: {
+  api: SourcesApi;
+  onClose: () => void;
+}) {
+  const [projects, setProjects] = useState<SessionProject[] | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.listSessionProjects(), api.getSessionScope()])
+      .then(([list, scope]) => {
+        if (cancelled) return;
+        setProjects(list);
+        setSelected(new Set(scope));
+      })
+      .catch((e) => !cancelled && setError(messageOf(e)));
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  function toggle(path: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.setSessionScope([...selected]);
+      onClose();
+    } catch (e) {
+      setError(messageOf(e));
+      setSaving(false);
+    }
+  }
+
+  const all = selected.size === 0;
+  const totalPicked = (projects ?? [])
+    .filter((p) => selected.has(p.path))
+    .reduce((n, p) => n + p.sessions, 0);
+  const totalAll = (projects ?? []).reduce((n, p) => n + p.sessions, 0);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="수집 범위"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff",
+          borderRadius: 12,
+          padding: 24,
+          width: 460,
+          maxWidth: "90vw",
+          maxHeight: "80vh",
+          overflowY: "auto",
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>수집 범위</h3>
+        <p style={{ color: "#5d6270", fontSize: 14, marginTop: 0 }}>
+          어떤 프로젝트의 세션을 모을지 고르세요. 아무것도 고르지 않으면 전부
+          모읍니다.
+        </p>
+
+        {error && <p role="alert" style={{ color: "#c0392b" }}>{error}</p>}
+        {!projects && !error && <p>불러오는 중…</p>}
+
+        {projects && (
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: "0 0 12px",
+              maxHeight: "40vh",
+              overflowY: "auto",
+            }}
+          >
+            {projects.map((p) => (
+              <li key={p.path} style={{ borderBottom: "1px solid #eceef1" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "8px 2px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(p.path)}
+                    onChange={() => toggle(p.path)}
+                  />
+                  <span style={{ flex: 1, fontSize: 14 }}>{p.label}</span>
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      color: "#6b6b70",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    세션 {p.sessions}개
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <p style={{ fontSize: 13.5, color: "#5d6270" }}>
+          {all
+            ? `전체 ${totalAll}개 세션을 모읍니다.`
+            : `선택한 ${selected.size}개 프로젝트 · 세션 ${totalPicked}개`}
+        </p>
+
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 8,
+            marginTop: 4,
+          }}
+        >
+          <button type="button" onClick={onClose} disabled={saving}>
+            취소
+          </button>
+          <button
+            type="button"
+            className="work-primary"
+            onClick={() => void save()}
+            disabled={saving || !projects}
+          >
+            {saving ? "저장 중…" : "저장"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function runLabel(cardId: string): string {
   if (cardId === "all") return "전체";
   return CARDS.find((c) => c.id === cardId)?.label ?? cardId;
 }
 
-/** Sync feedback shown as a toast beside the "전체 수집" button. Kept out of the
+/** Sync feedback shown as a toast beside the collect buttons. Kept out of the
  * cards so a running/finished sync never grows a card and ripples its grid
  * row's height. Distinguishes three done-outcomes so an all-zeros run isn't
  * ambiguous: error (with cause), items collected, or a clean "nothing new". */

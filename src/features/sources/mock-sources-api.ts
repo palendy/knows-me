@@ -1,5 +1,10 @@
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
-import type { IngestProgress, IngestSummary, SourcesApi } from "./api";
+import type {
+  IngestProgress,
+  IngestSummary,
+  SessionProject,
+  SourcesApi,
+} from "./api";
 
 /** Field templates mirroring the Rust `credential_spec` so the browser-mode
  * sources screen renders the same connect form without Tauri. */
@@ -48,6 +53,8 @@ const CATALOG: SourceStatus[] = [
 export class MockSourcesApi implements SourcesApi {
   /** Which sources have a stored credential this session. */
   private connected = new Set<SourceKind>();
+  /** Roots collection is limited to; empty means everything. */
+  private scope: string[] = [];
   private progressCbs = new Set<(p: IngestProgress) => void>();
 
   onProgress(cb: (p: IngestProgress) => void): () => void {
@@ -120,5 +127,37 @@ export class MockSourcesApi implements SourcesApi {
       queue_items_created: 4,
       filtered: 3,
     };
+  }
+
+  /** Drains the backlog: the distinguishing feature is `remaining: 0`. */
+  async triggerIngestAll(source?: SourceKind): Promise<IngestSummary> {
+    const first = await this.triggerIngest(source);
+    const total = first.collected + first.remaining;
+    return {
+      ...first,
+      collected: total,
+      remaining: 0,
+      facts_created: Math.round(first.facts_created * (total / first.collected)),
+      queue_items_created: first.queue_items_created,
+      filtered: first.filtered,
+    };
+  }
+
+  async listSessionProjects(): Promise<SessionProject[]> {
+    await new Promise((r) => setTimeout(r, 60));
+    return [
+      { path: "/p/knows-me", label: "Work/18_avatar/knows-me", sessions: 103, newest: "2026-09-09T04:00:00Z" },
+      { path: "/p/trade", label: "Work/06_trade_follow", sessions: 19, newest: "2026-09-02T10:00:00Z" },
+      { path: "/p/hack", label: "Work/18_avatar/dsdn_hackerton", sessions: 12, newest: "2026-08-30T09:00:00Z" },
+    ];
+  }
+
+  async getSessionScope(): Promise<string[]> {
+    return [...this.scope];
+  }
+
+  async setSessionScope(roots: string[]): Promise<void> {
+    await new Promise((r) => setTimeout(r, 40));
+    this.scope = [...roots];
   }
 }

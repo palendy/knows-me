@@ -103,6 +103,16 @@ pub trait Connector: Send + Sync {
     async fn remaining(&self, _cursor: Option<Cursor>) -> Result<usize> {
         Ok(0)
     }
+    /// Apply a source-specific configuration (e.g. which directories to scan).
+    ///
+    /// Defaults to ignoring it, so a connector with nothing to configure needs
+    /// no code. Takes `&self` because connectors live behind `Arc` in the
+    /// registry and are reconfigured while the app runs — an implementation
+    /// that stores config keeps it behind its own lock.
+    fn configure(&self, _config: &SourceConfig) -> Result<()> {
+        Ok(())
+    }
+
     /// Whether this source supports manual upload.
     fn supports_manual(&self) -> bool;
 }
@@ -111,6 +121,18 @@ pub trait Connector: Send + Sync {
 #[async_trait]
 pub trait IngestionApi: Send + Sync {
     async fn configure(&self, source: SourceKind, config: SourceConfig) -> Result<()>;
+
+    /// Like `trigger`, but keeps going until the source has nothing left.
+    ///
+    /// Connectors bound one pass so a single manual sync stays predictable;
+    /// this is the caller that wants the whole backlog drained. `max_passes`
+    /// is a safety bound, not a target.
+    async fn trigger_all(
+        &self,
+        source: Option<SourceKind>,
+        progress: &dyn ProgressReporter,
+        max_passes: usize,
+    ) -> Result<IngestReport>;
     /// Run ingestion for one source (or all if `None`), reporting progress as it
     /// goes so the caller can drive a UI progress bar.
     async fn trigger(

@@ -173,7 +173,10 @@ pub enum TransferPolicy {
 // ---------------------------------------------------------------------------
 
 /// Opaque incremental-sync cursor for a source connector.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+///
+/// Comparable so a caller can tell whether a sync pass actually advanced the
+/// frontier — the stop condition for draining a source in batches.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cursor(pub String);
 
 /// A raw, un-processed item pulled from a source (before masking/summarization).

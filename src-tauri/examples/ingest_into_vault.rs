@@ -128,11 +128,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // `None` cursor = every file under these roots is in scope. The returned
     // cursor is deliberately dropped (see the module docs); nothing here writes
     // to the cursor store, so the app's own backfill position is preserved.
-    let (items, _discarded_cursor) = connector
-        .sync(None, &knows_me_core::core::traits::NoProgress)
-        .await?;
-    let collected = items.len();
-    let report = processing.process(items).await?;
+    // One `sync` is capped by the connector (`MAX_FILES_PER_SYNC`), so a single
+    // call reaches only the newest batch — and with a null cursor it reaches the
+    // *same* batch every run, never the rest. Threading the returned cursor back
+    // in walks the whole history: fresh first, then backfill downward.
+    let mut cursor: Option<knows_me_core::core::types::Cursor> = None;
+    let mut collected = 0usize;
+    let mut report = knows_me_core::core::types::ProcessReport::default();
+    loop {
+        let (items, next) = connector
+            .sync(cursor.clone(), &knows_me_core::core::traits::NoProgress)
+            .await?;
+        // A standstill cursor is the stop condition, not an empty batch: a pass
+        // can legitimately yield no items (a tooling-only transcript is covered
+        // but carries nothing) while still advancing the frontier.
+        if cursor.as_ref() == Some(&next) {
+            break;
+        }
+        cursor = Some(next);
+        if items.is_empty() {
+            continue;
+        }
+        collected += items.len();
+        let r = processing.process(items).await?;
+        report.facts_created += r.facts_created;
+        report.queue_items_created += r.queue_items_created;
+        report.filtered += r.filtered;
+        println!("  … {collected}건 처리");
+    }
 
     println!("\n=== 수집 ===");
     println!("  수집 {collected}건 (커서 미변경)");

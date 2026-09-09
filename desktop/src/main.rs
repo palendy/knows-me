@@ -20,9 +20,8 @@ mod services;
 use knows_me_core::core::commands::{self, AppStatus, SourceStatus};
 use knows_me_core::core::types::{
     AnswerInput, AnswerResult, AppConfig, ChatTurn, DashboardDto, Draft, DraftRequest, GraphDto,
-    GraphFilter,
-    MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, SourceKind, TransferPolicy,
-    TransferRecord,
+    GraphFilter, MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, SourceConfig,
+    SourceKind, TransferPolicy, TransferRecord,
 };
 use knows_me_core::AppState;
 use services::Services;
@@ -352,10 +351,7 @@ async fn connect_source(
 
 /// Remove a source's credential (disconnect). Idempotent.
 #[tauri::command]
-async fn disconnect_source(
-    state: tauri::State<'_, AppState>,
-    source: SourceKind,
-) -> CmdResult<()> {
+async fn disconnect_source(state: tauri::State<'_, AppState>, source: SourceKind) -> CmdResult<()> {
     commands::disconnect_source(state.inner(), source)
         .await
         .map_err(err)
@@ -457,6 +453,111 @@ impl knows_me_core::core::traits::ProgressReporter for EmitProgress {
     }
 }
 
+/// The project directories the owner could collect from, with session counts.
+///
+/// Read straight off disk rather than from the vault: this answers "what is
+/// available", which is true whether or not the vault has ever been unlocked
+/// and must not be narrowed by the scope currently in force — a picker that
+/// hides the projects you excluded gives you no way to put them back.
+#[tauri::command]
+fn list_session_projects() -> Vec<knows_me_core::ingestion::connectors::SessionProject> {
+    knows_me_core::ingestion::connectors::SessionConnector::available_projects()
+}
+
+/// Narrow (or reset) which project directories collection reads from.
+///
+/// An empty list means "everything I can find" — the natural reading of a
+/// picker with nothing ticked, and the only one that cannot strand the owner
+/// with a source that silently collects nothing.
+#[tauri::command]
+async fn set_session_scope(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    roots: Vec<String>,
+) -> CmdResult<()> {
+    use knows_me_core::core::traits::EncryptedStore;
+    let config = serde_json::json!({ "roots": roots });
+    let bytes = serde_json::to_vec(&config).map_err(|e| format!("scope: {e}"))?;
+    state
+        .store()
+        .put(services::SCOPE_NS, services::SCOPE_KEY, &bytes)
+        .await
+        .map_err(err)?;
+
+    // Persist first, then apply: a scope that survives the restart but was not
+    // applied is a confusing next run; the reverse is a lost setting.
+    services
+        .with(|s| async move {
+            s.ingestion
+                .configure(SourceKind::Session, SourceConfig(config))
+                .await
+        })
+        .await
+        .map_err(err)
+}
+
+/// The scope currently in force, as a list of root paths. Empty = all.
+#[tauri::command]
+async fn get_session_scope(state: tauri::State<'_, AppState>) -> CmdResult<Vec<String>> {
+    use knows_me_core::core::traits::EncryptedStore;
+    let bytes = state
+        .store()
+        .get(services::SCOPE_NS, services::SCOPE_KEY)
+        .await
+        .map_err(err)?;
+    let Some(bytes) = bytes else {
+        return Ok(vec![]);
+    };
+    let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap_or_default();
+    Ok(value
+        .get("roots")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default())
+}
+
+/// Collect until the source has nothing left, instead of one capped batch.
+///
+/// One press of the ordinary collect button takes a bounded slice so it stays
+/// predictable. That cap was also the ceiling on what the vault could ever
+/// hold — with hundreds of transcripts on disk, everything past the newest
+/// batch was reachable only by pressing the button over and over. This is the
+/// button for "just do all of it"; it can run for a long time, which is why
+/// progress is emitted per pass.
+#[tauri::command]
+async fn trigger_ingest_all(
+    services: tauri::State<'_, Services>,
+    window: tauri::WebviewWindow,
+    source: Option<SourceKind>,
+) -> CmdResult<IngestSummary> {
+    const MAX_PASSES: usize = 200;
+    let reporter = EmitProgress { window };
+    services
+        .with(|s| async move {
+            let ingest = s
+                .ingestion
+                .trigger_all(source, &reporter, MAX_PASSES)
+                .await?;
+            let processed = s.sink.take();
+            Ok(IngestSummary {
+                collected: ingest.collected,
+                skipped: ingest.skipped,
+                errors: ingest.errors,
+                remaining: ingest.remaining,
+                error_messages: ingest.error_messages,
+                facts_created: processed.facts_created,
+                queue_items_created: processed.queue_items_created,
+                filtered: processed.filtered,
+            })
+        })
+        .await
+        .map_err(err)
+}
+
 #[tauri::command]
 async fn trigger_ingest(
     services: tauri::State<'_, Services>,
@@ -529,6 +630,10 @@ fn main() {
             connect_source,
             disconnect_source,
             trigger_ingest,
+            trigger_ingest_all,
+            list_session_projects,
+            get_session_scope,
+            set_session_scope,
             persona_history_load,
             persona_history_save,
         ])

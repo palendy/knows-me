@@ -213,4 +213,66 @@ describe("SourcesView", () => {
       screen.getByRole("dialog", { name: "Notion 연결" }),
     ).toBeInTheDocument();
   });
+
+  it('"끝까지 수집" drains the backlog, "새로 온 것만" takes one batch', async () => {
+    // These call different backends on purpose. One capped batch was also the
+    // ceiling on what the vault could ever hold — with hundreds of transcripts
+    // on disk, everything past the newest batch needed the button pressed over
+    // and over. A single button wired to the capped call cannot express "just
+    // collect all of it".
+    const api = new MockSourcesApi();
+    const one = vi.spyOn(api, "triggerIngest");
+    const all = vi.spyOn(api, "triggerIngestAll");
+    render(<SourcesView api={api} />);
+
+    const batch = await screen.findByRole("button", { name: "새로 온 것만" });
+    await userEvent.click(batch);
+    await waitFor(() => expect(one).toHaveBeenCalledTimes(1));
+    expect(all).not.toHaveBeenCalled();
+
+    // Both buttons are disabled while a run is in flight, so the second click
+    // has to wait for the first to land rather than being swallowed.
+    const drain = screen.getByRole("button", { name: "끝까지 수집" });
+    await waitFor(() => expect(drain).toBeEnabled());
+    await userEvent.click(drain);
+    await waitFor(() => expect(all).toHaveBeenCalledTimes(1));
+  });
+
+  it("scopes collection to the chosen projects", async () => {
+    const api = new MockSourcesApi();
+    const save = vi.spyOn(api, "setSessionScope");
+    render(<SourcesView api={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "범위" }));
+    const dialog = await screen.findByRole("dialog", { name: "수집 범위" });
+
+    // Every project on disk is listed, including ones outside the current
+    // scope — a picker that hides what you excluded cannot put it back.
+    const projects = await api.listSessionProjects();
+    for (const p of projects) {
+      expect(within(dialog).getByText(p.label)).toBeInTheDocument();
+    }
+
+    await userEvent.click(within(dialog).getAllByRole("checkbox")[0]);
+    await userEvent.click(within(dialog).getByRole("button", { name: "저장" }));
+
+    await waitFor(() =>
+      expect(save).toHaveBeenCalledWith([projects[0].path]),
+    );
+  });
+
+  it("an empty selection means everything, not nothing", async () => {
+    // The failure this guards: reading "no boxes ticked" as "collect from no
+    // directories" leaves a source that silently returns nothing and looks
+    // broken rather than unconfigured.
+    const api = new MockSourcesApi();
+    render(<SourcesView api={api} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "범위" }));
+    const dialog = await screen.findByRole("dialog", { name: "수집 범위" });
+
+    await waitFor(() =>
+      expect(within(dialog).getByText(/전체 .*세션을 모읍니다/)).toBeInTheDocument(),
+    );
+  });
 });

@@ -61,7 +61,8 @@ describe("UnlockedShell (app wiring)", () => {
     await screen.findByRole("heading", { name: "대시보드" });
     await userEvent.click(screen.getByRole("tab", { name: "설정" }));
     await userEvent.click(screen.getByRole("tab", { name: "연결 소스" }));
-    expect(await screen.findByRole("button", { name: "전체 수집" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "새로 온 것만" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "끝까지 수집" })).toBeEnabled();
   });
 });
 

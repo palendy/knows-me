@@ -14,18 +14,21 @@
 use std::sync::Arc;
 
 use knows_me_core::core::traits::{
-    CredentialStore, EncryptedStore, IngestionApi, InterviewApi, KeyManager, KnowledgeApi, Masker,
-    PersonaApi,
+    Connector, CredentialStore, EncryptedStore, IngestionApi, InterviewApi, KeyManager,
+    KnowledgeApi, Masker, PersonaApi,
 };
-use knows_me_core::ingestion::connectors::{FileConnector, GmailConnector, NotionConnector, SessionConnector};
+use knows_me_core::core::types::SourceConfig;
+use knows_me_core::ingestion::connectors::{
+    FileConnector, GmailConnector, NotionConnector, SessionConnector,
+};
 use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
-use knows_me_core::processing::service::AlwaysOnline;
-use knows_me_core::processing::{PendingQueue, ProcessingService, ProcessingSink, TransferLog};
 use knows_me_core::persona::{
     LocalApiHandle, LocalApiServer, PersonaService, QueryService, DEFAULT_PORT,
 };
+use knows_me_core::processing::service::AlwaysOnline;
+use knows_me_core::processing::{PendingQueue, ProcessingService, ProcessingSink, TransferLog};
 use knows_me_core::AppState;
 use tokio::sync::Mutex;
 
@@ -94,7 +97,18 @@ impl ServiceSet {
         let mut registry = ConnectorRegistry::new();
         // Session transcripts are already on disk — no credentials needed, so
         // this one works the moment the vault opens.
-        registry.register(Arc::new(SessionConnector::from_config(None)));
+        // Kept concretely as well as in the registry: the scope the owner picks
+        // is applied to this connector and has to survive a restart, so the
+        // shell replays the stored scope on unlock (see `apply_stored_scope`).
+        let session = Arc::new(SessionConnector::from_config(None));
+        registry.register(session.clone());
+        // Replay the owner's saved collection scope before the first sync, so
+        // an app that reopens collects what it was last told to collect.
+        if let Some(cfg) = load_session_scope(&store).await {
+            if let Err(e) = session.configure(&cfg) {
+                eprintln!("[sources] stored session scope ignored: {e}");
+            }
+        }
         registry.register(Arc::new(FileConnector::new()));
         registry.register(Arc::new(NotionConnector::new(credentials.clone())));
         registry.register(Arc::new(GmailConnector::new(credentials)));
@@ -121,6 +135,21 @@ impl ServiceSet {
             local_api,
         }
     }
+}
+
+/// Namespace/key for the owner's saved collection scope.
+pub const SCOPE_NS: &str = "sources";
+pub const SCOPE_KEY: &str = "session-scope";
+
+/// The saved scope, or `None` when the owner has never narrowed it.
+///
+/// A missing or unreadable value is not an error: it means "collect from the
+/// default locations", which is what a fresh install does anyway.
+async fn load_session_scope(store: &Arc<dyn EncryptedStore>) -> Option<SourceConfig> {
+    let bytes = store.get(SCOPE_NS, SCOPE_KEY).await.ok().flatten()?;
+    serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .map(SourceConfig)
 }
 
 /// Start the loopback persona API, logging (not failing) on bind errors — the

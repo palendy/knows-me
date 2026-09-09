@@ -1,5 +1,10 @@
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
-import type { IngestProgress, IngestSummary, SourcesApi } from "./api";
+import type {
+  IngestProgress,
+  IngestSummary,
+  SessionProject,
+  SourcesApi,
+} from "./api";
 
 type Invoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -44,5 +49,23 @@ export class TauriSourcesApi implements SourcesApi {
     return this.invoke<IngestSummary>("trigger_ingest", {
       source: source ?? null,
     });
+  }
+
+  triggerIngestAll(source?: SourceKind): Promise<IngestSummary> {
+    return this.invoke<IngestSummary>("trigger_ingest_all", {
+      source: source ?? null,
+    });
+  }
+
+  listSessionProjects(): Promise<SessionProject[]> {
+    return this.invoke<SessionProject[]>("list_session_projects", {});
+  }
+
+  getSessionScope(): Promise<string[]> {
+    return this.invoke<string[]>("get_session_scope", {});
+  }
+
+  setSessionScope(roots: string[]): Promise<void> {
+    return this.invoke<void>("set_session_scope", { roots });
   }
 }

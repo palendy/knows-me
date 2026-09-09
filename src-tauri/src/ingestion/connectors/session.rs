@@ -245,15 +245,119 @@ fn top_n(counts: &BTreeMap<String, usize>, n: usize) -> String {
         .join(" · ")
 }
 
+/// One project directory the owner could choose to collect from.
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct SessionProject {
+    /// Absolute path, and what `SourceConfig`'s `roots` expects back.
+    pub path: String,
+    /// The working directory the transcripts belong to, as best we can tell.
+    ///
+    /// Claude Code encodes it in the directory name by replacing separators
+    /// with dashes, which is unreadable on screen; this restores something the
+    /// owner recognises.
+    pub label: String,
+    pub sessions: usize,
+    /// Most recent transcript mtime, RFC 3339, if any.
+    pub newest: Option<String>,
+}
+
+/// Turn Claude Code's dash-encoded directory name into something readable.
+///
+/// `-Users-junyung-ahn-Desktop-Work-18-avatar-knows-me` is the working
+/// directory with every `/` replaced by `-`, which is why it cannot be decoded
+/// exactly — a real dash in a folder name is indistinguishable from a
+/// separator. The last couple of segments are what identifies the project to
+/// its owner, so that is what we show.
+fn project_label(dir_name: &str) -> String {
+    let parts: Vec<&str> = dir_name.trim_start_matches('-').split('-').collect();
+    // Drop the home-directory prefix when it is recognisable, so every entry
+    // does not start with the same six segments.
+    let start = parts
+        .iter()
+        .position(|p| p.eq_ignore_ascii_case("Desktop") || p.eq_ignore_ascii_case("Documents"))
+        .map_or(0, |i| i + 1);
+    let tail: Vec<&str> = parts[start.min(parts.len())..].to_vec();
+    if tail.is_empty() {
+        dir_name.to_string()
+    } else {
+        tail.join("/")
+    }
+}
+
 /// Reads session transcripts from one or more root directories.
 pub struct SessionConnector {
-    roots: Vec<PathBuf>,
+    /// Behind a lock because the owner re-scopes collection while the app runs
+    /// and the registry hands out `Arc<dyn Connector>` — see
+    /// [`Connector::configure`](crate::core::traits::Connector::configure).
+    roots: std::sync::RwLock<Vec<PathBuf>>,
 }
 
 impl SessionConnector {
     /// Construct from explicit roots (e.g. resolved from `SourceConfig`).
     pub fn new(roots: Vec<PathBuf>) -> Self {
-        Self { roots }
+        Self {
+            roots: std::sync::RwLock::new(roots),
+        }
+    }
+
+    fn roots(&self) -> Vec<PathBuf> {
+        // A poisoned lock means a panic while re-scoping; the roots themselves
+        // are still readable and collecting from stale roots beats refusing to
+        // collect at all.
+        self.roots.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Every project directory under the *default* locations, with counts, so
+    /// the owner can pick a subset without typing paths.
+    ///
+    /// Deliberately scans the defaults rather than the configured roots: this
+    /// answers "what could I collect?", and a narrowed scope must not hide the
+    /// projects it left out.
+    pub fn available_projects() -> Vec<SessionProject> {
+        let mut out = Vec::new();
+        for root in Self::default_roots() {
+            let Ok(entries) = fs::read_dir(&root) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if EXCLUDED_DIR_NAMES.contains(&name.as_str()) {
+                    continue;
+                }
+                let mut sessions = 0usize;
+                let mut newest: Option<DateTime<Utc>> = None;
+                if let Ok(files) = fs::read_dir(&path) {
+                    for f in files.flatten() {
+                        if f.path().extension().is_some_and(|e| e == "jsonl") {
+                            sessions += 1;
+                            if let Some(m) = f.metadata().ok().and_then(|m| m.modified().ok()) {
+                                let m: DateTime<Utc> = m.into();
+                                newest = Some(newest.map_or(m, |n: DateTime<Utc>| n.max(m)));
+                            }
+                        }
+                    }
+                }
+                if sessions == 0 {
+                    continue;
+                }
+                out.push(SessionProject {
+                    label: project_label(&name),
+                    path: path.to_string_lossy().into_owned(),
+                    sessions,
+                    newest: newest.map(|d| d.to_rfc3339()),
+                });
+            }
+        }
+        out.sort_by(|a, b| {
+            b.sessions
+                .cmp(&a.sessions)
+                .then_with(|| a.label.cmp(&b.label))
+        });
+        out
     }
 
     /// Auto-detect known session locations, then apply any `SourceConfig`
@@ -558,9 +662,9 @@ impl SessionConnector {
     fn pending(&self, cursor: Option<Cursor>) -> Result<usize> {
         let (seen_newest, seen_oldest) = Self::parse_cursor(cursor);
         let mut files = Vec::new();
-        for root in &self.roots {
+        for root in self.roots() {
             if root.exists() {
-                Self::scan_dir(root, &mut files);
+                Self::scan_dir(&root, &mut files);
             }
         }
         let mut count = 0usize;
@@ -600,9 +704,9 @@ impl Connector for SessionConnector {
         let (seen_newest, seen_oldest) = Self::parse_cursor(cursor);
 
         let mut files = Vec::new();
-        for root in &self.roots {
+        for root in self.roots() {
             if root.exists() {
-                Self::scan_dir(root, &mut files);
+                Self::scan_dir(&root, &mut files);
             }
         }
 
@@ -669,6 +773,33 @@ impl Connector for SessionConnector {
         }
 
         Ok((items, Self::render_cursor(newest, oldest)))
+    }
+
+    /// Re-scope collection to `config.roots`, or back to auto-detection when
+    /// the list is absent or empty.
+    ///
+    /// Empty means "everything I can find", not "nothing": a scope picker with
+    /// every box unchecked has to keep working, and silently collecting from
+    /// no directories would look identical to a broken connector.
+    fn configure(&self, config: &SourceConfig) -> Result<()> {
+        let roots: Vec<PathBuf> = config
+            .0
+            .get("roots")
+            .and_then(|v| v.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str())
+                    .map(PathBuf::from)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let roots = if roots.is_empty() {
+            Self::default_roots()
+        } else {
+            roots
+        };
+        *self.roots.write().unwrap_or_else(|e| e.into_inner()) = roots;
+        Ok(())
     }
 
     fn supports_manual(&self) -> bool {
