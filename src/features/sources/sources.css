@@ -8,9 +8,10 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   margin-top: 16px;
-  /* Each card sizes to its own content; a card that grows (progress/result)
-   * must not stretch its row-mates. */
-  align-items: start;
+  /* Row-mates match the tallest card in their row, so when one card grows
+   * (progress/result) the others grow with it and the row's bottom edge stays
+   * aligned instead of going ragged. */
+  align-items: stretch;
 }
 
 @media (max-width: 560px) {
@@ -43,7 +44,14 @@
 
 /* Not connected / not ready → dim the whole card (opacity 0.55), matching the
  * reference UI's disabled treatment. */
-.source-card.is-dimmed {
+/* Not connected / not ready → dim the card's content, but NOT the connect
+ * toggle: it's the one still-actionable control, so it must not read as
+ * disabled. (Opacity on the whole card can't be undone on a child — a child's
+ * effective opacity is multiplied by its parent's group opacity — so we dim the
+ * specific parts instead of the card.) */
+.source-card.is-dimmed .source-card__icon,
+.source-card.is-dimmed .source-card__text,
+.source-card.is-dimmed .source-card__bottom {
   opacity: 0.55;
 }
 
@@ -265,5 +273,77 @@
   }
   100% {
     margin-left: 100%;
+  }
+}
+
+/* Sync feedback toast — sits at the right of the header (beside "전체 수집") so a
+ * running/finished sync never changes a card's height. */
+.sync-toast {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 56%;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  background: #f1f5f9;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  animation: sync-toast-in 160ms ease;
+}
+
+.sync-toast__msg {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sync-toast--ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sync-toast--muted {
+  background: #f1f5f9;
+  color: #6b7280;
+}
+
+.sync-toast--error {
+  background: #fef2f2;
+  color: #b42318;
+  white-space: normal;
+}
+
+.sync-toast__track {
+  flex: 0 0 64px;
+  height: 5px;
+  border-radius: 999px;
+  background: #e4e7ec;
+  overflow: hidden;
+}
+
+.sync-toast__fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #1a2233;
+  transition: width 150ms ease;
+}
+
+.sync-toast__fill.is-indeterminate {
+  width: 40%;
+  animation: source-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes sync-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

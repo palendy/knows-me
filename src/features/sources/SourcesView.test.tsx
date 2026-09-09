@@ -138,32 +138,34 @@ describe("SourcesView", () => {
     expect(within(card("Gmail")).getByRole("button", { name: "수집" })).toBeDisabled();
   });
 
-  it("shows the sync result inline inside the card that ran", async () => {
+  it("shows the sync result in a toast labeled with the source that ran", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
     await screen.findByText("Claude");
     await userEvent.click(within(card("Claude")).getByRole("button", { name: "수집" }));
 
-    // The result appears in the Claude card (mock returns 12 collected).
-    await waitFor(() =>
-      expect(within(card("Claude")).getByText(/12건 수집/)).toBeInTheDocument(),
-    );
-    // And not in a sibling card.
+    // The result rides in a toast (mock returns 12 collected), tagged "Claude".
+    await waitFor(() => {
+      const toast = screen.getByRole("status");
+      expect(toast).toHaveTextContent(/12건 수집/);
+      expect(toast).toHaveTextContent("Claude");
+    });
+    // It is not rendered inside any card, so it can't grow the grid row.
+    expect(within(card("Claude")).queryByText(/12건 수집/)).toBeNull();
     expect(within(card("Codex")).queryByText(/12건 수집/)).toBeNull();
   });
 
-  it("shows a determinate progress bar while syncing", async () => {
+  it("shows a determinate progress bar in the toast while syncing", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
     await screen.findByText("Claude");
     await userEvent.click(within(card("Claude")).getByRole("button", { name: "수집" }));
 
-    // Mock emits done/total ticks; the card shows "수집 중… N/12".
+    // Mock emits done/total ticks; the toast shows "수집 중… N/12".
     await waitFor(() =>
-      expect(within(card("Claude")).getByText(/수집 중… \d+\/12/)).toBeInTheDocument(),
+      expect(screen.getByRole("status")).toHaveTextContent(/수집 중… \d+\/12/),
     );
     // Eventually completes with the collected summary.
     await waitFor(
-      () =>
-        expect(within(card("Claude")).getByText(/12건 수집/)).toBeInTheDocument(),
+      () => expect(screen.getByRole("status")).toHaveTextContent(/12건 수집/),
       { timeout: 2000 },
     );
   });
@@ -184,9 +186,7 @@ describe("SourcesView", () => {
     await screen.findByText("Claude");
     await userEvent.click(within(card("Claude")).getByRole("button", { name: "수집" }));
 
-    expect(
-      await within(card("Claude")).findByText(/401: unauthorized/),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/401: unauthorized/);
   });
 
   it("surfaces a connect error inside the dialog without closing it", async () => {

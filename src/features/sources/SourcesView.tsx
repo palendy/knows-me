@@ -125,6 +125,13 @@ export function SourcesView({ api, onIngested }: Props) {
     return unsub;
   }, [api]);
 
+  // Auto-dismiss the sync toast a few seconds after a run finishes.
+  useEffect(() => {
+    if (run.status !== "done" && run.status !== "error") return;
+    const t = setTimeout(() => setRun({ status: "idle" }), 5000);
+    return () => clearTimeout(t);
+  }, [run]);
+
   const refresh = useCallback(async () => {
     try {
       const list = await api.listSources();
@@ -181,19 +188,15 @@ export function SourcesView({ api, onIngested }: Props) {
         >
           {busy && run.card === "all" ? "수집 중…" : "전체 수집"}
         </button>
+        {run.status !== "idle" && (
+          <SyncToast run={run} progress={progress} label={runLabel(run.card)} />
+        )}
       </header>
 
       {loadError && (
         <p role="alert" style={{ color: "#c0392b" }}>
           {loadError}
         </p>
-      )}
-
-      {/* Aggregate result for "전체 수집". Per-card runs render inside the card. */}
-      {run.status !== "idle" && run.card === "all" && (
-        <div style={{ marginTop: 12 }}>
-          <SyncResult run={run} cardId="all" progress={progress} />
-        </div>
       )}
 
       {status === null ? (
@@ -317,8 +320,6 @@ export function SourcesView({ api, onIngested }: Props) {
                     </button>
                   </div>
                 </div>
-
-                <SyncResult run={run} cardId={card.id} progress={progress} />
               </div>
             );
           })}
@@ -342,82 +343,78 @@ export function SourcesView({ api, onIngested }: Props) {
   );
 }
 
-/** Inline sync feedback for one card (or the "전체 수집" summary when
- * `cardId === "all"`). Distinguishes three outcomes so a run of all-zeros isn't
- * ambiguous: an error (with its cause), items collected, or a clean "nothing
- * new" — which confirms the connection works but had no fresh data. */
-function SyncResult({
+/** The label for the card a run belongs to ("전체" for a collect-all run). */
+function runLabel(cardId: string): string {
+  if (cardId === "all") return "전체";
+  return CARDS.find((c) => c.id === cardId)?.label ?? cardId;
+}
+
+/** Sync feedback shown as a toast beside the "전체 수집" button. Kept out of the
+ * cards so a running/finished sync never grows a card and ripples its grid
+ * row's height. Distinguishes three done-outcomes so an all-zeros run isn't
+ * ambiguous: error (with cause), items collected, or a clean "nothing new". */
+function SyncToast({
   run,
-  cardId,
   progress,
+  label,
 }: {
   run: RunState;
-  cardId: string;
   progress: IngestProgress | null;
+  label: string;
 }) {
-  if (run.status === "running" && run.card === cardId) {
-    // Show a determinate bar once the connector reports done/total; until then
-    // (or for sources that don't report), a simple "수집 중…" label.
+  if (run.status === "running") {
     const pct =
       progress && progress.total > 0
         ? Math.min(100, Math.round((progress.done / progress.total) * 100))
         : null;
     return (
-      <div className="source-result">
-        <div className="source-progress-label">
+      <div className="sync-toast" role="status">
+        <span className="sync-toast__msg">
+          {label} 수집 중…
           {progress && progress.total > 0
-            ? `수집 중… ${progress.done}/${progress.total}`
+            ? ` ${progress.done}/${progress.total}`
             : progress && progress.done > 0
-              ? `수집 중… ${progress.done}건`
-              : "수집 중…"}
-        </div>
-        <div className="source-progress-track">
-          <div
-            className={`source-progress-fill${pct === null ? " is-indeterminate" : ""}`}
+              ? ` ${progress.done}건`
+              : ""}
+        </span>
+        <span className="sync-toast__track">
+          <span
+            className={`sync-toast__fill${pct === null ? " is-indeterminate" : ""}`}
             style={pct === null ? undefined : { width: `${pct}%` }}
           />
-        </div>
+        </span>
       </div>
     );
   }
-  if (run.status === "error" && run.card === cardId) {
+  if (run.status === "error") {
     return (
-      <div className="source-result source-result--error" role="alert">
-        수집 실패: {run.message}
+      <div className="sync-toast sync-toast--error" role="alert">
+        {label} 수집 실패: {run.message}
       </div>
     );
   }
-  if (run.status === "done" && run.card === cardId) {
+  if (run.status === "done") {
     const s = run.summary;
     if (s.errors > 0) {
       return (
-        <div className="source-result source-result--error" role="alert">
-          오류 {s.errors}건
-          {s.error_messages.length > 0 && (
-            <>
-              {" — "}
-              {s.error_messages.join("; ")}
-            </>
-          )}
+        <div className="sync-toast sync-toast--error" role="alert">
+          {label} · 오류 {s.errors}건
+          {s.error_messages.length > 0 && ` — ${s.error_messages.join("; ")}`}
         </div>
       );
     }
     if (s.collected > 0) {
       return (
-        <div className="source-result source-result--ok" role="status">
-          {s.collected}건 수집 · 사실 {s.facts_created}개 · 질문{" "}
+        <div className="sync-toast sync-toast--ok" role="status">
+          {label} · {s.collected}건 수집 · 사실 {s.facts_created}개 · 질문{" "}
           {s.queue_items_created}개
-          {s.remaining > 0 && (
-            <div style={{ marginTop: 4, color: "#475569" }}>
-              아직 {s.remaining}건 남음 — 다시 눌러 이어서 수집
-            </div>
-          )}
+          {s.remaining > 0 && ` · ${s.remaining}건 남음`}
         </div>
       );
     }
     return (
-      <div className="source-result source-result--muted" role="status">
-        연결됨 · 새로 가져올 항목이 없습니다
+      <div className="sync-toast sync-toast--muted" role="status">
+        {label} · 새로 가져올 항목이 없습니다
       </div>
     );
   }

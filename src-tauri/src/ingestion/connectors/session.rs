@@ -214,14 +214,85 @@ impl SessionConnector {
     }
 
     /// Known default locations. Missing dirs are simply skipped at scan time.
+    ///
+    /// On Windows the two agents usually live on different filesystems — Codex
+    /// under the Windows profile, Claude Code under the WSL home — so we scan the
+    /// Windows profile *and* every WSL distro's user homes (reached from Windows
+    /// via the `\\wsl.localhost\<distro>\` share) in addition to `$HOME`.
     fn default_roots() -> Vec<PathBuf> {
+        fn agent_dirs(base: &Path, out: &mut Vec<PathBuf>) {
+            out.push(base.join(".claude/projects")); // Claude Code transcripts
+            out.push(base.join(".codex/sessions")); // Codex sessions
+        }
+
         let mut roots = Vec::new();
         if let Some(home) = std::env::var_os("HOME") {
-            let home = PathBuf::from(home);
-            roots.push(home.join(".claude/projects")); // Claude Code transcripts
-            roots.push(home.join(".codex/sessions")); // Codex sessions
+            agent_dirs(&PathBuf::from(home), &mut roots);
         }
+        #[cfg(windows)]
+        {
+            if let Some(profile) = std::env::var_os("USERPROFILE") {
+                agent_dirs(&PathBuf::from(profile), &mut roots);
+            }
+            for home in Self::wsl_home_dirs() {
+                agent_dirs(&home, &mut roots);
+            }
+        }
+
+        // HOME and USERPROFILE often coincide on Windows; drop duplicate roots so
+        // a directory isn't scanned (and its items deduped) twice.
+        let mut seen = std::collections::HashSet::new();
+        roots.retain(|p| seen.insert(p.clone()));
         roots
+    }
+
+    /// Every `home/<user>` directory across installed WSL distros, reached from
+    /// Windows via the `\\wsl.localhost\<distro>\` (or legacy `\\wsl$\`) share.
+    ///
+    /// The `\\wsl.localhost\` root itself can't be listed with `read_dir`, so we
+    /// ask WSL for its distros (`wsl -l -q`, UTF-16LE output) and read each one's
+    /// `home`. Best-effort: if WSL isn't present the command fails and we yield
+    /// nothing.
+    #[cfg(windows)]
+    fn wsl_home_dirs() -> Vec<PathBuf> {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000; // don't flash a console
+
+        let stdout = match Command::new("wsl.exe")
+            .args(["--list", "--quiet"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            Ok(o) if o.status.success() => o.stdout,
+            _ => return Vec::new(),
+        };
+        // Decode UTF-16LE (wsl.exe's output encoding).
+        let listing: Vec<u16> = stdout
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        let listing = String::from_utf16_lossy(&listing);
+
+        let mut homes = Vec::new();
+        for line in listing.lines() {
+            let distro =
+                line.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}' || c == '\0');
+            if distro.is_empty() {
+                continue;
+            }
+            for provider in [r"\\wsl.localhost", r"\\wsl$"] {
+                let home = PathBuf::from(format!(r"{provider}\{distro}\home"));
+                if let Ok(users) = fs::read_dir(&home) {
+                    for user in users.flatten() {
+                        homes.push(user.path());
+                    }
+                    break; // this provider served the distro
+                }
+            }
+        }
+        homes
     }
 
     /// Stable id for a transcript file (dedup key). Path is stable per session.
