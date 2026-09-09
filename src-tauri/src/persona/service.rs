@@ -60,6 +60,7 @@ impl PersonaService {
     pub async fn build_context(&self, prompt: &str) -> Result<PersonaContext> {
         let filter = FactFilter {
             scope: self.selection.scope,
+            category: None,
         };
 
         // Targeted hits first. The confirmed filter runs *before* any decision

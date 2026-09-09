@@ -70,6 +70,18 @@ pub enum Scope {
     Unknown,
 }
 
+/// Access classification — *who* may see a fact. Orthogonal to [`Scope`] (which
+/// classifies the *topic*, company vs personal). Default is `Private`: nothing is
+/// shared with anyone until the owner explicitly marks it `Shared`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Visibility {
+    /// Owner (and the owner's own agent) only.
+    #[default]
+    Private,
+    /// Exposable to granted consumers, scoped by the fact's `category`.
+    Shared,
+}
+
 /// Policy governing what may be sent to the cloud LLM.
 /// Default reflects the confirmed decision (mask/minimize before sending).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -174,6 +186,13 @@ pub struct FactMetadata {
     pub confirmed: bool,
     pub scope: Scope,
     pub confirmed_at: Option<DateTime<Utc>>,
+    /// Access classification (who may see this fact). Default `Private`.
+    #[serde(default)]
+    pub visibility: Visibility,
+    /// Grant unit for sharing (e.g. "deploy", "workstyle"). `None` = uncategorized.
+    /// A fact must carry a category to be reachable once `visibility == Shared`.
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// A confirmed unit of context. Persisted as one document (wiki page).
@@ -218,6 +237,9 @@ pub struct FactSummary {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FactFilter {
     pub scope: Option<Scope>,
+    /// Restrict to a single category. `None` = no category filter.
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// Filter for graph queries.

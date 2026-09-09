@@ -216,6 +216,8 @@ fn fact_from(c: FactCandidate) -> Fact {
             confirmed: true,
             scope: c.suggested_scope,
             confirmed_at: Some(Utc::now()),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }

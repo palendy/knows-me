@@ -132,6 +132,8 @@ fn fact(title: &str, body: &str, links: Vec<FactId>) -> Fact {
             confirmed: true,
             scope: Scope::Company,
             confirmed_at: Some(Utc::now()),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }
