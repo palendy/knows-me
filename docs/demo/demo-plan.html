@@ -352,7 +352,7 @@
 
 <section>
   <div class="act"><span class="act-no">04</span><h2>MCP — 내가 없어도 내 지식이 답한다</h2></div>
-  <p class="act-sub">1:50 – 2:25 · 미디어 3컷</p>
+  <p class="act-sub">1:50 – 2:25 · 미디어 3컷 · <b>M19·M20은 실제로 실행해서 찍었다</b></p>
   <div class="col">
     <p>여기까지는 "나를 위한 도구"였다. 이 막에서 <strong>소비자가 바뀐다.</strong> 동료가 나에게 묻는 대신, 동료의 에이전트가 내 지식에 직접 질의한다.</p>
     <p>컷은 <em>동료의 터미널</em>에서 찍는다. 내 앱은 화면에 없어야 한다 — 그게 요점이니까.</p>
@@ -411,12 +411,10 @@ claude mcp add --transport http <b>jibin-knows-me</b> \
 
   <div class="shot"><span class="id">M18</span><span class="what">동료 터미널 — 등록</span>
     <span class="spec"><code>claude mcp add</code> 한 줄과 성공 출력. 토큰은 <code>&lt;token&gt;</code>으로 가릴 것.</span></div>
-  <div class="shot"><span class="id">M19</span><span class="what">동료 터미널 — 질의</span>
-    <span class="spec">질문 → MCP 툴 호출이 보이는 줄 → 답변. 툴 이름(<code>search_knowledge</code>)이 화면에 보여야 "내 금고를 읽었다"가 성립.</span></div>
+  <div class="shot"><span class="id">M19</span><span class="what">동료 터미널 — 질의 (실행함)</span><span class="spec">동료의 Claude Code에 <code>knows-me</code> MCP를 등록하고 <b>"안준형이 요즘 가장 고민하는 게 뭐야?"</b>를 물은 실제 결과. 에이전트가 <code>search_knowledge</code>로 조회해 답하고 근거 페이지를 인용한다. 오너 리스너(<code>8766</code>)를 가리키고 있다 — 범주가 없어 팀 공유 리스너로는 아직 이 답이 안 나온다.</span><img src="screenshots/M19-coworker-asks.jpg" alt="M19 — 동료가 MCP로 질의한 결과" loading="lazy"></div>
   <div class="shot"><span class="id">M18</span><span class="what">설정 › 공유 — MCP 서버</span><span class="spec">두 리스너가 각각 <code>127.0.0.1:8766</code>(내 에이전트용)과 <code>8767</code>(팀 공유용)에 떠 있다. 둘 다 루프백 전용이라 터널 없이는 밖에서 도달할 수 없다.</span><img src="screenshots/M18-sharing-mcp.jpg" alt="M18 — 설정 공유 탭" loading="lazy"></div>
   <div class="shot"><span class="id">M18b</span><span class="what">설정 › 공유 — 토큰 발급</span><span class="spec">「공유할 범주」가 비어 있고 발급된 토큰도 없다. 04막이 지금 성립하지 않는 이유가 이 한 화면에 있다.</span><img src="screenshots/M18b-token-issue.jpg" alt="M18b — 토큰 발급 폼" loading="lazy"></div>
-  <div class="shot"><span class="id">M20</span><span class="what">동료 터미널 — 거절</span>
-    <span class="spec">권한 없는 범주 질문 → 접근 불가 응답. 마지막 컷이므로 3초 정도 물릴 것.</span></div>
+  <div class="shot"><span class="id">M20</span><span class="what">인가 경계 — 거절 (실행함)</span><span class="spec">팀 공유 리스너(<code>8767</code>)는 토큰 없이도, 아무 토큰으로도 <code>HTTP 401</code>. 오너 리스너의 <code>list_categories</code>는 <code>{"categories":[]}</code> — 부여할 범주가 없어 토큰을 발급해도 볼 수 있는 페이지가 0건이다.</span><img src="screenshots/M20-token-denied.jpg" alt="M20 — 토큰 없는 요청은 401" loading="lazy"></div>
 </section>
 
 <section>
@@ -546,7 +544,7 @@ $ curl 127.0.0.1:8767/mcp -H 'Bearer 아무거나'   → 토큰이 유효하지 
 
 <section>
   <div class="act"><span class="act-no">07</span><h2>촬영 현황</h2></div>
-  <p class="act-sub">확보 12컷 / 남은 6컷</p>
+  <p class="act-sub">확보 14컷 / 남은 4컷</p>
   <div class="col">
     <p>아래 컷은 실제 앱에서 리티나 해상도(1920×1640)로 찍어 이 문서에 넣었다. 남은 것은 다이얼로그를 열어야 하거나 동료 터미널이 필요한 컷이다.</p>
   </div>
@@ -571,7 +569,8 @@ $ curl 127.0.0.1:8767/mcp -H 'Bearer 아무거나'   → 토큰이 유효하지 
       <tr><td class="slot">M08</td><td>전송 기록</td><td>남음</td></tr>
       <tr><td class="slot">M18</td><td>설정 · 공유 (MCP 리스너)</td><td>확보 (계획에 없던 컷)</td></tr>
       <tr><td class="slot">M18b</td><td>설정 · 토큰 발급</td><td>확보 (계획에 없던 컷)</td></tr>
-      <tr><td class="slot">M19·M20</td><td>동료 터미널 2컷</td><td>남음 — 범주 부여 + cloudflared 필요</td></tr>
+      <tr><td class="slot">M19</td><td>동료 터미널 · 질의</td><td>확보 — <b>실제 실행</b> (오너 리스너)</td></tr>
+      <tr><td class="slot">M20</td><td>인가 경계 · 401 + 빈 범주</td><td>확보 — <b>실제 실행</b></td></tr>
     </tbody>
   </table>
   </div>
