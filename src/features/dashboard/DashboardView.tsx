@@ -38,7 +38,6 @@ export function DashboardView({ api, onNavigate }: Props) {
     <section aria-label="대시보드" className="dashboard-view">
       <header className="dashboard-heading">
         <div>
-          <p className="dashboard-eyebrow">MY CONTEXT</p>
           <h2>대시보드</h2>
           <p className="dashboard-intro">흩어진 기록이 모여, 나를 조금 더 선명하게.</p>
         </div>

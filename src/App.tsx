@@ -87,7 +87,6 @@ export function App() {
         <UnlockedShell onLock={refresh} />
       )}
 
-      {!(status?.initialized && status.unlocked) && <footer className="foot muted">내 기기에 안전하게 보관되는 나의 맥락</footer>}
     </main>
   );
 }
@@ -106,7 +105,7 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
     <div className="workspace">
       <aside className="sidebar">
         <a className="wordmark" href="#" onClick={(event) => { event.preventDefault(); setTab("dashboard"); }} aria-label="knows-me 대시보드"><span className="brand-symbol">k.</span>knows-me</a>
-        <div className="workspace-label">내 공간 <span>PERSONAL</span></div>
+        <div className="workspace-label">내 공간</div>
       <nav role="tablist" aria-label="화면" className="tabs">
         {TABS.map((t) => (
           <button
@@ -122,10 +121,10 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
           </button>
         ))}
       </nav>
-      <div className="sidebar-foot"><span className="local-dot" />이 기기에 보관됨<p>나만의 기록, 나만의 속도로.</p><span className="version">knows-me · v0.1</span></div>
+      <div className="sidebar-foot"><span className="version">knows-me · v0.1</span></div>
       </aside>
       <div className="workspace-body">
-      <div className="workspace-topbar"><span>내 공간 <span className="breadcrumb-divider">/</span> <strong>{TABS.find(t => t.id === tab)?.label}</strong></span><span className="private-label"><NavIcon name="lock" />개인 보관함</span></div>
+      <div className="workspace-topbar"><span>내 공간 <span className="breadcrumb-divider">/</span> <strong>{TABS.find(t => t.id === tab)?.label}</strong></span></div>
       <div role="tabpanel" id="workspace-panel" aria-labelledby={`tab-${tab}`} className="workspace-content">
         {tab === "dashboard" && <DashboardView key={dataVersion} api={api} onNavigate={(next) => { if (next === "settings") setSettingsTab("sources"); setTab(next); }} />}
         {tab === "queue" && <QueueView api={interview} onChanged={bump} />}

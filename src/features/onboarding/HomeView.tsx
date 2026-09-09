@@ -47,7 +47,7 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
   }
 
   return <section className="settings-view" aria-label="설정">
-    <header className="settings-heading"><p className="settings-eyebrow">PREFERENCES</p><h2>설정</h2><p>연결하는 기록부터 데이터가 전달되는 방식까지.</p></header>
+    <header className="settings-heading"><h2>설정</h2><p>연결하는 기록부터 데이터가 전달되는 방식까지.</p></header>
     <div className="settings-tabs" role="tablist" aria-label="설정 항목">
       {TABS.map((item) => <button key={item.id} id={`settings-tab-${item.id}`} role="tab" aria-selected={tab === item.id} aria-controls={`settings-panel-${item.id}`} onClick={() => setTab(item.id)}>{item.title}{item.id === "transfers" && transfers.length > 0 && <span>{transfers.length}</span>}</button>)}
     </div>
