@@ -78,6 +78,25 @@ impl ServiceSet {
         let knowledge_svc = Arc::new(KnowledgeService::new(store.clone()));
         // Rebuild the search index from the decrypted store now that we can read.
         knowledge_svc.build_index().await.ok();
+
+        // Local-dev housekeeping (opt-in via env, debug builds only): drop the
+        // previously-collected fake Gmail facts and forget their seen-markers so
+        // the next "collect" re-runs the fixtures cleanly through the normal
+        // pipeline instead of being skipped as duplicates. No-op without the env.
+        #[cfg(debug_assertions)]
+        if std::env::var("KNOWSME_RESET_GMAIL").as_deref() == Ok("1") {
+            use knows_me_core::core::types::SourceKind;
+            match knowledge_svc.delete_facts_from_source(SourceKind::Gmail).await {
+                Ok(n) => eprintln!("[dev-reset] removed {n} Gmail fact(s)"),
+                Err(e) => eprintln!("[dev-reset] fact purge failed: {e}"),
+            }
+            let cursors = IngestionCursorStore::new(store.clone());
+            match cursors.clear_seen(SourceKind::Gmail).await {
+                Ok(n) => eprintln!("[dev-reset] cleared {n} Gmail seen-marker(s)"),
+                Err(e) => eprintln!("[dev-reset] seen clear failed: {e}"),
+            }
+        }
+
         let knowledge: Arc<dyn KnowledgeApi> = knowledge_svc.clone();
 
         // Sharing surface (MCP tools + token issuance) over the same concrete

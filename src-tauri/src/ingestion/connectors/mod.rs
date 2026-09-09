@@ -7,6 +7,9 @@
 
 pub mod file;
 pub mod gmail;
+/// Local dev-only fake Gmail data (debug builds only). See [`gmail`].
+#[cfg(debug_assertions)]
+pub mod gmail_fixtures;
 pub mod notion;
 pub mod session;
 pub mod spec;

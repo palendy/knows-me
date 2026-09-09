@@ -96,6 +96,30 @@ impl KnowledgeService {
     pub async fn all_facts(&self) -> Result<Vec<Fact>> {
         self.facts.load_all().await
     }
+
+    /// Delete every stored fact that came from `source`, rebuilding the index.
+    /// Returns the number removed. Local-dev housekeeping (e.g. re-seeding the
+    /// fake Gmail fixtures cleanly); not part of the normal product surface.
+    pub async fn delete_facts_from_source(
+        &self,
+        source: crate::core::types::SourceKind,
+    ) -> Result<usize> {
+        let _w = self.write_lock.lock().await;
+        let all = self.facts.load_all().await?;
+        let mut removed = 0;
+        for f in &all {
+            if f.metadata.provenance.source == source {
+                self.facts.delete(f.id).await?;
+                removed += 1;
+            }
+        }
+        if removed > 0 {
+            let remaining = self.facts.load_all().await?;
+            self.rebuild_locked(&remaining);
+            self.initialized.store(true, Ordering::SeqCst);
+        }
+        Ok(removed)
+    }
 }
 
 #[async_trait]

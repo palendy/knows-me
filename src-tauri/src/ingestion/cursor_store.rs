@@ -76,6 +76,23 @@ impl IngestionCursorStore {
             .is_some())
     }
 
+    /// Forget every seen-marker for `source` so its items get re-collected on
+    /// the next sync. Returns the number cleared. Keys are `"{tag}:{digest}"`
+    /// with the tag in the clear, so a prefix match is enough. Local-dev
+    /// housekeeping (re-seeding fake fixtures); the normal path never clears.
+    pub async fn clear_seen(&self, source: SourceKind) -> Result<usize> {
+        let prefix = format!("{}:", source_tag(source));
+        let keys = self.store.list(NS_SEEN).await?;
+        let mut cleared = 0;
+        for key in keys {
+            if key.starts_with(&prefix) {
+                self.store.delete(NS_SEEN, &key).await?;
+                cleared += 1;
+            }
+        }
+        Ok(cleared)
+    }
+
     /// Mark `(source, external_id)` collected. Idempotent: re-marking is a no-op
     /// with respect to the seen-set (monotonic — BR-I2, PBT-03 seen monotonicity).
     pub async fn mark_seen(

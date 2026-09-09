@@ -118,7 +118,19 @@ impl ProcessingService {
             None => masked.clone(),
         };
         let summary_masked = self.gateway.summarize(raw.source, &summarize_input).await?;
-        let entries = prompts::split_facts(&summary_masked);
+        let mut entries = prompts::split_facts(&summary_masked);
+        if entries.is_empty() {
+            // Local dev only: the summarizer often rules the fake Gmail fixtures
+            // "nothing durable" (receipts, newsletters), which would drop them
+            // before routing. Keep them by falling back to the masked text so
+            // every fixture becomes at least one fact on the dashboard. Release
+            // builds preserve the real "found nothing → filtered" decision.
+            #[cfg(debug_assertions)]
+            if raw.source == crate::core::types::SourceKind::Gmail && !masked.text.trim().is_empty()
+            {
+                entries = vec![masked.text.clone()];
+            }
+        }
         if entries.is_empty() {
             // The summarizer found nothing durable; that is a decision, not a
             // failure, and the report should say so.
@@ -672,6 +684,72 @@ mod tests {
         assert_eq!(r2.facts_created, 2);
         assert!(pending.is_empty().await.unwrap());
         assert_eq!(knowledge.dashboard().await.unwrap().collected_count, 2);
+    }
+
+    #[tokio::test]
+    async fn fake_gmail_fixtures_all_reach_the_dashboard() {
+        // Local-dev contract: every fake Gmail message must show up on the
+        // dashboard (Store), never silently drop or wait in the queue — the
+        // router has a debug-only override for SourceKind::Gmail.
+        use crate::ingestion::connectors::gmail_fixtures::fake_gmail_items;
+        let items = fake_gmail_items();
+        let n = items.len();
+        assert!(n > 0, "fixtures must not be empty");
+
+        let (svc, knowledge, _iv, _p, _t) = service(true);
+        let r = svc.process(items).await.unwrap();
+
+        // No fixture is dropped or parked; each becomes at least one fact.
+        assert_eq!(r.filtered, 0, "no fake Gmail item should be filtered");
+        assert_eq!(r.queue_items_created, 0, "none should go to the queue");
+        assert!(
+            r.facts_created >= n,
+            "every fixture ({n}) should yield a fact, got {}",
+            r.facts_created
+        );
+        assert_eq!(
+            knowledge.dashboard().await.unwrap().collected_count,
+            r.facts_created
+        );
+    }
+
+    #[tokio::test]
+    async fn fake_gmail_survives_a_nothing_summary() {
+        // The real Claude summarizer often calls receipts/newsletters "NOTHING",
+        // which would drop them before routing. In dev, the Gmail fallback keeps
+        // each fixture as a fact anyway so the dashboard is never near-empty.
+        use crate::ingestion::connectors::gmail_fixtures::fake_gmail_items;
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "general",
+            summary: "NOTHING",
+        });
+        let (svc, knowledge, _iv) = service_with(llm, Arc::new(NoopMasker));
+
+        let items = fake_gmail_items();
+        let n = items.len();
+        let r = svc.process(items).await.unwrap();
+
+        assert_eq!(r.filtered, 0, "Gmail must not be filtered even on NOTHING");
+        assert_eq!(r.facts_created, n, "every fixture kept as a fact");
+        assert_eq!(knowledge.dashboard().await.unwrap().collected_count, n);
+    }
+
+    #[tokio::test]
+    async fn a_nothing_summary_still_drops_non_gmail() {
+        // The fallback is Gmail-only: a Session item the summarizer rejects is
+        // still filtered, so the dev shim can't mask real "nothing" decisions.
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "general",
+            summary: "NOTHING",
+        });
+        let (svc, knowledge, _iv) = service_with(llm, Arc::new(NoopMasker));
+
+        let r = svc.process(vec![raw("s1", "just noise")]).await.unwrap();
+        assert_eq!(r.filtered, 1);
+        assert_eq!(r.facts_created, 0);
+        assert_eq!(knowledge.dashboard().await.unwrap().collected_count, 0);
     }
 
     #[tokio::test]

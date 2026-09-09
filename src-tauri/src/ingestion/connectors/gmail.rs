@@ -43,11 +43,26 @@ impl Connector for GmailConnector {
         _progress: &dyn ProgressReporter,
     ) -> Result<(Vec<RawItem>, Cursor)> {
         // INTEGRATION-TODO(US-1.4): real Gmail API sync (see module docs).
-        Ok((Vec::new(), cursor.unwrap_or_default()))
+        //
+        // Until then, debug (local dev) builds return deterministic fake mail so
+        // the full ingestion→processing→FactStore pipeline exercises Gmail data.
+        // Stable `external_id`s make repeated collects idempotent via the dedup
+        // gate. Release builds keep the safe no-op above.
+        #[cfg(debug_assertions)]
+        {
+            let items = super::gmail_fixtures::fake_gmail_items();
+            return Ok((items, cursor.unwrap_or_default()));
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            Ok((Vec::new(), cursor.unwrap_or_default()))
+        }
     }
 
     fn supports_manual(&self) -> bool {
-        false
+        // Allow manual "collect" in local dev so the fake data can be pulled on
+        // demand from the UI; the real connector will decide this once wired up.
+        cfg!(debug_assertions)
     }
 }
 
@@ -73,10 +88,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn skeleton_is_safe_noop() {
+    async fn sync_matches_build_profile() {
         let conn = GmailConnector::new(Arc::new(NoCreds));
         assert_eq!(conn.id(), SourceKind::Gmail);
         let (items, _c) = conn.sync(None, &NoProgress).await.unwrap();
-        assert_eq!(items.len(), 0);
+
+        if cfg!(debug_assertions) {
+            // Local dev: fake Gmail fixtures flow through the real pipeline.
+            assert!(!items.is_empty());
+            assert!(items.iter().all(|it| it.source == SourceKind::Gmail));
+            // Stable external_ids keep repeated collects idempotent.
+            let ids: std::collections::HashSet<_> =
+                items.iter().map(|it| it.external_id.as_str()).collect();
+            assert_eq!(ids.len(), items.len(), "external_ids must be unique");
+        } else {
+            // Release: safe no-op until the real Gmail integration lands.
+            assert_eq!(items.len(), 0);
+        }
     }
 }

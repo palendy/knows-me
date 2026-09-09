@@ -132,6 +132,15 @@ pub fn route(labels: &[String], summary: &str, raw: &RawItem) -> ProcessingDecis
             reason: "no durable fact in item".into(),
         };
     }
+
+    // Local dev only: force the fake Gmail fixtures (see
+    // `ingestion/connectors/gmail_fixtures.rs`) straight to Store so all of them
+    // show up on the dashboard regardless of what the classifier labels them.
+    // Release builds never take this branch — real routing is unchanged.
+    #[cfg(debug_assertions)]
+    if raw.source == crate::core::types::SourceKind::Gmail {
+        return ProcessingDecision::Store(candidate(scope_from_labels(labels)));
+    }
     // Noise / one-off (US-2.1 AC2). The two models disagree here: the
     // summarizer was asked "is there a durable fact?" and produced one, while
     // the classifier calls the item noise. Dropping on that disagreement is how
