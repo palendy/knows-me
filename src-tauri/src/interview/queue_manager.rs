@@ -86,18 +86,27 @@ pub fn ttl_days(kind: &QueueItemKind) -> i64 {
     }
 }
 
-/// Normalized key used to suppress duplicate pending items (IR-4). Namespaced by
-/// kind so a Confirm candidate and a Deepen question with the same text do not
-/// collide.
-pub fn dedup_key(kind: &QueueItemKind) -> String {
+/// The kind namespace and the text an item is deduplicated on.
+///
+/// Namespaced so a Confirm candidate and a Deepen question that happen to share
+/// a string do not collide.
+fn dedup_text(kind: &QueueItemKind) -> (&'static str, &str) {
     match kind {
-        QueueItemKind::Confirm { candidate } => {
-            format!("confirm:{}", candidate.title.trim().to_lowercase())
-        }
-        QueueItemKind::Deepen { question, .. } => {
-            format!("deepen:{}", question.trim().to_lowercase())
-        }
+        QueueItemKind::Confirm { candidate } => ("confirm", candidate.title.as_str()),
+        QueueItemKind::Deepen { question, .. } => ("deepen", question.as_str()),
     }
+}
+
+/// Whether two queue items are the same item asked twice (IR-4).
+///
+/// This used to be an equality test on `format!("{ns}:{}", title.to_lowercase())`,
+/// which never fired in practice: what arrives is the same idea rewritten, not
+/// the same string. See [`crate::core::text`] for the measurement and the
+/// threshold.
+pub fn is_near_duplicate(a: &QueueItemKind, b: &QueueItemKind) -> bool {
+    let (ns_a, ta) = dedup_text(a);
+    let (ns_b, tb) = dedup_text(b);
+    ns_a == ns_b && crate::core::text::is_near_duplicate(ta, tb)
 }
 
 /// Whether an item is past its expiry at `now`.

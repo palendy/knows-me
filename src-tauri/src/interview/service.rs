@@ -4,7 +4,6 @@
 //! single [`KnowledgeApi::upsert`] path (services.md). Deepen answers also derive
 //! bounded follow-up questions (mask-first, best-effort — P-4).
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -19,7 +18,7 @@ use crate::interview::answer_intake::{
     derive_follow_ups, fact_from_candidate, fact_from_deepen, is_affirmative,
 };
 use crate::interview::queue_manager::{
-    dedup_key, is_expired, score_priority, sort_queue, ttl_days, QueueManager,
+    is_expired, is_near_duplicate, score_priority, sort_queue, ttl_days, QueueManager,
 };
 
 pub struct InterviewService {
@@ -72,13 +71,12 @@ impl InterviewApi for InterviewService {
         // are about to be swept and must not block a fresh item). Decide against
         // the highest-priority live duplicate BEFORE mutating, so we never drop both.
         let now = Utc::now();
-        let key = dedup_key(&item.kind);
         let dups: Vec<QueueItem> = self
             .queue
             .list()
             .await?
             .into_iter()
-            .filter(|e| !is_expired(e, now) && dedup_key(&e.kind) == key)
+            .filter(|e| !is_expired(e, now) && is_near_duplicate(&e.kind, &item.kind))
             .collect();
         if let Some(best) = dups.iter().max_by_key(|e| e.priority) {
             if best.priority >= item.priority {
@@ -206,20 +204,24 @@ impl InterviewApi for InterviewService {
             }
         }
 
-        // 2) Dedup suppression (IR-4): keep the highest-priority item per key.
-        let mut best: HashMap<String, (QueueItemId, u8)> = HashMap::new();
+        // 2) Dedup suppression (IR-4): keep the highest-priority item per group.
+        //    Near-duplication is not an equivalence relation — A can match B and
+        //    B match C without A matching C — so there is no key to bucket on.
+        //    Comparing each item against the ones already kept is the honest
+        //    implementation; the pending queue is tens of items, not thousands.
+        let mut kept: Vec<usize> = Vec::new();
         let mut to_remove = Vec::new();
-        for item in &alive {
-            let key = dedup_key(&item.kind);
-            match best.get(&key).copied() {
-                Some((bid, bpri)) if item.priority > bpri => {
-                    to_remove.push(bid);
-                    best.insert(key, (item.id, item.priority));
+        for (i, item) in alive.iter().enumerate() {
+            match kept
+                .iter()
+                .position(|&k| is_near_duplicate(&alive[k].kind, &item.kind))
+            {
+                Some(pos) if item.priority > alive[kept[pos]].priority => {
+                    to_remove.push(alive[kept[pos]].id);
+                    kept[pos] = i;
                 }
                 Some(_) => to_remove.push(item.id),
-                None => {
-                    best.insert(key, (item.id, item.priority));
-                }
+                None => kept.push(i),
             }
         }
         for id in to_remove {
@@ -476,6 +478,79 @@ mod tests {
             "correction text must be applied"
         );
         assert_eq!(kn.get(fact.id).await.unwrap().body, "corrected body");
+    }
+
+    #[tokio::test]
+    async fn enqueue_suppresses_a_paraphrase_not_only_an_exact_repeat() {
+        // The failure this guards, measured on real output: 30 titles from six
+        // sessions carried 13 distinct ideas and *zero* byte-identical pairs.
+        // Exact-string suppression let every one of them through.
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        svc.enqueue(confirm_item_titled(
+            "기술 작업은 AI에 맡기고 본인은 학습에만 집중하려 함",
+        ))
+        .await
+        .unwrap();
+        svc.enqueue(confirm_item_titled(
+            "기술 작업은 AI에 맡기고 본인은 공부에만 집중하려 함",
+        ))
+        .await
+        .unwrap();
+
+        let listed = svc.list(QueueSort::NewestFirst).await.unwrap();
+        assert_eq!(
+            listed.len(),
+            1,
+            "paraphrase must not open a second question"
+        );
+    }
+
+    #[tokio::test]
+    async fn enqueue_still_keeps_two_genuinely_different_questions() {
+        // The opposite failure is worse: a merged question is a fact the user
+        // never gets asked about.
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        svc.enqueue(confirm_item_titled(
+            "PDF 한글화에서 Mermaid 다이어그램 글자가 안 보이는 문제",
+        ))
+        .await
+        .unwrap();
+        svc.enqueue(confirm_item_titled(
+            "세션 로그를 쌓아도 쓸 만한 정보가 안 나오는 문제",
+        ))
+        .await
+        .unwrap();
+
+        assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn expire_collapses_paraphrases_already_in_the_queue() {
+        // Items enqueued before the near-duplicate rule existed are still in
+        // the user's queue; the sweep is what clears them out.
+        let (svc, _kn) = service_with(Arc::new(CannedLlm));
+        for t in [
+            "세션 데이터를 모아도 쓸 만한 정보가 안 나오는 문제",
+            "세션 로그를 쌓아도 쓸 만한 정보가 안 나오는 문제",
+        ] {
+            svc.queue
+                .put(&{
+                    let mut i = confirm_item_titled(t);
+                    InterviewService::finalize(&mut i);
+                    i
+                })
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            svc.queue.list().await.unwrap().len(),
+            2,
+            "seeded past the gate"
+        );
+
+        let removed = svc.expire().await.unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(svc.list(QueueSort::NewestFirst).await.unwrap().len(), 1);
     }
 
     #[tokio::test]

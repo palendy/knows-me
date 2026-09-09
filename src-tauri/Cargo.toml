@@ -76,3 +76,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 proptest = "1"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 tempfile = "3"
+# Examples are run by hand against a real vault and must honour the same
+# `.env` the app reads — otherwise `CLAUDE_CLI_MODEL=claude-opus-5` is set,
+# the collection runs on the default model, and nothing says so.
+dotenvy = "0.15"

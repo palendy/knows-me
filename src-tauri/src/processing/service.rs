@@ -52,6 +52,16 @@ pub struct ProcessingService {
     online: Arc<dyn OnlineProbe>,
 }
 
+/// What the pipeline already knows, read once per item.
+///
+/// `hint` is the model-facing form (mask-safe, capped, de-duplicated); `facts`
+/// is every confirmed title, used locally to decide whether a Confirm candidate
+/// is worth asking about at all.
+struct KnownTitles {
+    hint: Option<String>,
+    facts: Vec<String>,
+}
+
 impl ProcessingService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -92,7 +102,22 @@ impl ProcessingService {
         //    A session used to get exactly one slot, so a transcript that used
         //    one term two hundred times could leave nothing about it behind —
         //    the slot went to whatever ranked first.
-        let summary_masked = self.gateway.summarize(raw.source, &masked).await?;
+        //    The summarizer sees each session on its own, so left alone it writes
+        //    a fresh sentence for an idea it has already recorded five times —
+        //    measured: 30 titles from six sessions, 13 distinct ideas, zero
+        //    byte-identical pairs. Showing it what is already on file turns
+        //    "write a title" into "reuse one if it fits", which is what makes
+        //    duplicate suppression downstream able to fire at all. Same move
+        //    that fixed label fragmentation for the classifier below; the
+        //    summarizer is what invents the *title*, and it was getting nothing.
+        let known = self.known_titles().await;
+        let summarize_input = match &known.hint {
+            Some(hint) => MaskedText {
+                text: format!("{}{hint}", masked.text),
+            },
+            None => masked.clone(),
+        };
+        let summary_masked = self.gateway.summarize(raw.source, &summarize_input).await?;
         let entries = prompts::split_facts(&summary_masked);
         if entries.is_empty() {
             // The summarizer found nothing durable; that is a decision, not a
@@ -139,8 +164,21 @@ impl ProcessingService {
                     report.facts_created += 1;
                 }
                 ProcessingDecision::Confirm(cand) => {
-                    self.interview.enqueue(confirm_item(cand)).await?;
-                    report.queue_items_created += 1;
+                    // Queue-side suppression only compares against items still
+                    // pending, so an idea the user already answered comes back
+                    // as a brand-new question the next time any session
+                    // mentions it. If it is already a confirmed fact, there is
+                    // nothing left to ask.
+                    if known
+                        .facts
+                        .iter()
+                        .any(|t| crate::core::text::is_near_duplicate(t, &cand.title))
+                    {
+                        report.filtered += 1;
+                    } else {
+                        self.interview.enqueue(confirm_item(cand)).await?;
+                        report.queue_items_created += 1;
+                    }
                 }
                 ProcessingDecision::Deepen {
                     question,
@@ -162,6 +200,78 @@ impl ProcessingService {
 
     /// Re-process everything parked in the pending queue (called on reconnection,
     /// e.g. from the U1 Scheduler tick — Q3=A).
+    /// Titles already on file, for the summarizer to reuse instead of coining a
+    /// synonym — plus the plain fact-title list the Confirm route checks against.
+    ///
+    /// Egress: a stored title is *unmasked* text, so it cannot simply be pasted
+    /// into a [`MaskedText`]. Each candidate is run back through the masker and
+    /// kept only if nothing was masked — i.e. it is already safe to send. That
+    /// also removes a second hazard: placeholders are numbered per masking call,
+    /// so a hint carrying `«NAME_1»` would be unmasked with *this* item's map
+    /// and silently attributed to the wrong person.
+    async fn known_titles(&self) -> KnownTitles {
+        const MAX_HINTS: usize = 30;
+
+        let facts: Vec<String> = self
+            .knowledge
+            .search(String::new(), crate::core::types::FactFilter::default())
+            .await
+            .map(|f| f.into_iter().map(|s| s.title).collect())
+            .unwrap_or_default();
+        // Pending questions first: they are the surface the duplication is
+        // visible on, and there are only ever a few dozen of them.
+        let pending: Vec<String> = self
+            .interview
+            .list(crate::core::types::QueueSort::PriorityDesc)
+            .await
+            .map(|items| {
+                items
+                    .into_iter()
+                    .filter_map(|i| match i.kind {
+                        crate::core::types::QueueItemKind::Confirm { candidate } => {
+                            Some(candidate.title)
+                        }
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let mut shown: Vec<String> = Vec::new();
+        for title in pending.iter().chain(facts.iter()) {
+            if shown.len() >= MAX_HINTS {
+                break;
+            }
+            let title = title.trim();
+            if title.is_empty() {
+                continue;
+            }
+            let (masked, map) = self.masker.mask(title);
+            if !map.is_empty() || masked.text != title {
+                continue; // carries an identifier; never leaves the machine
+            }
+            if shown
+                .iter()
+                .any(|k| crate::core::text::is_near_duplicate(k, title))
+            {
+                continue; // do not spend the budget saying the same thing twice
+            }
+            shown.push(title.to_string());
+        }
+
+        // With a large vault this is a sample, not an index — which is why the
+        // queue still needs its own near-duplicate rule behind this.
+        let hint = (!shown.is_empty()).then(|| {
+            format!(
+                "\n\n[titles already recorded — if an item below means the same \
+                 thing as one of these, reuse that title EXACTLY instead of \
+                 writing a new one:\n- {}]",
+                shown.join("\n- ")
+            )
+        });
+        KnownTitles { hint, facts }
+    }
+
     /// The most-used topic labels, for the classifier to reuse.
     ///
     /// Capped so the hint stays a hint: a few dozen labels is a vocabulary, a
@@ -296,10 +406,12 @@ fn deepen_item(question: String, hypothesis: Option<String>) -> QueueItem {
 mod tests {
     use super::*;
     use crate::core::types::SourceKind;
+    use crate::core::types::{Provenance, QueueSort};
     use crate::mocks::{
         CannedLlm, InMemoryInterview, InMemoryKnowledge, InMemoryStore, NoopMasker,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Mutex;
 
     struct Toggle(AtomicBool);
     impl OnlineProbe for Toggle {
@@ -343,6 +455,192 @@ mod tests {
             probe.clone(),
         );
         (svc, knowledge, interview, pending, probe)
+    }
+
+    /// Records what the summarizer was handed, and answers `classify` with a
+    /// caller-chosen label so a test can pick the route.
+    struct Recording {
+        seen: Mutex<Vec<String>>,
+        label: &'static str,
+        summary: &'static str,
+    }
+    #[async_trait::async_trait]
+    impl LlmClient for Recording {
+        async fn summarize(&self, input: &MaskedText) -> Result<String> {
+            self.seen.lock().unwrap().push(input.text.clone());
+            Ok(self.summary.to_string())
+        }
+        async fn classify(&self, _i: &MaskedText) -> Result<Vec<String>> {
+            Ok(vec![self.label.to_string()])
+        }
+        async fn vision_extract(&self, _i: &[u8]) -> Result<MaskedText> {
+            Ok(MaskedText {
+                text: String::new(),
+            })
+        }
+        async fn chat(&self, _s: &str, _i: &MaskedText) -> Result<String> {
+            Ok(String::new())
+        }
+    }
+
+    fn service_with(
+        llm: Arc<dyn LlmClient>,
+        masker: Arc<dyn Masker>,
+    ) -> (
+        ProcessingService,
+        Arc<InMemoryKnowledge>,
+        Arc<InMemoryInterview>,
+    ) {
+        let store = Arc::new(InMemoryStore::default());
+        let knowledge = Arc::new(InMemoryKnowledge::default());
+        let interview = Arc::new(InMemoryInterview::default());
+        let svc = ProcessingService::new(
+            masker,
+            llm,
+            Arc::new(TransferLog::new(store.clone())),
+            knowledge.clone(),
+            interview.clone(),
+            Arc::new(PendingQueue::new(store)),
+            Arc::new(Toggle(AtomicBool::new(true))),
+        );
+        (svc, knowledge, interview)
+    }
+
+    fn confirmed(title: &str) -> crate::core::types::Fact {
+        crate::core::types::Fact {
+            id: crate::core::types::FactId::new(),
+            title: title.into(),
+            body: "b".into(),
+            links: vec![],
+            metadata: crate::core::types::FactMetadata {
+                provenance: Provenance {
+                    source: SourceKind::Session,
+                    collected_at: Utc::now(),
+                },
+                confirmed: true,
+                scope: crate::core::types::Scope::Personal,
+                confirmed_at: Some(Utc::now()),
+                topics: vec![],
+                kind: Default::default(),
+                visibility: Default::default(),
+                category: None,
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn the_summarizer_is_shown_the_titles_already_on_file() {
+        // Without this the model coins a synonym per session and every
+        // duplicate filter downstream compares two strings that never match.
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "general",
+            summary: "무언가\n본문",
+        });
+        let (svc, knowledge, _iv) = service_with(llm.clone(), Arc::new(NoopMasker));
+        knowledge
+            .upsert(confirmed("검증 경로가 무너지는 게 내 진짜 걱정"))
+            .await
+            .unwrap();
+
+        svc.process(vec![raw("a", "오늘 한 일")]).await.unwrap();
+
+        let sent = llm.seen.lock().unwrap().join("");
+        assert!(
+            sent.contains("검증 경로가 무너지는 게 내 진짜 걱정"),
+            "summarizer never saw the recorded title:\n{sent}"
+        );
+        assert!(
+            sent.contains("오늘 한 일"),
+            "the item itself must still be there"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_title_carrying_an_identifier_is_never_sent_as_a_hint() {
+        // Stored titles are unmasked. Pasting one into the model's input would
+        // walk PII straight past the masking gateway — and a placeholder from
+        // another masking call would be unmasked with *this* item's map and
+        // attributed to the wrong person.
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "general",
+            summary: "무언가\n본문",
+        });
+        let (svc, knowledge, _iv) =
+            service_with(llm.clone(), Arc::new(crate::llm::RegexMasker::new()));
+        knowledge
+            .upsert(confirmed("jane.doe@example.com 에게 배포 알림을 보낸다"))
+            .await
+            .unwrap();
+        knowledge
+            .upsert(confirmed("배포는 금요일에 하지 않는다"))
+            .await
+            .unwrap();
+
+        svc.process(vec![raw("a", "오늘 한 일")]).await.unwrap();
+
+        let sent = llm.seen.lock().unwrap().join("");
+        assert!(!sent.contains("jane.doe@example.com"), "leaked:\n{sent}");
+        assert!(
+            !sent.contains("EMAIL_1"),
+            "placeholder from another map:\n{sent}"
+        );
+        assert!(
+            sent.contains("배포는 금요일에 하지 않는다"),
+            "clean title dropped too"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_candidate_already_confirmed_is_not_queued_again() {
+        // Queue-side suppression only sees items still pending, so answering a
+        // question used to guarantee it would be asked again from the next
+        // session that mentioned it.
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "uncertain",
+            summary: "기술 작업은 AI에 맡기고 본인은 공부에만 집중하려 함\n본문",
+        });
+        let (svc, knowledge, interview) = service_with(llm, Arc::new(NoopMasker));
+        knowledge
+            .upsert(confirmed(
+                "기술 작업은 AI에 맡기고 본인은 학습에만 집중하려 함",
+            ))
+            .await
+            .unwrap();
+
+        let r = svc.process(vec![raw("a", "오늘 한 일")]).await.unwrap();
+
+        assert_eq!(
+            r.queue_items_created, 0,
+            "already answered — nothing to ask"
+        );
+        assert_eq!(r.filtered, 1);
+        assert!(interview
+            .list(QueueSort::PriorityDesc)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn an_unrelated_candidate_is_still_queued() {
+        let llm = Arc::new(Recording {
+            seen: Mutex::new(vec![]),
+            label: "uncertain",
+            summary: "PDF 한글화에서 Mermaid 글자가 안 보이는 문제\n본문",
+        });
+        let (svc, knowledge, _iv) = service_with(llm, Arc::new(NoopMasker));
+        knowledge
+            .upsert(confirmed(
+                "기술 작업은 AI에 맡기고 본인은 학습에만 집중하려 함",
+            ))
+            .await
+            .unwrap();
+
+        let r = svc.process(vec![raw("a", "오늘 한 일")]).await.unwrap();
+        assert_eq!(r.queue_items_created, 1);
     }
 
     #[tokio::test]

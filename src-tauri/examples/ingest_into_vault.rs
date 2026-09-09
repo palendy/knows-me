@@ -39,6 +39,15 @@ use knows_me_core::security::{FileEncryptedStore, PasswordKeyManager};
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Same `.env` the desktop app loads. Without this the example silently
+    // ignores CLAUDE_CLI_MODEL and collects on the default model.
+    let _ = dotenvy::from_path(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("crate dir has a parent")
+            .join(".env"),
+    );
+
     let data_dir = std::env::var("KNOWSME_DATA_DIR").unwrap_or_else(|_| {
         eprintln!("KNOWSME_DATA_DIR is required (the vault to write into)");
         std::process::exit(2);

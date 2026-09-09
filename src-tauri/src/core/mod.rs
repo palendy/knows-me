@@ -5,6 +5,7 @@ pub mod app_state;
 pub mod commands;
 pub mod error;
 pub mod scheduler;
+pub mod text;
 pub mod traits;
 pub mod types;
 
