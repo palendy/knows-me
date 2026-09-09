@@ -261,27 +261,76 @@ pub struct SessionProject {
     pub newest: Option<String>,
 }
 
-/// Turn Claude Code's dash-encoded directory name into something readable.
+/// A readable name for a project directory.
 ///
-/// `-Users-junyung-ahn-Desktop-Work-18-avatar-knows-me` is the working
-/// directory with every `/` replaced by `-`, which is why it cannot be decoded
-/// exactly — a real dash in a folder name is indistinguishable from a
-/// separator. The last couple of segments are what identifies the project to
-/// its owner, so that is what we show.
-fn project_label(dir_name: &str) -> String {
-    let parts: Vec<&str> = dir_name.trim_start_matches('-').split('-').collect();
-    // Drop the home-directory prefix when it is recognisable, so every entry
-    // does not start with the same six segments.
-    let start = parts
-        .iter()
-        .position(|p| p.eq_ignore_ascii_case("Desktop") || p.eq_ignore_ascii_case("Documents"))
-        .map_or(0, |i| i + 1);
-    let tail: Vec<&str> = parts[start.min(parts.len())..].to_vec();
-    if tail.is_empty() {
-        dir_name.to_string()
-    } else {
-        tail.join("/")
+/// The directory name cannot be decoded: Claude Code builds it from the working
+/// directory by replacing `/`, `_` and `.` all with `-`, so
+/// `Work/18_avatar/knows-me` and `Work-18-avatar-knows-me` are the same string
+/// and guessing produced nonsense like `Work/18/avatar/knows/me`.
+///
+/// The transcripts carry the real path in their `cwd` field, so we read it
+/// instead of inferring it. One line of one file is enough; the dashed name is
+/// the fallback for a directory whose transcripts predate that field.
+fn project_label(dir: &Path, dir_name: &str) -> String {
+    match read_cwd(dir) {
+        Some(cwd) => shorten_path(&cwd),
+        None => dir_name.trim_start_matches('-').replace('-', "/"),
     }
+}
+
+/// The working directory a project's transcripts belong to.
+fn read_cwd(dir: &Path) -> Option<String> {
+    let entries = fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|e| e != "jsonl") {
+            continue;
+        }
+        // Read line by line, not the whole file: transcripts run to megabytes
+        // and this only needs the first few records. The picker opens a dialog,
+        // so slurping every project's largest transcript would stall it.
+        let Ok(file) = fs::File::open(&path) else {
+            continue;
+        };
+        use std::io::BufRead;
+        for line in std::io::BufReader::new(file)
+            .lines()
+            // `Result::ok` here would resolve to this crate's `Result` alias,
+            // not `std`'s — spell the closure out.
+            .map_while(|l| l.ok())
+            .take(40)
+        {
+            if !line.contains("\"cwd\"") {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                if let Some(cwd) = v.get("cwd").and_then(|c| c.as_str()) {
+                    if !cwd.is_empty() {
+                        return Some(cwd.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Drop the home-directory prefix so entries do not all begin the same way.
+///
+/// Keeps the absolute path when there is nothing recognisable to trim — a
+/// shortened label that hides which of two same-named folders this is would be
+/// worse than a long one.
+fn shorten_path(cwd: &str) -> String {
+    if let Some(home) = std::env::var_os("HOME") {
+        let home = home.to_string_lossy().to_string();
+        if let Some(rest) = cwd.strip_prefix(&home) {
+            let rest = rest.trim_start_matches('/');
+            if !rest.is_empty() {
+                return rest.to_string();
+            }
+        }
+    }
+    cwd.to_string()
 }
 
 /// Reads session transcripts from one or more root directories.
@@ -345,7 +394,7 @@ impl SessionConnector {
                     continue;
                 }
                 out.push(SessionProject {
-                    label: project_label(&name),
+                    label: project_label(&path, &name),
                     path: path.to_string_lossy().into_owned(),
                     sessions,
                     newest: newest.map(|d| d.to_rfc3339()),
@@ -1062,6 +1111,52 @@ mod digest_tests {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn the_label_comes_from_the_transcript_not_the_directory_name() {
+        // The bug this replaces: the directory name is the working directory
+        // with `/`, `_` and `.` all flattened to `-`, so decoding it produced
+        // "Work/18/avatar/knows/me" for "Work/18_avatar/knows-me".
+        let root = tmp_root().join("label1");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let mut fh = fs::File::create(root.join("s.jsonl")).unwrap();
+        writeln!(
+            fh,
+            r#"{{"type":"user","cwd":"/Users/x/Desktop/Work/18_avatar/knows-me"}}"#
+        )
+        .unwrap();
+
+        let label = project_label(&root, "-Users-x-Desktop-Work-18-avatar-knows-me");
+        assert_eq!(
+            label, "/Users/x/Desktop/Work/18_avatar/knows-me",
+            "underscores and dashes must survive"
+        );
+    }
+
+    #[test]
+    fn a_transcript_without_cwd_falls_back_to_the_directory_name() {
+        let root = tmp_root().join("label2");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let mut fh = fs::File::create(root.join("s.jsonl")).unwrap();
+        writeln!(fh, r#"{{"type":"user","message":{{"content":"hi"}}}}"#).unwrap();
+
+        // Imperfect, but it is a name rather than an empty row.
+        assert_eq!(project_label(&root, "-Users-x-Work"), "Users/x/Work");
+    }
+
+    #[test]
+    fn the_home_prefix_is_trimmed_but_a_foreign_path_is_kept_whole() {
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() {
+            assert_eq!(
+                shorten_path(&format!("{home}/Desktop/Work")),
+                "Desktop/Work"
+            );
+        }
+        assert_eq!(shorten_path("/opt/elsewhere/proj"), "/opt/elsewhere/proj");
+    }
 
     #[test]
     fn everything_is_kept_when_it_fits() {
