@@ -1,5 +1,5 @@
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
-import type { IngestSummary, SourcesApi } from "./api";
+import type { IngestProgress, IngestSummary, SourcesApi } from "./api";
 
 /** Field templates mirroring the Rust `credential_spec` so the browser-mode
  * sources screen renders the same connect form without Tauri. */
@@ -48,6 +48,16 @@ const CATALOG: SourceStatus[] = [
 export class MockSourcesApi implements SourcesApi {
   /** Which sources have a stored credential this session. */
   private connected = new Set<SourceKind>();
+  private progressCbs = new Set<(p: IngestProgress) => void>();
+
+  onProgress(cb: (p: IngestProgress) => void): () => void {
+    this.progressCbs.add(cb);
+    return () => this.progressCbs.delete(cb);
+  }
+
+  private emitProgress(p: IngestProgress) {
+    for (const cb of this.progressCbs) cb(p);
+  }
 
   async listSources(): Promise<SourceStatus[]> {
     await new Promise((r) => setTimeout(r, 100));
@@ -87,12 +97,18 @@ export class MockSourcesApi implements SourcesApi {
   }
 
   async triggerIngest(source?: SourceKind): Promise<IngestSummary> {
-    await new Promise((r) => setTimeout(r, 300));
     if (
       (source === "Notion" || source === "Gmail") &&
       !this.connected.has(source)
     ) {
+      await new Promise((r) => setTimeout(r, 300));
       throw new Error(`${source} 계정이 연결되지 않았습니다`);
+    }
+    // Simulate page-by-page progress so the browser-mode bar is exercisable.
+    const total = 12;
+    for (let done = 1; done <= total; done++) {
+      await new Promise((r) => setTimeout(r, 30));
+      this.emitProgress({ source: source ?? "Session", done, total });
     }
     return {
       collected: 12,

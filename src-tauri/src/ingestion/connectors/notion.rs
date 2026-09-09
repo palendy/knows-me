@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 
 use crate::core::error::Result;
-use crate::core::traits::{Connector, CredentialStore};
+use crate::core::traits::{Connector, CredentialStore, ProgressReporter};
 use crate::core::types::{Cursor, RawItem, SourceKind};
 use std::sync::Arc;
 
@@ -63,16 +63,24 @@ impl Connector for NotionConnector {
     }
 
     #[cfg(not(feature = "notion-http"))]
-    async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        cursor: Option<Cursor>,
+        _progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         // Skeleton: no new items, cursor unchanged (safe no-op so the
         // orchestrator and idempotency logic can be exercised offline).
         Ok((Vec::new(), cursor.unwrap_or_default()))
     }
 
     #[cfg(feature = "notion-http")]
-    async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        cursor: Option<Cursor>,
+        progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         let token = self.token().await?;
-        http::sync(&token, cursor).await
+        http::sync(&token, cursor, progress).await
     }
 
     fn supports_manual(&self) -> bool {
@@ -87,6 +95,7 @@ pub(crate) mod http {
     use serde_json::{json, Value};
 
     use crate::core::error::{AppError, Result};
+    use crate::core::traits::ProgressReporter;
     use crate::core::types::{Cursor, RawItem, SourceKind};
 
     const API_BASE: &str = "https://api.notion.com/v1";
@@ -159,7 +168,11 @@ pub(crate) mod http {
 
     /// Page through `search` (oldest edits first) and collect page text. Returns
     /// the items plus the newest `last_edited_time` as the next cursor.
-    pub async fn sync(token: &str, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    pub async fn sync(
+        token: &str,
+        cursor: Option<Cursor>,
+        progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         let client = client(token)?;
 
         // The cursor is the last `last_edited_time` we processed; only pages
@@ -235,6 +248,9 @@ pub(crate) mod http {
                 if newest.is_none() || edited > newest {
                     newest = edited;
                 }
+                // Report page-by-page. `total_seen` is what search has revealed
+                // so far (grows across batches); good enough to drive a bar.
+                progress.progress(SourceKind::Notion, items.len(), total_seen);
                 if items.len() >= MAX_PAGES_PER_SYNC {
                     break 'outer;
                 }
@@ -350,7 +366,10 @@ mod tests {
     #[tokio::test]
     async fn skeleton_is_safe_noop() {
         let conn = NotionConnector::new(Arc::new(FakeCreds(None)));
-        let (items, _c) = conn.sync(None).await.unwrap();
+        let (items, _c) = conn
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(items.len(), 0);
     }
 }

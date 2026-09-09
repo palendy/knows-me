@@ -20,7 +20,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::core::error::{AppError, Result};
-use crate::core::traits::Connector;
+use crate::core::traits::{Connector, ProgressReporter};
 use crate::core::types::{Cursor, RawItem, SourceConfig, SourceKind};
 
 /// How many transcripts one sync run collects.
@@ -431,7 +431,11 @@ impl Connector for SessionConnector {
         self.pending(cursor)
     }
 
-    async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        cursor: Option<Cursor>,
+        _progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         let (seen_newest, seen_oldest) = Self::parse_cursor(cursor);
 
         let mut files = Vec::new();
@@ -552,7 +556,10 @@ mod selection_tests {
         transcripts(dir.path(), 5);
         let c = SessionConnector::new(vec![dir.path().to_path_buf()]);
 
-        let (items, _) = c.sync(None).await.unwrap();
+        let (items, _) = c
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
 
         // A months-old transcript directory must not open with material the
         // owner has long forgotten.
@@ -575,7 +582,10 @@ mod selection_tests {
         let cursor =
             SessionConnector::render_cursor(Some(mtime_of(&files[4])), Some(mtime_of(&files[3])));
 
-        let (items, next) = c.sync(Some(cursor)).await.unwrap();
+        let (items, next) = c
+            .sync(Some(cursor), &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
 
         // Nothing is newer than the frontier, so the run must walk backwards
         // rather than hand back the same two files.
@@ -610,7 +620,10 @@ mod selection_tests {
             SessionConnector::render_cursor(Some(mtime_of(&files[4])), Some(mtime_of(&files[3])));
         assert_eq!(c.remaining(Some(cursor)).await.unwrap(), 3);
 
-        let (_, drained) = c.sync(None).await.unwrap();
+        let (_, drained) = c
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(c.remaining(Some(drained)).await.unwrap(), 0);
     }
 
@@ -620,10 +633,16 @@ mod selection_tests {
         transcripts(dir.path(), 5);
         let c = SessionConnector::new(vec![dir.path().to_path_buf()]);
 
-        let (first, cursor) = c.sync(None).await.unwrap();
+        let (first, cursor) = c
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(first.len(), 5);
 
-        let (again, _) = c.sync(Some(cursor)).await.unwrap();
+        let (again, _) = c
+            .sync(Some(cursor), &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert!(again.is_empty(), "already-covered history must not repeat");
     }
 
@@ -644,7 +663,10 @@ mod selection_tests {
         .unwrap();
 
         let c = SessionConnector::new(vec![dir.path().to_path_buf()]);
-        let (items, _) = c.sync(None).await.unwrap();
+        let (items, _) = c
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
 
         assert_eq!(items.len(), 1);
         assert!(titles(&items)[0].contains("내 세션"));
@@ -767,14 +789,20 @@ mod tests {
         drop(fh);
 
         let conn = SessionConnector::new(vec![root.clone()]);
-        let (items, cursor) = conn.sync(None).await.unwrap();
+        let (items, cursor) = conn
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].source, SourceKind::Session);
         assert!(items[0].text.as_deref().unwrap().contains("hello session"));
         assert!(!cursor.0.is_empty());
 
         // Re-sync with the returned cursor → nothing new (incremental).
-        let (again, _) = conn.sync(Some(cursor)).await.unwrap();
+        let (again, _) = conn
+            .sync(Some(cursor), &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(again.len(), 0);
 
         let _ = fs::remove_dir_all(&root);
@@ -783,7 +811,10 @@ mod tests {
     #[tokio::test]
     async fn missing_root_is_empty_not_error() {
         let conn = SessionConnector::new(vec![PathBuf::from("/nonexistent/km/path")]);
-        let (items, _) = conn.sync(None).await.unwrap();
+        let (items, _) = conn
+            .sync(None, &crate::core::traits::NoProgress)
+            .await
+            .unwrap();
         assert_eq!(items.len(), 0);
     }
 }

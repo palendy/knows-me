@@ -16,7 +16,18 @@ export interface IngestSummary {
   filtered: number;
 }
 
+/** One progress tick during a sync (mirrors the backend `IngestProgress`). */
+export interface IngestProgress {
+  source: SourceKind;
+  done: number;
+  /** Best-known total; 0 = unknown yet. */
+  total: number;
+}
+
 export interface SourcesApi {
+  /** Subscribe to per-source sync progress. Returns an unsubscribe function.
+   * Adapters without a live channel (mock) may return a no-op. */
+  onProgress(cb: (p: IngestProgress) => void): () => void;
   /** Connection status of every catalog source (form template + ready flags). */
   listSources(): Promise<SourceStatus[]>;
   /** Store the credential for a source after verifying it. `values` maps each

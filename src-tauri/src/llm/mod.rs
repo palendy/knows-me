@@ -106,43 +106,6 @@ pub fn build_client(transfer_log: Arc<TransferLog>) -> Arc<dyn LlmClient> {
     }
 }
 
-/// Human-readable label for the LLM actually in effect, for the settings screen.
-///
-/// Mirrors [`build_client`]'s selection (same provider + key fallback) so the
-/// "AI 모델" line reflects what a cloud call would really hit — not the static
-/// `AppConfig::llm_model` default, which is provider-agnostic boilerplate.
-pub fn active_model_label() -> String {
-    #[cfg(not(feature = "llm-http"))]
-    {
-        "오프라인 (canned)".to_string()
-    }
-
-    #[cfg(feature = "llm-http")]
-    {
-        let provider = std::env::var("LLM_PROVIDER")
-            .unwrap_or_else(|_| "anthropic".to_string())
-            .to_ascii_lowercase();
-        match provider.as_str() {
-            "openai" => match std::env::var("OPENAI_API_KEY") {
-                Ok(_) => {
-                    let model = std::env::var("OPENAI_MODEL")
-                        .unwrap_or_else(|_| "claude-opus-5".to_string());
-                    format!("{model} (OpenAI 호환)")
-                }
-                Err(_) => "오프라인 (canned)".to_string(),
-            },
-            _ => match std::env::var("ANTHROPIC_API_KEY") {
-                Ok(_) => {
-                    let model = std::env::var("ANTHROPIC_MODEL")
-                        .unwrap_or_else(|_| "claude-opus-5".to_string());
-                    format!("{model} (Anthropic)")
-                }
-                Err(_) => "오프라인 (canned)".to_string(),
-            },
-        }
-    }
-}
-
 #[cfg(all(test, not(feature = "llm-http")))]
 mod tests {
     use super::active_model_label;
@@ -151,6 +114,6 @@ mod tests {
     fn offline_build_reports_offline() {
         // Without llm-http the app never hits the cloud, so the settings label
         // must say so regardless of any environment variables.
-        assert_eq!(active_model_label(), "오프라인 (canned)");
+        assert_eq!(active_model_label(), "오프라인 (로컬 응답)");
     }
 }

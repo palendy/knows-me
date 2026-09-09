@@ -26,7 +26,7 @@ use knows_me_core::core::types::{
 };
 use knows_me_core::AppState;
 use services::Services;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -261,14 +261,45 @@ struct IngestSummary {
     filtered: usize,
 }
 
+/// One progress tick emitted to the frontend during a sync.
+#[derive(Clone, serde::Serialize)]
+struct IngestProgress {
+    source: SourceKind,
+    done: usize,
+    /// Best-known total; 0 means "unknown yet" (connector still discovering).
+    total: usize,
+}
+
+/// A [`ProgressReporter`] that forwards each tick to the webview as an
+/// `ingest://progress` event so the UI can drive a real progress bar.
+struct EmitProgress {
+    window: tauri::WebviewWindow,
+}
+
+impl knows_me_core::core::traits::ProgressReporter for EmitProgress {
+    fn progress(&self, source: SourceKind, done: usize, total: usize) {
+        // Emit failures (webview gone) are non-fatal — the sync still completes.
+        let _ = self.window.emit(
+            "ingest://progress",
+            IngestProgress {
+                source,
+                done,
+                total,
+            },
+        );
+    }
+}
+
 #[tauri::command]
 async fn trigger_ingest(
     services: tauri::State<'_, Services>,
+    window: tauri::WebviewWindow,
     source: Option<SourceKind>,
 ) -> CmdResult<IngestSummary> {
+    let reporter = EmitProgress { window };
     services
         .with(|s| async move {
-            let ingest = s.ingestion.trigger(source).await?;
+            let ingest = s.ingestion.trigger(source, &reporter).await?;
             // Ingestion feeds the sink synchronously, so by the time `trigger`
             // returns, processing for those items is done and the totals are
             // ready to collect.

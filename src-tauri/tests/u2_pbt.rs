@@ -15,7 +15,7 @@
 
 use std::sync::Arc;
 
-use knows_me_core::core::traits::{Connector, IngestionApi, Masker};
+use knows_me_core::core::traits::{Connector, IngestionApi, Masker, NoProgress, ProgressReporter};
 use knows_me_core::core::types::{Cursor, RawItem, SourceKind};
 use knows_me_core::ingestion::service::BufferSink;
 use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
@@ -88,7 +88,11 @@ impl Connector for FixedConnector {
     fn id(&self) -> SourceKind {
         SourceKind::Session
     }
-    async fn sync(&self, _c: Option<Cursor>) -> knows_me_core::Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        _c: Option<Cursor>,
+        _p: &dyn ProgressReporter,
+    ) -> knows_me_core::Result<(Vec<RawItem>, Cursor)> {
         Ok((self.items.clone(), Cursor("c".into())))
     }
     fn supports_manual(&self) -> bool {
@@ -122,10 +126,16 @@ proptest! {
             let unique_count = unique.len();
 
             let (svc, sink) = build_service(items);
-            let r1 = svc.trigger(Some(SourceKind::Session)).await.unwrap();
+            let r1 = svc
+                .trigger(Some(SourceKind::Session), &NoProgress)
+                .await
+                .unwrap();
             prop_assert_eq!(r1.collected, unique_count);
 
-            let r2 = svc.trigger(Some(SourceKind::Session)).await.unwrap();
+            let r2 = svc
+                .trigger(Some(SourceKind::Session), &NoProgress)
+                .await
+                .unwrap();
             prop_assert_eq!(r2.collected, 0);
             // Sink only ever received the unique items.
             prop_assert_eq!(sink.items.lock().unwrap().len(), unique_count);

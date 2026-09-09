@@ -151,12 +151,30 @@ describe("SourcesView", () => {
     expect(within(card("Codex")).queryByText(/12건 수집/)).toBeNull();
   });
 
+  it("shows a determinate progress bar while syncing", async () => {
+    render(<SourcesView api={new MockSourcesApi()} />);
+    await screen.findByText("Claude");
+    await userEvent.click(within(card("Claude")).getByRole("button", { name: "수집" }));
+
+    // Mock emits done/total ticks; the card shows "수집 중… N/12".
+    await waitFor(() =>
+      expect(within(card("Claude")).getByText(/수집 중… \d+\/12/)).toBeInTheDocument(),
+    );
+    // Eventually completes with the collected summary.
+    await waitFor(
+      () =>
+        expect(within(card("Claude")).getByText(/12건 수집/)).toBeInTheDocument(),
+      { timeout: 2000 },
+    );
+  });
+
   it("distinguishes an error cause from a clean empty run", async () => {
     const api = new MockSourcesApi();
     vi.spyOn(api, "triggerIngest").mockResolvedValue({
       collected: 0,
       skipped: 0,
       errors: 1,
+      remaining: 0,
       error_messages: ["Notion: notion search 401: unauthorized"],
       facts_created: 0,
       queue_items_created: 0,

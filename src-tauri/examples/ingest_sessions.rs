@@ -97,7 +97,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --- run ---------------------------------------------------------------
     let started = std::time::Instant::now();
     println!("\n수집 시작…");
-    let report = ingestion.trigger(Some(SourceKind::Session)).await?;
+    let report = ingestion
+        .trigger(
+            Some(SourceKind::Session),
+            &knows_me_core::core::traits::NoProgress,
+        )
+        .await?;
     let processed = sink.take();
 
     println!("\n=== 수집 ===");

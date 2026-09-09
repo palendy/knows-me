@@ -11,9 +11,9 @@
 // own connector. Both trigger the same `Session` sync since the backend does
 // not split them.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
-import type { IngestSummary, SourcesApi } from "./api";
+import type { IngestProgress, IngestSummary, SourcesApi } from "./api";
 import { messageOf } from "../u4-shared/view-state";
 import { ConnectDialog } from "./ConnectDialog";
 import "./sources.css";
@@ -112,6 +112,18 @@ export function SourcesView({ api, onIngested }: Props) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [run, setRun] = useState<RunState>({ status: "idle" });
   const [connecting, setConnecting] = useState<SourceStatus | null>(null);
+  // Live progress for the card currently syncing (done/total), or null.
+  const [progress, setProgress] = useState<IngestProgress | null>(null);
+  // The card that started the current run, so progress events (keyed by
+  // SourceKind) attach to the right card — Claude/Codex share SourceKind.
+  const runningCard = useRef<CardModel | "all" | null>(null);
+
+  // Subscribe to sync progress once; the callback reads the ref so it always
+  // targets the active run without re-subscribing per sync.
+  useEffect(() => {
+    const unsub = api.onProgress((p) => setProgress(p));
+    return unsub;
+  }, [api]);
 
   const refresh = useCallback(async () => {
     try {
@@ -131,6 +143,8 @@ export function SourcesView({ api, onIngested }: Props) {
 
   async function sync(card?: CardModel) {
     const key = card?.id ?? "all";
+    runningCard.current = card ?? "all";
+    setProgress(null);
     setRun({ status: "running", card: key });
     try {
       const summary = await api.triggerIngest(card?.sourceKind);
@@ -138,6 +152,9 @@ export function SourcesView({ api, onIngested }: Props) {
       onIngested?.();
     } catch (e) {
       setRun({ status: "error", card: key, message: messageOf(e) });
+    } finally {
+      runningCard.current = null;
+      setProgress(null);
     }
   }
 
@@ -175,7 +192,7 @@ export function SourcesView({ api, onIngested }: Props) {
       {/* Aggregate result for "전체 수집". Per-card runs render inside the card. */}
       {run.status !== "idle" && run.card === "all" && (
         <div style={{ marginTop: 12 }}>
-          <SyncResult run={run} cardId="all" />
+          <SyncResult run={run} cardId="all" progress={progress} />
         </div>
       )}
 
@@ -301,7 +318,7 @@ export function SourcesView({ api, onIngested }: Props) {
                   </div>
                 </div>
 
-                <SyncResult run={run} cardId={card.id} />
+                <SyncResult run={run} cardId={card.id} progress={progress} />
               </div>
             );
           })}
@@ -329,9 +346,39 @@ export function SourcesView({ api, onIngested }: Props) {
  * `cardId === "all"`). Distinguishes three outcomes so a run of all-zeros isn't
  * ambiguous: an error (with its cause), items collected, or a clean "nothing
  * new" — which confirms the connection works but had no fresh data. */
-function SyncResult({ run, cardId }: { run: RunState; cardId: string }) {
+function SyncResult({
+  run,
+  cardId,
+  progress,
+}: {
+  run: RunState;
+  cardId: string;
+  progress: IngestProgress | null;
+}) {
   if (run.status === "running" && run.card === cardId) {
-    return <div className="source-result">수집 중…</div>;
+    // Show a determinate bar once the connector reports done/total; until then
+    // (or for sources that don't report), a simple "수집 중…" label.
+    const pct =
+      progress && progress.total > 0
+        ? Math.min(100, Math.round((progress.done / progress.total) * 100))
+        : null;
+    return (
+      <div className="source-result">
+        <div className="source-progress-label">
+          {progress && progress.total > 0
+            ? `수집 중… ${progress.done}/${progress.total}`
+            : progress && progress.done > 0
+              ? `수집 중… ${progress.done}건`
+              : "수집 중…"}
+        </div>
+        <div className="source-progress-track">
+          <div
+            className={`source-progress-fill${pct === null ? " is-indeterminate" : ""}`}
+            style={pct === null ? undefined : { width: `${pct}%` }}
+          />
+        </div>
+      </div>
+    );
   }
   if (run.status === "error" && run.card === cardId) {
     return (

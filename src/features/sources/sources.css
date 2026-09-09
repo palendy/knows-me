@@ -8,6 +8,9 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
   margin-top: 16px;
+  /* Each card sizes to its own content; a card that grows (progress/result)
+   * must not stretch its row-mates. */
+  align-items: start;
 }
 
 @media (max-width: 560px) {
@@ -227,4 +230,40 @@
 .source-result--error {
   background: #fef2f2;
   color: #b42318;
+}
+
+/* Sync progress bar. */
+.source-progress-label {
+  font-size: 12px;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.source-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: #e4e7ec;
+  overflow: hidden;
+}
+
+.source-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #1a2233;
+  transition: width 150ms ease;
+}
+
+/* Unknown total → animated sweep instead of a fixed width. */
+.source-progress-fill.is-indeterminate {
+  width: 40%;
+  animation: source-progress-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes source-progress-sweep {
+  0% {
+    margin-left: -40%;
+  }
+  100% {
+    margin-left: 100%;
+  }
 }
