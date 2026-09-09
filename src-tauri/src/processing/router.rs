@@ -23,6 +23,7 @@ const CONTROL_LABELS: &[&str] = &[
     "preference",
     "project",
     "concern",
+    "concept",
     "public",
     "private",
     "unclear",
@@ -70,6 +71,8 @@ fn topics_from_labels(labels: &[String]) -> Vec<String> {
 fn kind_from_labels(labels: &[String]) -> FactKind {
     if has(labels, "concern") {
         FactKind::Concern
+    } else if has(labels, "concept") {
+        FactKind::Concept
     } else if has(labels, "preference") {
         FactKind::Preference
     } else if has(labels, "practice") {
@@ -237,6 +240,17 @@ fn title_of(summary: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_concept_is_its_own_kind_and_not_a_topic() {
+        let c = stored(&["certain", "concept", "avatar-card"]);
+        assert_eq!(c.kind, FactKind::Concept);
+        assert_eq!(
+            c.topics,
+            vec!["avatar-card"],
+            "the control word must not leak into topics"
+        );
+    }
 
     #[test]
     fn markdown_decoration_is_stripped_from_titles() {

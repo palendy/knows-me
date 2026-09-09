@@ -23,6 +23,7 @@ use crate::core::types::{
     QueueItemKind, RawItem,
 };
 use crate::ingestion::service::RawItemSink;
+use crate::llm::prompts;
 use crate::processing::llm_gateway::LlmGateway;
 use crate::processing::pending::PendingQueue;
 use crate::processing::router::{route, ProcessingDecision};
@@ -87,61 +88,72 @@ impl ProcessingService {
             (mt, Some(map))
         };
 
-        // 3. Summarize + classify (masked-only, logged, retried).
+        // 3. Summarize once, then classify each entry the summary contains.
+        //    A session used to get exactly one slot, so a transcript that used
+        //    one term two hundred times could leave nothing about it behind —
+        //    the slot went to whatever ranked first.
         let summary_masked = self.gateway.summarize(raw.source, &masked).await?;
+        let entries = prompts::split_facts(&summary_masked);
+        if entries.is_empty() {
+            // The summarizer found nothing durable; that is a decision, not a
+            // failure, and the report should say so.
+            report.filtered += 1;
+            return Ok(());
+        }
 
-        // Each item is classified on its own, so the model cannot know what an
+        // Each entry is classified on its own, so the model cannot know what an
         // earlier item called the same subject — `gemini-api` here,
         // `gemini-api-limits` there — and the topic pages fragment into
         // near-synonyms that each look like a one-off. Showing it the labels
         // already in use turns "invent a label" into "reuse one if it fits".
         // The vocabulary is built from prior masked outputs, so appending it to
-        // masked input keeps the egress contract intact.
-        let classify_input = match self.existing_topics().await {
-            Some(vocab) if !vocab.is_empty() => MaskedText {
-                text: format!(
-                    "{}\n\n[topics already in use — reuse one of these when it fits: {}]",
-                    masked.text,
-                    vocab.join(", ")
-                ),
-            },
-            _ => masked.clone(),
+        // masked input keeps the egress contract intact. Read once per item.
+        let vocab_hint = match self.existing_topics().await {
+            Some(vocab) if !vocab.is_empty() => Some(format!(
+                "\n\n[topics already in use — reuse one of these when it fits: {}]",
+                vocab.join(", ")
+            )),
+            _ => None,
         };
-        let labels = self.gateway.classify(raw.source, &classify_input).await?;
 
-        // 4. Local unmask for the stored body (US-2.2 AC2). For the image path
-        //    there is no reverse map, so the summary is used as-is.
-        let body = match &unmap {
-            Some(map) => self.masker.unmask(
-                &MaskedText {
-                    text: summary_masked,
+        for entry_masked in entries {
+            let classify_input = MaskedText {
+                text: match &vocab_hint {
+                    Some(hint) => format!("{entry_masked}{hint}"),
+                    None => entry_masked.clone(),
                 },
-                map,
-            ),
-            None => summary_masked,
-        };
+            };
+            let labels = self.gateway.classify(raw.source, &classify_input).await?;
 
-        // 5. Route.
-        match route(&labels, &body, raw) {
-            ProcessingDecision::Store(cand) => {
-                self.knowledge.upsert(fact_from(cand)).await?;
-                report.facts_created += 1;
-            }
-            ProcessingDecision::Confirm(cand) => {
-                self.interview.enqueue(confirm_item(cand)).await?;
-                report.queue_items_created += 1;
-            }
-            ProcessingDecision::Deepen {
-                question,
-                hypothesis,
-            } => {
-                self.interview
-                    .enqueue(deepen_item(question, hypothesis))
-                    .await?;
-                report.queue_items_created += 1;
-            }
-            ProcessingDecision::Drop { .. } => {
-                report.filtered += 1;
+            // 4. Local unmask for the stored body (US-2.2 AC2). For the image
+            //    path there is no reverse map, so the entry is used as-is.
+            let body = match &unmap {
+                Some(map) => self.masker.unmask(&MaskedText { text: entry_masked }, map),
+                None => entry_masked,
+            };
+
+            // 5. Route.
+            match route(&labels, &body, raw) {
+                ProcessingDecision::Store(cand) => {
+                    self.knowledge.upsert(fact_from(cand)).await?;
+                    report.facts_created += 1;
+                }
+                ProcessingDecision::Confirm(cand) => {
+                    self.interview.enqueue(confirm_item(cand)).await?;
+                    report.queue_items_created += 1;
+                }
+                ProcessingDecision::Deepen {
+                    question,
+                    hypothesis,
+                } => {
+                    self.interview
+                        .enqueue(deepen_item(question, hypothesis))
+                        .await?;
+                    report.queue_items_created += 1;
+                }
+                ProcessingDecision::Drop { .. } => {
+                    report.filtered += 1;
+                }
             }
         }
         // 6. `unmap` drops here.

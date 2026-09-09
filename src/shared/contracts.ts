@@ -59,7 +59,7 @@ export interface FactCandidate {
 }
 
 /** What kind of thing a stored item is. */
-export type FactKind = "Note" | "Practice" | "Preference" | "Project" | "Concern";
+export type FactKind = "Note" | "Practice" | "Preference" | "Project" | "Concern" | "Concept";
 
 /** Whether a page may leave the owner. Separate axis from `Scope`. */
 export type Visibility = "Private" | "Shared";

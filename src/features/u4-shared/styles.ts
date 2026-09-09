@@ -30,6 +30,8 @@ export const scopeLabel = (scope: string): string =>
 export const kindLabel = (kind: string): string =>
   kind === "Concern"
     ? "걸림"
+    : kind === "Concept"
+      ? "개념"
     : kind === "Practice"
       ? "방식"
       : kind === "Preference"

@@ -81,6 +81,12 @@ pub enum FactKind {
     /// Friction: something unresolved, repeatedly returned to, or expressed as
     /// frustration. This is what "걱정" retrieves.
     Concern,
+    /// A term or idea the owner uses with a specific meaning in their own work.
+    ///
+    /// "아바타 카드가 뭐야?" is answerable only if what the owner *means* by a
+    /// term is stored — a session can use a term two hundred times and leave
+    /// nothing behind unless meaning is a thing the extractor looks for.
+    Concept,
 }
 
 /// Company vs personal classification for a fact.

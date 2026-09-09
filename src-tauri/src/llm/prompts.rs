@@ -19,31 +19,40 @@ You extract what is durably true about the USER from their work notes or a trans
 
 Write in the SAME LANGUAGE as the input (Korean input → Korean output).
 
-Output exactly this shape:
-<a short title, under 60 characters, naming the thing>
+A session usually holds MORE THAN ONE thing worth keeping. Output every distinct one \
+you can support — up to 5 — separated by a line containing only three dashes:
+
+<title, under 60 characters>
+<1-3 sentences>
+---
+<title>
 <1-3 sentences>
 
-Look for one of these, in this order of preference:
+What counts, in order of preference:
 
 1. FRICTION — something the user keeps coming back to, redoes, or is stuck on; \
 frustration they expressed; a question the session ended without answering. \
 Write what the friction IS, not what they did about it.
-2. A RULE OR PREFERENCE they hold about how work should be done.
-3. A PROJECT they are building or running, and where it stands.
+2. A CONCEPT — a term or idea the user uses with a specific meaning in their own \
+work (a name for a component, a workflow, a pattern they invented). If a term \
+recurs, its meaning in the user's words IS durable knowledge: state what it is \
+and how it fits. Do not skip these because they are not problems.
+3. A RULE OR PREFERENCE they hold about how work should be done.
+4. A PROJECT they are building or running, and where it stands.
 
-Prefer 1 over 2 over 3. An activity log entry (\"they worked on X\") is the least \
-useful thing you can produce — if the input only supports that, say it in one \
-sentence and move on.
+An activity log entry (\"they worked on X\") is the least useful thing you can \
+produce — if the input only supports that, say it in one sentence and move on.
 
 Rules:
 - Write about the USER, not about the document. Never start with \"This document…\" \
 or \"The transcript…\".
 - State only what the input supports. Do not invent motives or feelings.
 - Prefer what will still be true next month over what happened once.
+- Each entry must stand alone; do not spread one idea over two entries.
 - If the input contains nothing durable about the user (pure tooling output, \
 build logs, one-off debugging), output exactly: NOTHING
 - Identifiers are masked as tokens like «EMAIL_1»; keep them verbatim.
-- Output only the title and body. No preamble, no markdown fences, no labels.";
+- Output only the entries. No preamble, no markdown fences, no numbering.";
 
 /// System prompt for classifying a masked item.
 ///
@@ -75,9 +84,11 @@ kind — check in THIS ORDER and stop at the first that fits:
                     \"project\" just because a project is mentioned. Words like
                     문제, 미달, 병목, 중단, 부족, 실패, 막힘, blocked, stuck,
                     bottleneck, not working are strong signals.
-  2. \"preference\"  something the user prefers, insists on, or forbids
-  3. \"practice\"    a procedure, rule or convention the user follows
-  4. \"project\"     something the user is building or running, with no friction
+  2. \"concept\"     a term or idea the user uses with a specific meaning in
+                    their own work — the note explains what something IS
+  3. \"preference\"  something the user prefers, insists on, or forbids
+  4. \"practice\"    a procedure, rule or convention the user follows
+  5. \"project\"     something the user is building or running, with no friction
                     and no rule stated
 
 visibility — could this be shared with the user's teammates?
@@ -99,6 +110,37 @@ Masked tokens like «EMAIL_1» may appear; ignore them when classifying.";
 pub const CHAT_SYSTEM: &str = "You are the user's personal context assistant. Answer using the provided \
 context. Masked tokens like «EMAIL_1» stand in for the user's private identifiers; treat them as opaque \
 references. Be concise and grounded; if the context does not cover something, say so.";
+
+/// Split a summarizer response into its entries.
+///
+/// One fact per session was the ceiling on how much could be learned from a
+/// session: a transcript that used one term two hundred times yielded nothing
+/// about it, because the single slot went to whatever ranked first. Entries are
+/// separated by a line of three dashes; a response without one is a single
+/// entry, and `NOTHING` is no entries at all.
+pub fn split_facts(summary: &str) -> Vec<String> {
+    if is_nothing(summary) {
+        return Vec::new();
+    }
+    summary
+        .split('\n')
+        .fold(vec![String::new()], |mut acc, line| {
+            if line.trim() == "---" {
+                acc.push(String::new());
+            } else {
+                let cur = acc.last_mut().expect("fold seeds one entry");
+                if !cur.is_empty() {
+                    cur.push('\n');
+                }
+                cur.push_str(line);
+            }
+            acc
+        })
+        .into_iter()
+        .map(|e| e.trim().to_string())
+        .filter(|e| !e.is_empty() && !is_nothing(e))
+        .collect()
+}
 
 /// Marker the summarizer emits when an item holds nothing durable.
 pub const NOTHING_MARKER: &str = "NOTHING";
@@ -180,6 +222,29 @@ fn parse_json_labels(raw: &str) -> Option<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_response_with_separators_yields_one_entry_each() {
+        let raw = "아바타 카드\n에이전트 하나를 묘사하는 카드 단위.\n---\n툴박스\n카드를 모아 두는 곳.\n---\n";
+        let entries = split_facts(raw);
+        assert_eq!(entries.len(), 2);
+        assert!(entries[0].starts_with("아바타 카드\n"));
+        assert!(entries[1].starts_with("툴박스\n"));
+    }
+
+    #[test]
+    fn a_response_without_a_separator_is_a_single_entry() {
+        let entries = split_facts("배포 절차\nmain 머지 후 make deploy.");
+        assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn nothing_yields_no_entries_even_among_separators() {
+        assert!(split_facts("NOTHING").is_empty());
+        assert!(split_facts("  nothing \n").is_empty());
+        // An empty slot between separators is not an entry.
+        assert_eq!(split_facts("첫째\n본문\n---\n\n---\n").len(), 1);
+    }
 
     #[test]
     fn a_schema_echo_yields_no_labels_rather_than_junk_ones() {
