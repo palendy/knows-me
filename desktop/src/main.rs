@@ -205,7 +205,9 @@ async fn set_llm_config(
     cfg.llm_base_url = base_url
         .map(|u| u.trim().to_string())
         .filter(|u| !u.is_empty());
-    cfg.llm_binary = binary.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+    cfg.llm_binary = binary
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty());
     state.save_config(cfg).await.map_err(err)?;
 
     // 3. Reflect the (possibly just-changed) key for the selected provider.
@@ -304,18 +306,28 @@ async fn set_sharing_enabled(
     Ok(())
 }
 
+/// cloudflared install status, probed once per session and cached. The probe
+/// spawns a `cloudflared --version` child, and the sharing UI polls `share_status`
+/// on mount and after every mutation — install status doesn't change within a
+/// session, so forking a process per poll is wasteful. (Trade-off: installing
+/// cloudflared while the app runs isn't reflected until the next launch.)
+static CLOUDFLARED_INSTALLED: tokio::sync::OnceCell<bool> = tokio::sync::OnceCell::const_new();
+
 #[tauri::command]
 async fn share_status(
     state: tauri::State<'_, AppState>,
     services: tauri::State<'_, Services>,
 ) -> CmdResult<ShareStatusDto> {
     let (owner_port, shared_port) = services.mcp_ports().await;
+    let cloudflared_installed = *CLOUDFLARED_INSTALLED
+        .get_or_init(knows_me_core::sharing::tunnel::cloudflared_available)
+        .await;
     Ok(ShareStatusDto {
         enabled: state.config().sharing_enabled,
         owner_port,
         shared_port,
         tunnel_url: services.tunnel_url().await,
-        cloudflared_installed: knows_me_core::sharing::tunnel::cloudflared_available().await,
+        cloudflared_installed,
     })
 }
 

@@ -228,26 +228,32 @@ async fn start_local_api(persona: Arc<dyn PersonaApi>) -> Option<LocalApiHandle>
 /// Bearer-only shared server (step ⓑ, the surface a tunnel fronts). Bind failures
 /// are logged, not fatal — unlocking must not hinge on a free port. The shared
 /// listener binds above the owner's *actual* bound port so the two never collide.
-async fn start_mcp_servers(
+/// Start the owner-loopback MCP listener (step ⓐ). Bind failure is logged, not
+/// fatal — unlocking must not hinge on a free port.
+async fn start_owner_listener(
     sharing: Arc<KnowledgeSharing>,
     tokens: Arc<TokenStore>,
-) -> (Option<McpHandle>, Option<McpHandle>) {
-    let owner =
-        match McpServer::start_owner(sharing.clone(), tokens.clone(), MCP_DEFAULT_PORT).await {
-            Ok(h) => {
-                eprintln!("[mcp] owner listening on 127.0.0.1:{}", h.port());
-                Some(h)
-            }
-            Err(e) => {
-                eprintln!("[mcp] owner failed to start: {e}");
-                None
-            }
-        };
-    let shared_start = owner
-        .as_ref()
-        .map(|h| h.port().saturating_add(1))
-        .unwrap_or(MCP_DEFAULT_PORT.saturating_add(1));
-    let shared = match McpServer::start_shared(sharing, tokens, shared_start).await {
+) -> Option<McpHandle> {
+    match McpServer::start_owner(sharing, tokens, MCP_DEFAULT_PORT).await {
+        Ok(h) => {
+            eprintln!("[mcp] owner listening on 127.0.0.1:{}", h.port());
+            Some(h)
+        }
+        Err(e) => {
+            eprintln!("[mcp] owner failed to start: {e}");
+            None
+        }
+    }
+}
+
+/// Start the Bearer-only shared MCP listener (step ⓑ) at `port`. Bind failure is
+/// logged, not fatal.
+async fn start_shared_listener(
+    sharing: Arc<KnowledgeSharing>,
+    tokens: Arc<TokenStore>,
+    port: u16,
+) -> Option<McpHandle> {
+    match McpServer::start_shared(sharing, tokens, port).await {
         Ok(h) => {
             eprintln!("[mcp] shared listening on 127.0.0.1:{}", h.port());
             Some(h)
@@ -256,7 +262,26 @@ async fn start_mcp_servers(
             eprintln!("[mcp] shared failed to start: {e}");
             None
         }
-    };
+    }
+}
+
+/// The port to bind the shared listener on: one above the owner's *actual* bound
+/// port so the two never collide (or the default+1 if the owner isn't up).
+fn shared_port_for(owner: Option<&McpHandle>) -> u16 {
+    owner
+        .map(|h| h.port().saturating_add(1))
+        .unwrap_or(MCP_DEFAULT_PORT.saturating_add(1))
+}
+
+/// Start both MCP listeners (owner ⓐ + shared ⓑ). Used at unlock; toggling
+/// sharing on later starts each listener individually so a partial start can
+/// recover (see [`Services::set_sharing_enabled`]).
+async fn start_mcp_servers(
+    sharing: Arc<KnowledgeSharing>,
+    tokens: Arc<TokenStore>,
+) -> (Option<McpHandle>, Option<McpHandle>) {
+    let owner = start_owner_listener(sharing.clone(), tokens.clone()).await;
+    let shared = start_shared_listener(sharing, tokens, shared_port_for(owner.as_ref())).await;
     (owner, shared)
 }
 
@@ -349,29 +374,34 @@ impl Services {
     pub async fn set_sharing_enabled(&self, on: bool) {
         let mut guard = self.0.lock().await;
         let Some(set) = guard.as_mut() else { return };
-        let running = set.mcp_owner.is_some() || set.mcp_shared.is_some();
-        match (on, running) {
-            (true, false) => {
-                let (owner, shared) =
-                    start_mcp_servers(set.sharing.clone(), set.tokens.clone()).await;
-                set.mcp_owner = owner;
-                set.mcp_shared = shared;
+        if on {
+            // Start whichever listener isn't already up — per-listener rather than
+            // all-or-nothing, so a partial start recovers: if the owner port was
+            // momentarily taken at unlock (owner None, shared Some), toggling off
+            // then on brings the owner listener back without a lock/unlock cycle.
+            if set.mcp_owner.is_none() {
+                set.mcp_owner = start_owner_listener(set.sharing.clone(), set.tokens.clone()).await;
             }
-            (false, true) => {
-                if let Some(h) = set.mcp_owner.as_mut() {
-                    h.stop().await;
-                }
-                set.mcp_owner = None;
-                if let Some(h) = set.mcp_shared.as_mut() {
-                    h.stop().await;
-                }
-                set.mcp_shared = None;
-                if let Some(t) = set.tunnel.as_mut() {
-                    t.stop().await;
-                }
-                set.tunnel = None;
+            if set.mcp_shared.is_none() {
+                let port = shared_port_for(set.mcp_owner.as_ref());
+                set.mcp_shared =
+                    start_shared_listener(set.sharing.clone(), set.tokens.clone(), port).await;
             }
-            _ => {}
+        } else {
+            // Turning sharing off tears down both listeners and any tunnel fronting
+            // the shared one.
+            if let Some(h) = set.mcp_owner.as_mut() {
+                h.stop().await;
+            }
+            set.mcp_owner = None;
+            if let Some(h) = set.mcp_shared.as_mut() {
+                h.stop().await;
+            }
+            set.mcp_shared = None;
+            if let Some(t) = set.tunnel.as_mut() {
+                t.stop().await;
+            }
+            set.tunnel = None;
         }
     }
 
