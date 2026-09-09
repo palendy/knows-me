@@ -1,11 +1,12 @@
-// Property-based tests for graph normalization and layout (PBT-03).
+// Property-based tests for graph normalization (PBT-03).
 //
 // On failure fast-check prints the shrunk counterexample and its seed; replay
 // it with `fc.assert(prop, { seed: <seed> })` (PBT-08).
 
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { layoutGraph, normalizeGraph, neighborsOf } from "./graph-layout";
+import { normalizeGraph } from "./graph-layout";
+import { neighborsOf, toForceGraph } from "./graph-force";
 import { arbGraph } from "./testgen";
 
 describe("normalizeGraph", () => {
@@ -57,49 +58,27 @@ describe("normalizeGraph", () => {
   });
 });
 
-describe("layoutGraph", () => {
-  it("preserves every node", () => {
+describe("toForceGraph", () => {
+  it("emits one link per surviving edge and one node per surviving node", () => {
     fc.assert(
       fc.property(arbGraph(), (g) => {
         const n = normalizeGraph(g);
-        expect(layoutGraph(n, 640, 480).nodes.length).toBe(n.nodes.length);
+        const f = toForceGraph(g);
+        expect(f.nodes.length).toBe(n.nodes.length);
+        expect(f.links.length).toBe(n.edges.length);
       }),
     );
   });
 
-  it("keeps every coordinate inside the viewbox", () => {
-    fc.assert(
-      fc.property(
-        arbGraph(),
-        fc.integer({ min: 100, max: 1200 }),
-        fc.integer({ min: 100, max: 1200 }),
-        (g, w, h) => {
-          const layout = layoutGraph(normalizeGraph(g), w, h);
-          for (const node of layout.nodes) {
-            expect(node.x).toBeGreaterThanOrEqual(0);
-            expect(node.x).toBeLessThanOrEqual(w);
-            expect(node.y).toBeGreaterThanOrEqual(0);
-            expect(node.y).toBeLessThanOrEqual(h);
-          }
-        },
-      ),
-    );
-  });
-
-  it("is deterministic across calls", () => {
+  it("gives every link endpoints that exist as nodes", () => {
     fc.assert(
       fc.property(arbGraph(), (g) => {
-        const n = normalizeGraph(g);
-        expect(layoutGraph(n, 640, 480)).toEqual(layoutGraph(n, 640, 480));
-      }),
-    );
-  });
-
-  it("produces one drawable line per surviving edge", () => {
-    fc.assert(
-      fc.property(arbGraph(), (g) => {
-        const n = normalizeGraph(g);
-        expect(layoutGraph(n, 640, 480).edges.length).toBe(n.edges.length);
+        const f = toForceGraph(g);
+        const present = new Set(f.nodes.map((x) => x.id));
+        for (const l of f.links) {
+          expect(present.has(l.source)).toBe(true);
+          expect(present.has(l.target)).toBe(true);
+        }
       }),
     );
   });
@@ -109,10 +88,10 @@ describe("neighborsOf", () => {
   it("is symmetric: a is a neighbour of b iff b is one of a", () => {
     fc.assert(
       fc.property(arbGraph(), (g) => {
-        const n = normalizeGraph(g);
-        for (const node of n.nodes) {
-          for (const other of neighborsOf(n, node.id)) {
-            expect(neighborsOf(n, other).has(node.id)).toBe(true);
+        const f = toForceGraph(g);
+        for (const node of f.nodes) {
+          for (const other of neighborsOf(f, node.id)) {
+            expect(neighborsOf(f, other).has(node.id)).toBe(true);
           }
         }
       }),

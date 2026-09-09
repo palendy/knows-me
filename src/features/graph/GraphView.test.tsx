@@ -8,11 +8,13 @@ import { FailingApi, MockApi } from "../u4-shared/mock-api";
 
 describe("GraphView", () => {
   it("draws facts as nodes and links as edges (AC1)", async () => {
-    const { container } = render(<GraphView api={new MockApi()} />);
+    render(<GraphView api={new MockApi()} />);
 
-    await screen.findByRole("img", { name: /사실 \d+개, 연결 \d+개/ });
-    expect(container.querySelectorAll("circle").length).toBeGreaterThan(0);
-    expect(container.querySelectorAll("line").length).toBeGreaterThan(0);
+    // The force canvas has no accessibility tree, so nodes surface as buttons
+    // in the visually-hidden list and the graph reports its size via role=img.
+    const graph = await screen.findByRole("img", { name: /사실 \d+개, 연결 \d+개/ });
+    expect(graph.getAttribute("aria-label")).toMatch(/사실 [1-9]\d*개, 연결 [1-9]\d*개/);
+    expect(screen.getByRole("button", { name: "배포 절차" })).toBeInTheDocument();
   });
 
   it("highlights the selection and its neighbours on click", async () => {
