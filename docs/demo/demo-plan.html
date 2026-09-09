@@ -413,8 +413,65 @@ claude mcp add --transport http <b>jibin-knows-me</b> \
     <span class="spec"><code>claude mcp add</code> 한 줄과 성공 출력. 토큰은 <code>&lt;token&gt;</code>으로 가릴 것.</span></div>
   <div class="shot"><span class="id">M19</span><span class="what">동료 터미널 — 질의</span>
     <span class="spec">질문 → MCP 툴 호출이 보이는 줄 → 답변. 툴 이름(<code>search_knowledge</code>)이 화면에 보여야 "내 금고를 읽었다"가 성립.</span></div>
+  <div class="shot"><span class="id">M18</span><span class="what">설정 › 공유 — MCP 서버</span><span class="spec">두 리스너가 각각 <code>127.0.0.1:8766</code>(내 에이전트용)과 <code>8767</code>(팀 공유용)에 떠 있다. 둘 다 루프백 전용이라 터널 없이는 밖에서 도달할 수 없다.</span><img src="screenshots/M18-sharing-mcp.jpg" alt="M18 — 설정 공유 탭" loading="lazy"></div>
+  <div class="shot"><span class="id">M18b</span><span class="what">설정 › 공유 — 토큰 발급</span><span class="spec">「공유할 범주」가 비어 있고 발급된 토큰도 없다. 04막이 지금 성립하지 않는 이유가 이 한 화면에 있다.</span><img src="screenshots/M18b-token-issue.jpg" alt="M18b — 토큰 발급 폼" loading="lazy"></div>
   <div class="shot"><span class="id">M20</span><span class="what">동료 터미널 — 거절</span>
     <span class="spec">권한 없는 범주 질문 → 접근 불가 응답. 마지막 컷이므로 3초 정도 물릴 것.</span></div>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">04b</span><h2>「공개」는 누가 정하는가</h2></div>
+  <p class="act-sub">04막을 찍기 전에 반드시 확인할 것 — 지금 코드로는 그 장면이 성립하지 않는다.</p>
+  <div class="col">
+    <p>기록마다 <code>공개</code> / <code>비공개</code> 칩이 붙는다. 그런데 그걸 <strong>사람이 정하지 않는다.</strong> 추출할 때 분류기가 정한다 — 프롬프트가 세 갈래를 준다:</p>
+  </div>
+
+  <pre>visibility — 팀원과 공유해도 되는 내용인가?
+  <b>"public"</b>   툴링, 관례, 공개된 프로젝트 사실, 무언가를 어떻게 만들고 돌리는지
+  <b>"private"</b>  보상, 평가, 건강, 가족, 개인 재무, 채용/해고, 특정인에 대한
+             불만, 자격증명, 고객·파트너 신원
+  <b>"unclear"</b>  <span class="c">조금이라도 의심스러우면. 추측해서 "public"을 고르지 말 것 —
+             불확실한 항목은 물어보면 되지만, 잘못된 "public"은 유출이다.</span></pre>
+
+  <p class="col"><code>unclear</code>는 저장되지 않고 <strong>대기열로 간다.</strong> 기본값은 <code>Private</code>이고 <code>public</code>이 명시적으로 나왔을 때만 <code>Shared</code>가 된다. 즉 기본값이 새는 구조는 아니다 — 다만 <strong>오너가 승인하는 단계가 없다.</strong></p>
+
+  <h3>그런데 인가는 AND다</h3>
+  <p class="col">서버가 컨슈머에게 페이지를 내주는 조건은 하나가 아니라 둘이다.</p>
+  <pre>visibility == Shared <b>&&</b> category.is_some_and(|c| granted.contains(c))
+<span class="c">// sharing/mod.rs — can_access()</span></pre>
+
+  <div class="flag">
+    <div class="h">범주(category)는 지금 아무 데서도 부여되지 않는다</div>
+    <p>추출 경로에도, 대기열 답변 경로에도 <code>category: None</code>뿐이다. 그래서 위 AND의 오른쪽이 <strong>항상 거짓</strong>이고, <code>공개</code>로 표시된 기록조차 컨슈머에게는 보이지 않는다.</p>
+    <p>앱도 같은 말을 한다 — 토큰 발급 폼의 「공유할 범주」 칸에 <em>"아직 공유할 범주가 없습니다. 위키에서 페이지에 범주를 지정하고 공유로 승인하세요."</em> 그런데 페이지에 범주를 지정하는 UI가 아직 없다.</p>
+  </div>
+
+  <h3>실제로 돌려본 결과</h3>
+  <p class="col">앱이 켜져 있을 때 로컬에 두 리스너가 뜬다. 오너용은 토큰 없이 전부 읽고, 팀 공유용은 토큰을 요구한다.</p>
+
+  <pre><span class="c"># 오너 리스너 — 토큰 없이, 전부 읽힘</span>
+$ curl -s 127.0.0.1:8766/mcp -d '{"method":"tools/list", ...}'
+  • list_categories · search_knowledge · get_page · get_guide
+
+$ ... search_knowledge {"query":"수집","limit":3}
+{"results":[{<b>"category":null</b>,"title":"knows-me: Claude 세션을 먹고 자라는 아바타 데스크톱 앱",
+             "excerpt":"Tauri(Rust src-tauri) + React 프런트엔드로 만드는 …"}, …]}
+
+$ ... list_categories {}
+{"categories":<b>[]</b>}        <span class="c">← 부여할 범주가 하나도 없다</span>
+
+<span class="c"># 팀 공유 리스너 — 토큰 검사</span>
+$ curl 127.0.0.1:8767/mcp                      → <b>HTTP 401</b>
+$ curl 127.0.0.1:8767/mcp -H 'Bearer 아무거나'   → 토큰이 유효하지 않습니다. <b>HTTP 401</b></pre>
+
+  <p class="col">경계는 제대로 선다. 다만 <strong>통과할 수 있는 문이 아직 없다.</strong></p>
+
+  <h3>그래서 04막을 찍으려면</h3>
+  <ul class="plain">
+    <li><b>범주 부여가 먼저다.</b> 페이지에 <code>deploy</code>, <code>workstyle</code> 같은 범주를 붙일 수 있어야 토큰이 의미를 갖는다. 지금은 발급 폼에 고를 것이 없다.</li>
+    <li><b>거절 장면은 지금도 찍힌다.</b> <code>HTTP 401</code>은 진짜다. 다만 "허용 → 답변" 쪽이 빈 결과라 대비가 안 선다.</li>
+    <li><b>터널은 별개</b> — <code>cloudflared</code>가 설치돼 있지 않다. 동료 터미널 컷을 찍으려면 필요하다.</li>
+  </ul>
 </section>
 
 <section>
@@ -489,7 +546,7 @@ claude mcp add --transport http <b>jibin-knows-me</b> \
 
 <section>
   <div class="act"><span class="act-no">07</span><h2>촬영 현황</h2></div>
-  <p class="act-sub">확보 11컷 / 남은 8컷</p>
+  <p class="act-sub">확보 12컷 / 남은 6컷</p>
   <div class="col">
     <p>아래 컷은 실제 앱에서 리티나 해상도(1920×1640)로 찍어 이 문서에 넣었다. 남은 것은 다이얼로그를 열어야 하거나 동료 터미널이 필요한 컷이다.</p>
   </div>
@@ -504,7 +561,7 @@ claude mcp add --transport http <b>jibin-knows-me</b> \
       <tr><td class="slot">M09b</td><td>최근 확정된 사실</td><td>확보 (계획에 없던 컷)</td></tr>
       <tr><td class="slot">M10</td><td>핵심 기록 카드</td><td>확보 — <b>단, 05·06·07이 중복</b></td></tr>
       <tr><td class="slot">M11</td><td>지식 그래프</td><td>확보 · 사실 111 · 주제 33 · 연결 296</td></tr>
-      <tr><td class="slot">M12</td><td>그래프 노드 선택</td><td><b>미확보</b> — 선택 상태를 못 만듦</td></tr>
+      <tr><td class="slot">M12</td><td>그래프 노드 선택</td><td><b>미확보</b> — 아래 참고</td></tr>
       <tr><td class="slot">M13·M14</td><td>인터뷰 대기열 · 펼친 질문</td><td>확보 (한 컷에 둘 다 나옴)</td></tr>
       <tr><td class="slot">M17</td><td>나와 대화 · 답변</td><td>확보 — <b>내용이 매우 좋음</b></td></tr>
       <tr><td class="slot">M02</td><td>세션 트랜스크립트 원본</td><td>남음 — 터미널에서</td></tr>
@@ -512,9 +569,17 @@ claude mcp add --transport http <b>jibin-knows-me</b> \
       <tr><td class="slot">M05</td><td>끝까지 수집 진행</td><td>남음 — 재수집할 때 같이</td></tr>
       <tr><td class="slot">M06·M07</td><td>Notion · Gmail 연결</td><td>남음</td></tr>
       <tr><td class="slot">M08</td><td>전송 기록</td><td>남음</td></tr>
-      <tr><td class="slot">M18·M19·M20</td><td>동료 터미널 3컷</td><td>남음 — 동료 계정 필요</td></tr>
+      <tr><td class="slot">M18</td><td>설정 · 공유 (MCP 리스너)</td><td>확보 (계획에 없던 컷)</td></tr>
+      <tr><td class="slot">M18b</td><td>설정 · 토큰 발급</td><td>확보 (계획에 없던 컷)</td></tr>
+      <tr><td class="slot">M19·M20</td><td>동료 터미널 2컷</td><td>남음 — 범주 부여 + cloudflared 필요</td></tr>
     </tbody>
   </table>
+  </div>
+
+  <div class="flag">
+    <div class="h">그래프에 글자가 안 보이는 건 버그가 아니다</div>
+    <p>라벨은 <code>globalScale &gt; 0.55</code>이거나 그 노드가 선택/호버 상태일 때만 그린다 — 축소 상태에서 라벨을 다 그리면 서로 겹쳐서 읽을 수 없기 때문이다. M11은 전체가 보이도록 축소된 상태라 글자가 없다.</p>
+    <p><b>찍는 법:</b> 그래프 위에서 <b>휠로 확대</b>한 다음 허브 노드를 하나 클릭한다. 그러면 라벨이 뜨고 오른쪽 패널에 그 주제에 연결된 사실이 펼쳐진다. 이 두 가지가 한 프레임에 들어간 것이 M12다.</p>
   </div>
 
   <div class="flag">
