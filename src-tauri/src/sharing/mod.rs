@@ -20,8 +20,10 @@ pub mod envelope;
 mod knowledge;
 pub mod mcp;
 pub mod tokens;
+pub mod tunnel;
 pub use knowledge::KnowledgeSharing;
-pub use tokens::{IssuedToken, TokenStore};
+pub use tokens::{IssuedToken, TokenInfo, TokenStore};
+pub use tunnel::{QuickTunnel, TunnelHandle};
 
 /// Contract error codes (`mcp-contract.md` §5). Which layer produces each:
 /// `NotFound` = tool domain (this trait) for absent *or* out-of-scope targets —
