@@ -1,9 +1,12 @@
 //! MCP transport — the Streamable-HTTP server that exposes the four read-only
 //! tools (`mcp-contract.md` §3) over `/mcp`, on top of [`KnowledgeSharing`].
 //!
-//! This is step ⓐ (owner self-reference): identity is resolved at a single seam
-//! ([`resolve_identity`]) that today always yields [`Token::owner`]; consumer
-//! mode (Bearer tokens, step ⓑ) slots into that one function and nowhere else.
+//! Identity is resolved at a single seam ([`resolve_identity`]): a loopback,
+//! tokenless request is the owner (step ⓐ, reads everything); an
+//! `Authorization: Bearer` request is validated against the [`TokenStore`] into a
+//! scoped [`Token::consumer`] (step ⓑ, `granted ∩ {Shared}`). Every layer
+//! downstream treats identity as opaque, so authorization lives in that one
+//! function and nowhere else.
 //!
 //! Boundaries this module holds to:
 //! - **Single authorization point (§6).** Tool handlers never inspect
@@ -44,7 +47,7 @@ use crate::core::error::{AppError, Result};
 use crate::core::types::{Category, Fact, FactId, FactMetadata, SourceKind};
 use crate::persona::local_api::is_loopback_host;
 use crate::sharing::envelope::{envelope, sanitize_field, NOT_INSTRUCTIONS};
-use crate::sharing::{AccessError, KnowledgeSharing, SharingApi, Token};
+use crate::sharing::{AccessError, KnowledgeSharing, SharingApi, Token, TokenStore};
 
 /// Default port for the MCP server. Deliberately **not** the persona API's
 /// `8765` — the two servers are separate ports and separate code paths (§7.1).
@@ -487,15 +490,78 @@ struct RpcError {
 
 /// Establish the caller's identity for this request.
 ///
-/// **This is the single seam for authentication.** Owner mode (step ⓐ) always
-/// returns the owner token, which reads everything. Consumer mode (step ⓑ) slots
-/// Bearer-token validation in *here and nowhere else*: parse
-/// `Authorization: Bearer <token>`, resolve its grants, and return a scoped
-/// [`Token::consumer`] — or `Err` (→ HTTP 401) when the token is missing,
-/// malformed, or revoked. Every layer downstream treats identity as opaque, so
-/// nothing else changes when that lands.
-fn resolve_identity(_headers: &HeaderMap) -> std::result::Result<Token, ToolError> {
-    Ok(Token::owner())
+/// **This is the single seam for authentication (§6).** Every layer downstream
+/// treats identity as opaque, so the owner-vs-consumer decision — and the rules
+/// that separate the two — live here and nowhere else:
+///
+/// - **Consumer mode (step ⓑ).** An `Authorization` header means the caller is
+///   presenting a token: it must be a well-formed, live `Bearer` secret, or the
+///   request is rejected (`Unauthorized`). We never fall back to owner mode when
+///   auth is *attempted*. A valid secret resolves to a scoped [`Token::consumer`]
+///   (`granted ∩ {Shared}`). A locked vault surfaces as `Locked`, not a bad token;
+///   any other store error (a corrupt/undecryptable *record* — never a real
+///   invalid token, which resolves cleanly to "unknown") surfaces as `Unavailable`
+///   so a consumer with a genuine token is never told to discard it.
+/// - **Owner mode (step ⓐ).** No `Authorization` header. This is the *only*
+///   unauthenticated path and it serves `Private` facts, so it is gated to a
+///   loopback `Host` — the DNS-rebinding defense (a browser page can rebind its
+///   domain to `127.0.0.1` and POST here, but cannot forge `Host` to loopback nor
+///   present a token). A non-loopback caller with no token is `Unauthorized`.
+///
+/// Bearer requests are intentionally *not* Host-gated: authentication replaces
+/// the loopback guard for them, which is what lets a consumer reach this server
+/// over a tunnel (step 5) regardless of how the tunnel rewrites `Host`.
+///
+/// **SECURITY — the owner gate is a Host string, so it is only sound while this
+/// listener stays loopback-only.** A tunnel connects to `127.0.0.1` from the
+/// local machine and may rewrite `Host` to `localhost`; if such a tunnel ever
+/// fronts *this* listener, a tokenless external request would satisfy the owner
+/// branch and read every `Private` fact. Step 5 must therefore expose consumers
+/// on a **separate listener that never grants owner** (Bearer-only), and never
+/// bridge a tunnel onto the owner-serving one. See `McpServer::start`.
+async fn resolve_identity(
+    tokens: &TokenStore,
+    headers: &HeaderMap,
+) -> std::result::Result<Token, ToolError> {
+    match headers.get(axum::http::header::AUTHORIZATION) {
+        Some(value) => {
+            let secret = value
+                .to_str()
+                .ok()
+                .and_then(parse_bearer)
+                .ok_or(ToolError::Unauthorized)?;
+            match tokens.resolve(secret).await {
+                Ok(Some(token)) => Ok(token),
+                // Unknown, malformed, or revoked — indistinguishable by design (§5.1).
+                Ok(None) => Err(ToolError::Unauthorized),
+                Err(AppError::Locked) => Err(ToolError::Locked),
+                Err(_) => Err(ToolError::Unavailable),
+            }
+        }
+        None => {
+            let host_ok = headers
+                .get(axum::http::header::HOST)
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(is_loopback_host);
+            if host_ok {
+                Ok(Token::owner())
+            } else {
+                Err(ToolError::Unauthorized)
+            }
+        }
+    }
+}
+
+/// Extract the secret from an `Authorization: Bearer <secret>` value. The scheme
+/// is matched case-insensitively (RFC 7235); a non-`Bearer` scheme or an empty
+/// secret yields `None` (→ `Unauthorized`).
+fn parse_bearer(header: &str) -> Option<&str> {
+    let (scheme, secret) = header.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
+    let secret = secret.trim();
+    (!secret.is_empty()).then_some(secret)
 }
 
 // ---------------------------------------------------------------------------
@@ -584,27 +650,54 @@ fn tool_err(message: &str) -> Value {
 #[derive(Clone)]
 struct McpState {
     sharing: Arc<KnowledgeSharing>,
+    /// Backs the consumer-token half of [`resolve_identity`]; the owner path
+    /// never touches it.
+    tokens: Arc<TokenStore>,
+}
+
+/// Render an auth-seam failure as an HTTP response — the transport-level half of
+/// the §5 error mapping, kept out of the JSON-RPC body because MCP handles
+/// authentication at the HTTP layer.
+///
+/// - **401** for a bad/absent token, carrying the RFC 7235 §3.1 `WWW-Authenticate`
+///   challenge so a spec-conformant client knows a Bearer token is expected. The
+///   tokenless-non-loopback refusal lands here too: under the two-mode model a
+///   token *would* grant access, so "authenticate" (401) is truer than "forbidden"
+///   (403) — and no data leaks either way.
+/// - **503** for a locked/unreachable store. This is a distinct server-state
+///   signal the consumer can relay to the owner ("unlock the app"), never
+///   conflated with "your token is invalid". A corrupt/undecryptable *record* maps
+///   here too (see [`resolve_identity`]): the caller's token is not the problem,
+///   the server's copy is — telling a consumer with a genuine token to discard it
+///   would be worse. (This is HTTP-status-shaped, unlike a locked vault hit on the
+///   *owner* path, which is discovered at the tool layer and returns a 200 tool
+///   error — genuinely different layers, so a different shape is expected.)
+fn auth_rejection(e: ToolError) -> Response {
+    match e {
+        ToolError::Locked | ToolError::Unavailable => {
+            (StatusCode::SERVICE_UNAVAILABLE, e.message()).into_response()
+        }
+        _ => {
+            let mut resp = (StatusCode::UNAUTHORIZED, e.message()).into_response();
+            resp.headers_mut().insert(
+                axum::http::header::WWW_AUTHENTICATE,
+                axum::http::HeaderValue::from_static("Bearer"),
+            );
+            resp
+        }
+    }
 }
 
 async fn mcp_post(State(state): State<McpState>, headers: HeaderMap, body: Bytes) -> Response {
-    // Reject non-loopback `Host` headers, mirroring the persona server's BR-A2
-    // guard. Binding `127.0.0.1` is not enough on its own: a browser page can
-    // DNS-rebind its domain to loopback and POST here. This endpoint is
-    // unauthenticated in owner mode and serves every `Private` fact, so the Host
-    // check is load-bearing, not decorative. (Bearer auth in step ⓑ is an
-    // additional layer, not a replacement.)
-    let host_ok = headers
-        .get(axum::http::header::HOST)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(is_loopback_host);
-    if !host_ok {
-        return (StatusCode::FORBIDDEN, "로컬 전용 엔드포인트입니다.").into_response();
-    }
-
-    // Identity is fixed here, once, before anything is dispatched — the auth seam.
-    let token = match resolve_identity(&headers) {
+    // Identity is fixed here, once, before anything is dispatched — the single
+    // auth seam. It also owns the loopback-Host / Bearer split (see
+    // `resolve_identity`), so no request reaches a tool with an unresolved
+    // identity. A bad/absent token is `Unauthorized` (401); a locked or
+    // unreachable store is a distinct server-state error (503) the consumer can
+    // relay to the owner, never conflated with "your token is invalid".
+    let token = match resolve_identity(&state.tokens, &headers).await {
         Ok(t) => t,
-        Err(e) => return (StatusCode::UNAUTHORIZED, e.message()).into_response(),
+        Err(e) => return auth_rejection(e),
     };
 
     let req: RpcRequest = match serde_json::from_slice(&body) {
@@ -644,10 +737,10 @@ async fn mcp_get() -> Response {
         .into_response()
 }
 
-fn router(sharing: Arc<KnowledgeSharing>) -> Router {
+fn router(sharing: Arc<KnowledgeSharing>, tokens: Arc<TokenStore>) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post).get(mcp_get))
-        .with_state(McpState { sharing })
+        .with_state(McpState { sharing, tokens })
 }
 
 // ---------------------------------------------------------------------------
@@ -686,11 +779,22 @@ impl McpHandle {
 impl McpServer {
     /// Bind and serve on `127.0.0.1`. If `port` is taken, ports up to
     /// `port + 20` are tried. The bound port is reported through the handle.
+    /// `tokens` backs consumer authentication; the owner self-reference path never
+    /// consults it. The persona [`LocalApiServer`](crate::persona) is untouched —
+    /// different port, different code path (§7.1).
     ///
-    /// Loopback-only for step ⓐ; a tunnel bridges to this port in step ⓑ. The
-    /// persona [`LocalApiServer`](crate::persona) is untouched — different port,
-    /// different code path.
-    pub async fn start(sharing: Arc<KnowledgeSharing>, port: u16) -> Result<McpHandle> {
+    /// **SECURITY — this listener grants owner mode to tokenless loopback
+    /// requests, so it must never be fronted by a tunnel.** A tunnel that rewrites
+    /// `Host` to `localhost` would let a tokenless external request satisfy the
+    /// owner branch in [`resolve_identity`] and read every `Private` fact. Step 5
+    /// must run the tunneled, sharable surface on a *separate* listener that is
+    /// Bearer-only (no owner grant); this one stays loopback-only for the owner's
+    /// own agent (step ⓐ).
+    pub async fn start(
+        sharing: Arc<KnowledgeSharing>,
+        tokens: Arc<TokenStore>,
+        port: u16,
+    ) -> Result<McpHandle> {
         let listener = bind_loopback(port).await?;
         let bound = listener
             .local_addr()
@@ -698,7 +802,7 @@ impl McpServer {
             .port();
 
         let (tx, rx) = oneshot::channel::<()>();
-        let app = router(sharing);
+        let app = router(sharing, tokens);
 
         let task = tokio::spawn(async move {
             let _ = axum::serve(listener, app)
@@ -968,14 +1072,22 @@ mod tests {
     // ---- HTTP smoke test (ⓐ owner self-reference over the wire) -----------
 
     fn post_mcp(port: u16, body: &str) -> (u16, String) {
-        post_mcp_host(port, "127.0.0.1", body)
+        post_mcp_full(port, "127.0.0.1", None, body)
     }
 
     fn post_mcp_host(port: u16, host: &str, body: &str) -> (u16, String) {
+        post_mcp_full(port, host, None, body)
+    }
+
+    /// Raw MCP POST with an explicit `Host` and optional `Authorization: Bearer`.
+    fn post_mcp_full(port: u16, host: &str, bearer: Option<&str>, body: &str) -> (u16, String) {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+        let auth = bearer
+            .map(|t| format!("Authorization: Bearer {t}\r\n"))
+            .unwrap_or_default();
         let req = format!(
             "POST /mcp HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\n\
-             Accept: application/json, text/event-stream\r\nContent-Length: {}\r\n\
+             Accept: application/json, text/event-stream\r\n{auth}Content-Length: {}\r\n\
              Connection: close\r\n\r\n{body}",
             body.len()
         );
@@ -991,10 +1103,16 @@ mod tests {
         (status, payload)
     }
 
+    /// A `TokenStore` over its own in-memory backing (unlocked), for the HTTP
+    /// auth tests.
+    fn token_store() -> Arc<TokenStore> {
+        Arc::new(TokenStore::new(Arc::new(InMemoryStore::default())))
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn owner_smoke_over_http() {
         let (s, ids) = seeded().await;
-        let mut h = McpServer::start(s, 0).await.unwrap();
+        let mut h = McpServer::start(s, token_store(), 0).await.unwrap();
         let port = h.port();
 
         let (init_status, tools_body, page_body) = tokio::task::spawn_blocking(move || {
@@ -1030,11 +1148,13 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn non_loopback_host_is_rejected() {
-        // DNS-rebinding defense: a request whose Host is not loopback must be
-        // refused before any tool runs, even though the socket is on 127.0.0.1.
+    async fn tokenless_non_loopback_request_is_unauthorized() {
+        // DNS-rebinding defense: owner mode (no token) is reachable only on a
+        // loopback Host, so a non-loopback request with no Bearer never runs a
+        // tool — even though the socket itself is on 127.0.0.1. With no token
+        // presented it is Unauthorized (401), not a 200 that would serve Private.
         let (s, ids) = seeded().await;
-        let mut h = McpServer::start(s, 0).await.unwrap();
+        let mut h = McpServer::start(s, token_store(), 0).await.unwrap();
         let port = h.port();
 
         let (status, body) = tokio::task::spawn_blocking(move || {
@@ -1047,7 +1167,10 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(status, 403, "non-loopback Host must be refused");
+        assert_eq!(
+            status, 401,
+            "tokenless non-loopback request must be refused"
+        );
         assert!(
             !body.contains("knows-me:content"),
             "no data may leak on a refused request"
@@ -1059,7 +1182,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn notification_gets_202_and_bad_json_gets_parse_error() {
         let (s, _) = seeded().await;
-        let mut h = McpServer::start(s, 0).await.unwrap();
+        let mut h = McpServer::start(s, token_store(), 0).await.unwrap();
         let port = h.port();
 
         let (notif_status, bad_body) = tokio::task::spawn_blocking(move || {
@@ -1076,6 +1199,163 @@ mod tests {
 
         assert_eq!(notif_status, 202, "a notification returns 202 with no body");
         assert!(bad_body.contains("-32700"), "malformed JSON ⇒ parse error");
+
+        h.stop().await;
+    }
+
+    // ---- HTTP consumer mode (ⓑ Bearer token over the wire) ----------------
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn consumer_bearer_scopes_to_granted_shared_over_http() {
+        // A token granted only "deploy" sees the Shared/deploy page; the
+        // Private/deploy page and the ungranted "workstyle" page both come back as
+        // not_found — the §5.1 fixed message, never a leak of existence.
+        let (s, ids) = seeded().await;
+        let tokens = token_store();
+        let secret = tokens
+            .issue("teammate", [cat("deploy")])
+            .await
+            .unwrap()
+            .secret;
+        let mut h = McpServer::start(s, tokens, 0).await.unwrap();
+        let port = h.port();
+
+        let (shared, private, ungranted) = tokio::task::spawn_blocking(move || {
+            let call = |id: FactId| {
+                format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"get_page","arguments":{{"id":"{}"}}}}}}"#,
+                    id.0
+                )
+            };
+            // ids: [0]=Private/deploy, [1]=Shared/deploy, [2]=Shared/workstyle.
+            let shared = post_mcp_full(port, "127.0.0.1", Some(&secret), &call(ids[1]));
+            let private = post_mcp_full(port, "127.0.0.1", Some(&secret), &call(ids[0]));
+            let ungranted = post_mcp_full(port, "127.0.0.1", Some(&secret), &call(ids[2]));
+            (shared, private, ungranted)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(shared.0, 200);
+        assert!(shared.1.contains("knows-me:content"));
+        assert!(shared.1.contains(r#""isError":false"#));
+        // Private (same category) and ungranted category: indistinguishable not_found.
+        for (status, body) in [private, ungranted] {
+            assert_eq!(status, 200, "a tool-domain miss is still HTTP 200");
+            assert!(body.contains("해당 항목을 찾을 수 없습니다"));
+            assert!(body.contains(r#""isError":true"#));
+            assert!(!body.contains("knows-me:content"), "no page body may leak");
+        }
+
+        h.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn revoked_and_unknown_bearer_tokens_get_401() {
+        let (s, _) = seeded().await;
+        let tokens = token_store();
+        let secret = tokens
+            .issue("teammate", [cat("deploy")])
+            .await
+            .unwrap()
+            .secret;
+        tokens.revoke("teammate").await.unwrap();
+        let mut h = McpServer::start(s, tokens, 0).await.unwrap();
+        let port = h.port();
+
+        let (revoked, unknown) = tokio::task::spawn_blocking(move || {
+            let call = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#;
+            let revoked = post_mcp_full(port, "127.0.0.1", Some(&secret), call);
+            let unknown = post_mcp_full(port, "127.0.0.1", Some("totally-made-up"), call);
+            (revoked, unknown)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(revoked.0, 401, "a revoked token is refused immediately");
+        assert!(revoked.1.contains("토큰이 유효하지 않습니다"));
+        assert_eq!(unknown.0, 401, "an unknown token is refused");
+        assert!(unknown.1.contains("토큰이 유효하지 않습니다"));
+
+        h.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn unauthorized_response_carries_www_authenticate_challenge() {
+        // RFC 7235 §3.1: a 401 must carry a WWW-Authenticate challenge so a
+        // conformant client knows a Bearer token is what's expected.
+        let (s, _) = seeded().await;
+        let mut h = McpServer::start(s, token_store(), 0).await.unwrap();
+        let port = h.port();
+
+        let raw = tokio::task::spawn_blocking(move || {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
+            let body = r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#;
+            let req = format!(
+                "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer nope\r\n\
+                 Content-Type: application/json\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(req.as_bytes()).expect("write");
+            let mut raw = String::new();
+            stream.read_to_string(&mut raw).expect("read");
+            raw
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            raw.starts_with("HTTP/1.1 401"),
+            "got: {}",
+            &raw[..raw.len().min(40)]
+        );
+        assert!(
+            raw.to_ascii_lowercase()
+                .contains("www-authenticate: bearer"),
+            "401 must advertise the Bearer scheme"
+        );
+
+        h.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn consumer_bearer_is_authorized_from_a_non_loopback_host() {
+        // The tunnel case (step 5): an authenticated request must succeed even
+        // when Host is not loopback — authentication replaces the loopback guard
+        // for Bearer requests — while the token still scopes the view.
+        let (s, ids) = seeded().await;
+        let tokens = token_store();
+        let secret = tokens
+            .issue("teammate", [cat("deploy")])
+            .await
+            .unwrap()
+            .secret;
+        let mut h = McpServer::start(s, tokens, 0).await.unwrap();
+        let port = h.port();
+
+        let (shared, private) = tokio::task::spawn_blocking(move || {
+            let call = |id: FactId| {
+                format!(
+                    r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"get_page","arguments":{{"id":"{}"}}}}}}"#,
+                    id.0
+                )
+            };
+            let shared = post_mcp_full(port, "team.example.com", Some(&secret), &call(ids[1]));
+            let private = post_mcp_full(port, "team.example.com", Some(&secret), &call(ids[0]));
+            (shared, private)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(shared.0, 200);
+        assert!(
+            shared.1.contains("knows-me:content"),
+            "granted Shared page served over a tunnel"
+        );
+        // Scope still holds off-loopback: the Private page is not_found, not served.
+        assert!(private.1.contains("해당 항목을 찾을 수 없습니다"));
+        assert!(!private.1.contains("knows-me:content"));
 
         h.stop().await;
     }

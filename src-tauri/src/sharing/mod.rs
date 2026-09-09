@@ -19,7 +19,9 @@ use crate::core::types::{Category, Fact, FactId, FactSummary, Visibility};
 pub mod envelope;
 mod knowledge;
 pub mod mcp;
+pub mod tokens;
 pub use knowledge::KnowledgeSharing;
+pub use tokens::{IssuedToken, TokenStore};
 
 /// Contract error codes (`mcp-contract.md` §5). Which layer produces each:
 /// `NotFound` = tool domain (this trait) for absent *or* out-of-scope targets —
