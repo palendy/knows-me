@@ -51,11 +51,20 @@ pub fn route(labels: &[String], summary: &str, raw: &RawItem) -> ProcessingDecis
         suggested_scope: scope,
     };
 
-    // Noise / one-off → drop (US-2.1 AC2).
-    if has(labels, "noise") || has(labels, "one-off") {
+    // The summarizer itself found nothing durable — believe it over the
+    // classifier, which only ever saw the same input.
+    if crate::llm::prompts::is_nothing(summary) {
         return ProcessingDecision::Drop {
-            reason: "classified as noise/one-off".into(),
+            reason: "no durable fact in item".into(),
         };
+    }
+    // Noise / one-off (US-2.1 AC2). The two models disagree here: the
+    // summarizer was asked "is there a durable fact?" and produced one, while
+    // the classifier calls the item noise. Dropping on that disagreement is how
+    // real context goes missing without a trace, so it becomes a question for
+    // the owner instead — which is what the interview queue is for (BR-P3).
+    if has(labels, "noise") || has(labels, "one-off") {
+        return ProcessingDecision::Confirm(candidate(scope_from_labels(labels)));
     }
     // Needs-context → deepen (US-2.1 AC3).
     if has(labels, "needs-context") {
@@ -76,9 +85,26 @@ pub fn route(labels: &[String], summary: &str, raw: &RawItem) -> ProcessingDecis
     ProcessingDecision::Store(candidate(scope_from_labels(labels)))
 }
 
+/// Whether a line is just a link, with no words around it.
+fn is_bare_url(line: &str) -> bool {
+    let mut tokens = line.split_whitespace();
+    match (tokens.next(), tokens.next()) {
+        (Some(single), None) => single.starts_with("http://") || single.starts_with("https://"),
+        _ => false,
+    }
+}
+
 /// Derive a short title from the summary (first line / clipped).
 fn title_of(summary: &str) -> String {
-    let first = summary.lines().next().unwrap_or(summary).trim();
+    // The first line is the title the summarizer was asked for, unless it
+    // handed back something that names nothing — a bare URL is the common
+    // case, and "https://github.com/…/README" as a fact title is noise in the
+    // wiki. Fall through to the first line that reads like prose.
+    let first = summary
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !is_bare_url(l))
+        .unwrap_or_else(|| summary.trim());
     const MAX: usize = 80;
     if first.len() <= MAX {
         first.to_string()
@@ -94,6 +120,26 @@ fn title_of(summary: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_bare_url_is_not_a_fact_title() {
+        let summary = "https://github.com/someone/repo/blob/main/README\n\
+                       사용자는 한국어 번역 문서를 참고한다";
+        let decision = route(&["certain".into()], summary, &raw());
+        match decision {
+            ProcessingDecision::Store(c) => {
+                assert!(!c.title.starts_with("http"), "got title: {}", c.title);
+                assert!(c.title.contains("한국어"));
+            }
+            other => panic!("expected Store, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_nothing_summary_is_dropped_whatever_the_labels_say() {
+        let decision = route(&["certain".into(), "personal".into()], "NOTHING", &raw());
+        assert!(matches!(decision, ProcessingDecision::Drop { .. }));
+    }
     use crate::core::types::SourceKind;
     use chrono::Utc;
 
@@ -108,9 +154,21 @@ mod tests {
     }
 
     #[test]
-    fn noise_is_dropped() {
-        let d = route(&["noise".into()], "junk", &raw());
-        assert!(matches!(d, ProcessingDecision::Drop { .. }));
+    fn disagreement_between_the_models_becomes_a_question_not_a_deletion() {
+        // The summarizer found a fact; the classifier called it noise. Asking
+        // costs the owner one queue item; dropping costs them the fact.
+        let decision = route(
+            &["noise".into()],
+            "사용자는 배포에 make deploy를 쓴다",
+            &raw(),
+        );
+        assert!(matches!(decision, ProcessingDecision::Confirm(_)));
+    }
+
+    #[test]
+    fn only_the_summarizer_can_authorize_a_drop() {
+        let decision = route(&["noise".into()], "NOTHING", &raw());
+        assert!(matches!(decision, ProcessingDecision::Drop { .. }));
     }
 
     #[test]
