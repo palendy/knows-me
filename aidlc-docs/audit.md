@@ -350,3 +350,76 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - U3 second-review fixes applied + verified (36 tests). Committing.
 
 ---
+## CONSTRUCTION - U4 (Interface & Persona) 착수
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "현재 repo의 ai dlc를 파악하고 \n나는 U4 개발자야. Construction Phase를 시작해주세요. \n\n다 완료하고 u4 브랜치에 푸쉬해줘" → (mid-turn, 유닛 경계 질문에 대한 답) "다른 유닛에 겹치지 않게 다른 유닛들이 하는 업무를 파악하고 실행"
+**AI Response**: AI-DLC 상태 파악(aidlc-state.md: INCEPTION 완료, U1 Milestone 0 계약 레이어 완료, U2는 construction/u2-ingestion-processing 브랜치에서 Functional Design Part 1 진행 중). U4 = US-5.1~5.3, US-6.1~6.2, Owner Dev D. 브랜치 `construction/u4-interface-persona` 생성(U2 명명 규칙 준수). 사용자 지시("다 완료하고 푸쉬")에 따라 Functional Design → NFR Requirements → NFR Design → Code Generation을 승인 게이트 대기 없이 연속 실행하고, 각 단계 산출물과 결정 근거를 문서로 남긴 뒤 커밋·푸시. Infrastructure Design은 실행계획대로 SKIP(로컬 데스크탑). Build and Test(전 유닛 통합)는 U4 단독 범위 밖이므로 U4 스코프 검증만 수행.
+**Context**: CONSTRUCTION - U4 시작. 사용자 지시로 단계별 승인 게이트를 일괄 위임받음(deviation 명시).
+
+---
+
+## CONSTRUCTION - U4 유닛 경계 결정 (중복 방지)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "다른 유닛에 겹치지 않게 다른 유닛들이 하는 업무를 파악하고 실행"
+**AI Response**: unit-of-work.md 기준 오너십 분석 후 U4 편집 범위를 다음으로 한정.
+- U4 소유(신규 생성): `src-tauri/src/persona/**`, `src/features/{dashboard,minihome,graph,persona-chat,u4-shared}/**`
+- 공용 파일 최소 추가만: `src-tauri/Cargo.toml`(axum/tokio 등 dependency 추가), `src-tauri/src/lib.rs`(`pub mod persona;` 1줄)
+- U1 영역 미침범: `tauri.conf.json`, `index.html`, `src/main.tsx`, `App.tsx`, 라우팅, 온보딩/잠금 UI, `vite.config.ts`(번들러 선택권을 U1에 남김), `src-tauri/src/core/**`, `mocks.rs`
+- U2/U3 영역 미침범: `ingestion/`, `processing/`, `knowledge/`, `interview/`, `src/features/queue/` — U3 의존은 U1이 제공한 `InMemoryKnowledge` mock으로만 소비
+- 미할당 영역 중 U4 검증에 필수인 **테스트 툴체인만** 추가: `package.json`, `tsconfig.json`, `vitest.config.ts` (앱 실행 엔트리·번들러 설정은 제외)
+**Context**: CONSTRUCTION - U4 경계 확정. handoff 문서에 통합 시 U1이 흡수할 항목 명시 예정.
+
+---
+
+## CONSTRUCTION - U4 Functional Design 완료
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: (사전 위임 — "다 완료하고 u4 브랜치에 푸쉬해줘" + AskUserQuestion 응답: 그래프=의존성 없는 자체 SVG, 로컬 API=axum+tokio, 스캐폴드=다른 유닛과 겹치지 않게 판단해 실행)
+**AI Response**: `plans/u4-interface-persona-functional-design-plan.md` 작성(Q1~Q10 결정 기록) 후 산출물 4종 생성: `functional-design/{domain-entities,business-logic-model,business-rules,frontend-components}.md`. 각 산출물에 "Testable Properties" 절 포함(PBT-01). 주요 결정: 확정 사실만 근거(BR-P1), 맥락 상한 12(BR-P5), 전순서 정렬로 결정성 확보(BR-P7), 맥락 없으면 LLM 미호출(BR-P4), 127.0.0.1 바인딩+Host 검증 이중 방어(BR-A1/A2), 조회 3종은 LLM 미주입으로 오프라인 구조 보장(BR-V8).
+**Context**: CONSTRUCTION - U4 Functional Design. 승인 게이트는 사용자 위임으로 자동 통과.
+
+---
+
+## CONSTRUCTION - U4 NFR Requirements / NFR Design 완료
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: (사전 위임)
+**AI Response**: `plans/u4-interface-persona-nfr-requirements-plan.md`, `plans/u4-interface-persona-nfr-design-plan.md` 작성. 산출물: `nfr-requirements/{nfr-requirements,tech-stack-decisions}.md`, `nfr-design/{nfr-design-patterns,logical-components}.md`. PBT-09 프레임워크 선정: Rust=proptest, TS=fast-check(둘 다 커스텀 생성기·shrinking·seed 재현 지원, tech-stack-decisions.md에 기록). Infrastructure Design은 실행계획대로 SKIP(로컬 데스크탑 앱).
+**Context**: CONSTRUCTION - U4 NFR 단계 완료.
+
+---
+
+## CONSTRUCTION - U4 Code Generation 완료 + 검증
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: (사전 위임)
+**AI Response**: `plans/u4-interface-persona-code-generation-plan.md`(14단계) 작성 후 전 단계 실행·체크박스 [x] 마킹.
+생성: Rust `src-tauri/src/persona/{mod,context,selection,query,service,local_api,testgen,properties}.rs`; 프론트엔드 `src/features/u4-shared/{api,mock-api,tauri-api,view-state,StateShell,styles,selection,graph-layout,testgen}.*` + 뷰 4종(Dashboard/MiniHome/Graph/PersonaChat) + 테스트 11개 파일; 테스트 툴체인 `package.json`/`tsconfig.json`/`vitest.config.ts`/`src/test-setup.ts`. 공용 파일은 `Cargo.toml`(axum/tokio/proptest)과 `lib.rs`(1줄)만 추가 변경.
+**검증 실행 결과**: `cargo build` OK · `cargo test` 55 pass · `cargo clippy --all-targets -- -D warnings` clean(2건 수정: result_large_err → 소형 ApiError 열거형 도입, unnecessary_sort_by → sort_by_key) · `npm test` 40 pass(6회 반복 실행으로 flakiness 확인) · `tsc --noEmit` clean · 시크릿 하드코딩 스캔 무검출 · `0.0.0.0` 바인딩 경로 부재 확인.
+**검증 중 발견·수정한 결함 3건**: (1) U3 mock `search`가 질의 전체 부분문자열 매칭이라 자연어 질문에 무응답 → recall 폴백 도입(fetch_cap 64 상한); (2) `LocalApiHandle::stop()` 2회 호출 시 완료된 JoinHandle 재poll panic → task를 Option으로 바꿔 멱등화; (3) `selectHighlights` 순열 불변 속성 간헐 실패 → 생성기가 동일 FactId의 서로 다른 fact를 생성한 것이 원인, `uniqueArray`로 도메인 제약 반영 + dedupe를 정렬 이후로 이동(PBT-08 "flaky는 억제 금지" 준수).
+**PBT 컴플라이언스(Partial: PBT-02/03/07/08/09 blocking)**: 전부 준수, **blocking finding 없음**. PBT-01/04/10 advisory 준수, PBT-05/06 N/A(참조 구현 없음 / U4는 영속 상태 미소유).
+**확장 컴플라이언스**: Security Baseline·Resiliency Baseline은 Enabled=No로 미적용(보안 요구는 requirements.md NFR-2/D7에서 직접 유래한 U4-NFR-SEC1~7로 자체 반영).
+**문서**: `code/{implementation-summary,local-api,integration-handoff}.md` 생성. aidlc-state.md 갱신.
+**Context**: CONSTRUCTION - U4 완료. Build and Test(전 유닛 통합)는 U4 단독 범위 밖으로 남김. 커밋 후 `construction/u4-interface-persona` 브랜치에 푸시.
+
+---
+
+## CONSTRUCTION - U4 main rebase + 동료 코드리뷰 반영
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "내 pr 머지할 수 있게 동료들이 반영한거 rebase하고 문제없는지 로컬에서 테스트해보고 푸쉬까지해줘" → (mid-turn) "동료가 리뷰한것도 다 고쳐주고"
+**AI Response**: `construction/u4-interface-persona`를 `origin/main`(U1 본구현·U2·U3 머지 완료, 17 커밋)에 rebase. 충돌 7건 해소: `Cargo.toml`(main 의존성 유지 + tokio에 `net` 피처 추가, axum 추가), `lib.rs`(main 모듈 전체 유지 + `pub mod persona;`), `package.json`(U1의 dev/build/preview + U4의 test/test:watch 및 vitest·jsdom·RTL·fast-check 병합), `tsconfig.json`(U1 앱 셸 소유 설정 채택, U4가 추가했던 `noUncheckedIndexedAccess`·`types`는 공용 설정에 강제하지 않도록 제외), `aidlc-state.md`·`audit.md`(양쪽 병합), lockfile 2종 재생성. `vitest.config.ts` 주석을 "U1이 vite.config.ts를 아직 안 만들었다" 전제에서 현재 사실에 맞게 수정.
+**동료 코드리뷰(coolfebreeze, xhigh) 9건 전부 반영**: 🔴1 fetch_cap을 uuid순→제목 연관도 pre-rank 후 절단; 🔴2 confirmed 필터를 폴백 개수 판단보다 앞으로 이동; 🟡3 "system도 마스킹" 규정과 구현 불일치 → 구현(단일 mask 패스)이 낫다고 판단해 BR-P2/P2a·C5/C5a·E4·SEC3·P2 파이프라인·NFR 패턴1 문서를 개정 근거와 함께 갱신; 🟡4 `arb_fact_id()` 도입으로 proptest 시드 제어(PBT-08 실질 충족); 🟡5 `select_context`가 `total_confirmed`를 인자로 받고 `build_context`가 모집단을 측정해 전달(E1 정의 준수); 🟡6 `LocalApiHandle` drop 주석을 사실대로 정정 + drop이 서버를 종료함을 테스트로 고정 + handoff에 보관 경고; 🟡7 `minihome`의 N+1 제거 — `graph()` 1회로 연결도 집계해 왕복 2회 고정, 대가로 recency 타이브레이커 상실을 BR-V2 개정으로 명시하고 `FactSummary.confirmed_at` 추가를 U1/U3에 요청; 🟢8 MockApi를 항 단위 스코어링 + Rust와 동일한 recall 폴백으로 교정하고 예시 질문 전부를 검증하는 회귀 테스트 추가(그 과정에서 기존 "맥락 없음" 테스트가 실제 서비스 동작과 어긋난 것도 교정 — BR-P4는 확정 사실 0개일 때만 발동); 🟢9 `normalizeGraph`를 3-pass로 재구성해 절단 랭킹이 정리된 엣지 기준 연결도를 쓰도록 수정.
+**검증**: `cargo fmt --check` clean · `cargo test` 151 pass(전 유닛) · `cargo clippy --all-targets -- -D warnings` clean · `npm test` 41 pass · `tsc --noEmit` clean.
+**Context**: CONSTRUCTION - U4 PR #2 머지 준비 완료. force-with-lease 푸시.
+
+---
+
+## CONSTRUCTION - Build and Test (전 유닛 통합 검증)
+**Timestamp**: 2026-09-08T00:00:00Z
+**User Input**: "내께 마지막인데 그럼 전부 합쳐지는건데 전체 문제 없는지 검증해봐"
+**AI Response**: U4가 마지막 유닛이므로 병합 후 전체 상태를 검증. 브랜치가 `origin/main`의 fast-forward 후손이라 현재 브랜치 = 병합 후 상태임을 먼저 확인.
+**자동 검증(전부 로컬 실행)**: `cargo fmt --check` clean · `cargo clippy --all-targets -D warnings` clean · `cargo test --lib` 148 pass · `cargo test --test u2_pbt` 3 pass · `cargo check`(desktop/Tauri2) 통과 · `npm test` 41 pass · `tsc --noEmit` clean · `npm run build` 성공 · 시크릿 스캔 무검출 · `0.0.0.0` 바인딩 무검출.
+**신규 통합 테스트**: `src-tauri/tests/integration_all_units.rs` 9건 작성·통과. mock이 아닌 실물끼리 결합 — U1 PasswordKeyManager(Argon2)+FileEncryptedStore(AES-256-GCM, 실제 디스크)+RegexMasker → U3 KnowledgeService+InterviewService → U4 QueryService+PersonaService+LocalApiServer. 네트워크만 테스트 더블. 검증 항목: 조회 3종 실동작, Queue 확인→확정→페르소나 답변 전 구간, 실제 마스커로 이메일·전화번호 미유출 및 로컬 복원, LLM 미주입 상태에서 조회 동작(NFR-3), 확정 0개일 때 클라우드 미호출(BR-P4), 로컬 API 초안 생성 + 비-loopback Host 403, 잠금 시 조회 거부, **디스크 전체를 훑어 사실 평문 부재 확인**, 그리고 U2 ProcessingService까지 포함한 4유닛 전 구간(원본→가공→저장/Queue→페르소나 + 전송 로그에도 원문 식별자 부재).
+**❌ 발견 — 앱 배선 누락**: 라이브러리는 전부 정상이나 실행되는 앱은 U1만 노출. 근거는 추측이 아니라 빌드 산출물 직접 조회 — `dist/assets/*.js`에 온보딩 문자열은 있으나 대시보드·미니홈피·지식 그래프·페르소나 챗 문자열이 전무(Vite가 미import 모듈을 제거하므로 App.tsx가 렌더하지 않는다는 뜻). 세부: G1 App.tsx 라우팅 없음, G2 desktop/main.rs가 U1 command 7개만 등록, G3 AppState가 U1 컴포넌트만 보유, G4 `src/features/queue/` 부재(U3 Queue UI 미구현), G5 LocalApiServer 기동 지점 없음(US-6.2 AC1 전제 미충족), G6 TransferLog가 llm::/processing:: 2종 공존. G1·G2·G3·G5는 U1 소유 파일이라 U4가 단독 수정하면 유닛 경계 위반 → **수정하지 않고 보고**.
+**산출물**: `aidlc-docs/construction/build-and-test/{integration-verification-report,build-instructions,test-instructions}.md`, aidlc-state.md 갱신.
+**Context**: CONSTRUCTION - Build and Test 부분 완료(검증 ✅ / 배선 ❌). 배선은 U1·U3 오너 작업 또는 별도 합의 필요.
+
+---
+

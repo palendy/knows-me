@@ -1,0 +1,29 @@
+// U4 data-access port.
+//
+// Views depend on this interface and nothing else, so swapping the development
+// mock for U1's real Tauri commands is a one-line change at the injection site
+// (U4-NFR-M5). Types come from U1's shared contract mirror — U4 does not
+// redefine them.
+
+import type {
+  DashboardDto,
+  Draft,
+  DraftRequest,
+  GraphDto,
+  GraphFilter,
+  MiniHomeDto,
+  PersonaReply,
+} from "../../shared/contracts";
+
+export interface KnowsMeApi {
+  /** US-5.1 */
+  getDashboard(): Promise<DashboardDto>;
+  /** US-5.2 */
+  getMiniHome(limit?: number): Promise<MiniHomeDto>;
+  /** US-5.3 */
+  getGraph(filter: GraphFilter): Promise<GraphDto>;
+  /** US-6.1 */
+  personaChat(prompt: string): Promise<PersonaReply>;
+  /** US-6.2 */
+  personaDraft(req: DraftRequest): Promise<Draft>;
+}
