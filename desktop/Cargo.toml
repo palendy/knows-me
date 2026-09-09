@@ -14,12 +14,16 @@ name = "knows-me"
 path = "src/main.rs"
 
 [features]
-# Forward the core's real cloud LLM client + the real Notion connector. Off by
-# default so the app builds and runs fully offline (canned LLM, skeleton
-# connectors); turn on with `--features llm-http`. Notion HTTP rides along since
-# both need `reqwest` and the online build is the one that talks to services.
+# The Notion connector is ON by default: `tauri dev` / a plain release build
+# both talk to the real Notion API, so a stored token immediately reports its
+# reachable-page count and collects pages. Build with `--no-default-features`
+# to get the offline skeleton (used by the core's offline tests).
+default = ["notion-http"]
+# Forward the core's real cloud LLM client (+ the Notion connector, which it
+# needs anyway). Off by default so the app runs offline for the LLM (canned
+# client); turn on with `--features llm-http`.
 llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http"]
-# Enable only the real Notion connector (without the cloud LLM).
+# The real Notion connector (Notion HTTP API). Enabled via `default` above.
 notion-http = ["knows-me-core/notion-http"]
 
 [build-dependencies]
