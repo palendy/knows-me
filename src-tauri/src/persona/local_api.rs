@@ -26,7 +26,7 @@ use tokio::sync::oneshot;
 
 use crate::core::error::{AppError, Result};
 use crate::core::traits::PersonaApi;
-use crate::core::types::{DraftKind, DraftRequest};
+use crate::core::types::{ChatRole, ChatTurn, DraftKind, DraftRequest};
 
 /// Default port for the local persona API.
 pub const DEFAULT_PORT: u16 = 8765;
@@ -40,6 +40,34 @@ const PORT_SCAN_RANGE: u16 = 20;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatRequestBody {
     pub prompt: String,
+    /// Prior turns, oldest first. Optional so a one-shot client can omit it.
+    #[serde(default)]
+    pub history: Vec<ChatTurnBody>,
+}
+
+/// Wire form of [`ChatTurn`]. Declared here so U4 owns its HTTP contract.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatTurnBody {
+    pub role: ChatRoleWire,
+    pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChatRoleWire {
+    Owner,
+    Persona,
+}
+
+impl From<ChatTurnBody> for ChatTurn {
+    fn from(t: ChatTurnBody) -> Self {
+        ChatTurn {
+            role: match t.role {
+                ChatRoleWire::Owner => ChatRole::Owner,
+                ChatRoleWire::Persona => ChatRole::Persona,
+            },
+            text: t.text,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,7 +233,8 @@ async fn chat(
     require_loopback(&headers)?;
     let Json(body) = body.map_err(|_| ApiError::MalformedBody)?;
 
-    let reply = persona.chat(body.prompt).await?;
+    let history = body.history.into_iter().map(ChatTurn::from).collect();
+    let reply = persona.chat(body.prompt, history).await?;
     Ok(Json(TextResponseBody { text: reply.text }))
 }
 
@@ -341,12 +370,14 @@ mod tests {
 
     #[async_trait]
     impl PersonaApi for EchoPersona {
-        async fn chat(&self, prompt: String) -> Result<PersonaReply> {
+        async fn chat(&self, prompt: String, history: Vec<ChatTurn>) -> Result<PersonaReply> {
             if prompt.trim().is_empty() {
                 return Err(AppError::InvalidInput("빈 요청입니다".into()));
             }
+            // Echo the history length so a test can prove it crossed the wire.
             Ok(PersonaReply {
-                text: format!("chat:{prompt}"),
+                text: format!("chat:{prompt}:history={}", history.len()),
+                sources: vec![],
             })
         }
         async fn draft(&self, req: DraftRequest) -> Result<Draft> {
@@ -360,7 +391,7 @@ mod tests {
 
     #[async_trait]
     impl PersonaApi for OfflinePersona {
-        async fn chat(&self, _prompt: String) -> Result<PersonaReply> {
+        async fn chat(&self, _prompt: String, _history: Vec<ChatTurn>) -> Result<PersonaReply> {
             Err(AppError::External("offline".into()))
         }
         async fn draft(&self, _req: DraftRequest) -> Result<Draft> {
@@ -422,7 +453,37 @@ mod tests {
 
         assert_eq!(status, 200);
         let parsed: TextResponseBody = serde_json::from_str(&body).unwrap();
-        assert_eq!(parsed.text, "chat:안녕");
+        assert_eq!(parsed.text, "chat:안녕:history=0");
+        h.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn chat_endpoint_forwards_prior_turns() {
+        // A follow-up question is meaningless without them, so the wire format
+        // has to carry them.
+        let mut h = serve(Arc::new(EchoPersona)).await;
+        let port = h.port();
+
+        let (status, body) = tokio::task::spawn_blocking(move || {
+            request(
+                port,
+                "POST",
+                "/chat",
+                "127.0.0.1",
+                Some(
+                    r#"{"prompt":"그거 더 자세히","history":[
+                        {"role":"Owner","text":"배포 절차 알려줘"},
+                        {"role":"Persona","text":"make deploy 입니다"}
+                    ]}"#,
+                ),
+            )
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(status, 200);
+        let parsed: TextResponseBody = serde_json::from_str(&body).unwrap();
+        assert!(parsed.text.ends_with("history=2"), "got: {}", parsed.text);
         h.stop().await;
     }
 

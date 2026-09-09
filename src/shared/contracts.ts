@@ -117,8 +117,25 @@ export interface MiniHomeDto {
   highlights: FactSummary[];
 }
 
+/** Who said a turn in a persona conversation. */
+export type ChatRole = "Owner" | "Persona";
+
+/** One prior turn, replayed so follow-up questions resolve. */
+export interface ChatTurn {
+  role: ChatRole;
+  text: string;
+}
+
+/** A fact the persona used as grounding. */
+export interface FactRef {
+  id: FactId;
+  title: string;
+}
+
 export interface PersonaReply {
   text: string;
+  /** Facts the answer was grounded in; empty when it declined for lack of context. */
+  sources: FactRef[];
 }
 
 export interface DraftRequest {

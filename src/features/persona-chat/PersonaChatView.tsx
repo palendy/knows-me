@@ -5,6 +5,7 @@
 // already dismissed does not tell them anything.
 
 import { useState, type FormEvent } from "react";
+import type { ChatTurn, FactRef } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import { card, muted } from "../u4-shared/styles";
 import { messageOf } from "../u4-shared/view-state";
@@ -16,7 +17,19 @@ interface Props {
 interface Message {
   role: "user" | "persona";
   text: string;
+  /** Facts this answer was grounded in (persona turns only). */
+  sources?: FactRef[];
   error?: string;
+}
+
+/** The thread as the backend wants it: prior turns, oldest first. */
+function toHistory(messages: Message[]): ChatTurn[] {
+  return messages
+    .filter((m) => !m.error)
+    .map((m) => ({
+      role: m.role === "user" ? ("Owner" as const) : ("Persona" as const),
+      text: m.text,
+    }));
 }
 
 const MAX_PROMPT_CHARS = 4000;
@@ -41,11 +54,17 @@ export function PersonaChatView({ api }: Props) {
 
   async function send(prompt: string) {
     setSending(true);
+    // Snapshot the thread *before* appending, so the history sent is what came
+    // earlier rather than including the question being asked.
+    const history = toHistory(messages);
     setMessages((m) => [...m, { role: "user", text: prompt }]);
     setInput("");
     try {
-      const reply = await api.personaChat(prompt);
-      setMessages((m) => [...m, { role: "persona", text: reply.text }]);
+      const reply = await api.personaChat(prompt, history);
+      setMessages((m) => [
+        ...m,
+        { role: "persona", text: reply.text, sources: reply.sources },
+      ]);
     } catch (err) {
       // Keep the conversation; mark just this turn as failed so an outage
       // never costs the owner what they already typed (BR-E2).
@@ -67,6 +86,7 @@ export function PersonaChatView({ api }: Props) {
   }
 
   const lastUserPrompt = [...messages].reverse().find((m) => m.role === "user");
+  const canFollowUp = messages.some((m) => m.role === "persona");
 
   return (
     <section aria-label="페르소나 챗">
@@ -96,6 +116,16 @@ export function PersonaChatView({ api }: Props) {
             <li key={i} style={{ ...card, marginBottom: 8 }}>
               <div style={muted}>{m.role === "user" ? "나" : "페르소나"}</div>
               <div style={{ whiteSpace: "pre-wrap" }}>{m.text}</div>
+              {m.sources && m.sources.length > 0 && (
+                <details style={{ ...muted, marginTop: 6 }}>
+                  <summary>근거로 삼은 사실 {m.sources.length}개</summary>
+                  <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                    {m.sources.map((s) => (
+                      <li key={s.id}>{s.title}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {m.error && (
                 <div role="alert">
                   <span>{m.error}</span>{" "}
@@ -113,7 +143,9 @@ export function PersonaChatView({ api }: Props) {
       )}
 
       <form onSubmit={onSubmit}>
-        <label htmlFor="persona-input">질문</label>
+        <label htmlFor="persona-input">
+          {canFollowUp ? "이어서 질문 (앞의 대화를 기억합니다)" : "질문"}
+        </label>
         <textarea
           id="persona-input"
           value={input}

@@ -19,7 +19,8 @@ mod services;
 
 use knows_me_core::core::commands::{self, AppStatus};
 use knows_me_core::core::types::{
-    AnswerInput, AnswerResult, AppConfig, DashboardDto, Draft, DraftRequest, GraphDto, GraphFilter,
+    AnswerInput, AnswerResult, AppConfig, ChatTurn, DashboardDto, Draft, DraftRequest, GraphDto,
+    GraphFilter,
     MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, SourceKind, TransferPolicy,
     TransferRecord,
 };
@@ -154,9 +155,13 @@ async fn get_graph(
 async fn persona_chat(
     services: tauri::State<'_, Services>,
     prompt: String,
+    // Prior turns, oldest first. The frontend owns the thread; the backend
+    // stays stateless so a locked/unlocked cycle cannot strand a conversation.
+    history: Option<Vec<ChatTurn>>,
 ) -> CmdResult<PersonaReply> {
+    let history = history.unwrap_or_default();
     services
-        .with(|s| async move { s.persona.chat(prompt).await })
+        .with(|s| async move { s.persona.chat(prompt, history).await })
         .await
         .map_err(err)
 }

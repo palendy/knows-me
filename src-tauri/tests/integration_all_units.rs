@@ -208,7 +208,11 @@ async fn persona_grounds_answers_in_facts_confirmed_through_the_interview_queue(
     );
 
     // U4 now answers from it.
-    let reply = s.persona.chat("배포 절차 알려줘".into()).await.unwrap();
+    let reply = s
+        .persona
+        .chat("배포 절차 알려줘".into(), vec![])
+        .await
+        .unwrap();
     assert_ne!(reply.text, NO_CONTEXT_REPLY, "persona should be grounded");
     assert!(
         reply.text.contains("make deploy"),
@@ -235,7 +239,11 @@ async fn identifiers_are_masked_by_the_real_masker_before_leaving_the_device() {
         .await
         .unwrap();
 
-    let reply = s.persona.chat("연락처 알려줘".into()).await.unwrap();
+    let reply = s
+        .persona
+        .chat("연락처 알려줘".into(), vec![])
+        .await
+        .unwrap();
 
     // Everything the gateway saw, system prompt included.
     let seen = s.llm.seen.lock().unwrap().join("\n");
@@ -289,7 +297,11 @@ async fn read_views_answer_with_no_llm_wired_in_at_all() {
 async fn persona_says_it_cannot_answer_before_anything_is_confirmed() {
     let s = unlocked_stack().await;
 
-    let reply = s.persona.chat("아무거나 물어봄".into()).await.unwrap();
+    let reply = s
+        .persona
+        .chat("아무거나 물어봄".into(), vec![])
+        .await
+        .unwrap();
 
     assert_eq!(reply.text, NO_CONTEXT_REPLY);
     assert!(
@@ -553,7 +565,7 @@ async fn a_raw_item_travels_from_processing_all_the_way_to_a_persona_answer() {
     );
 
     // And nothing the persona sends out carries the raw address.
-    let _ = persona.chat("배포 절차".into()).await.unwrap();
+    let _ = persona.chat("배포 절차".into(), vec![]).await.unwrap();
     for e in transfer_log.all().await.unwrap() {
         let rendered = format!("{e:?}");
         assert!(

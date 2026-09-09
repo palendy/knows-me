@@ -3,7 +3,7 @@
 //! Rules implemented here: BR-P1 (confirmed only), BR-P5 (bounded),
 //! BR-P7 (total order), BR-P8 (draft-kind directives).
 
-use crate::core::types::{DraftKind, Fact, Scope};
+use crate::core::types::{ChatRole, ChatTurn, DraftKind, Fact, Scope};
 
 use super::{ContextEntry, ContextSelection, PersonaContext, PersonaPrompt};
 
@@ -122,8 +122,39 @@ fn kind_directive(kind: DraftKind) -> &'static str {
     }
 }
 
+/// How many prior turns to replay. Enough for a thread to hold together,
+/// bounded so a long conversation cannot grow the prompt without limit.
+pub const MAX_HISTORY_TURNS: usize = 8;
+
+/// Build the text retrieval runs against.
+///
+/// A follow-up is usually shorter than the thing it refers to — "그거 더
+/// 자세히" retrieves nothing on its own. Joining it with the owner's recent
+/// turns puts the subject back in the query, while keeping the newest words
+/// dominant because they appear alongside every earlier mention.
+pub fn retrieval_query(user_input: &str, history: &[ChatTurn]) -> String {
+    let recent: Vec<&str> = history
+        .iter()
+        .rev()
+        .filter(|t| t.role == ChatRole::Owner)
+        .take(3)
+        .map(|t| t.text.as_str())
+        .collect();
+
+    if recent.is_empty() {
+        return user_input.to_string();
+    }
+    let mut query = String::from(user_input);
+    for turn in recent {
+        query.push(' ');
+        query.push_str(turn);
+    }
+    query
+}
+
 const PERSONA_INSTRUCTIONS: &str = "당신은 사용자 본인의 페르소나입니다. 아래 [맥락]에 적힌 확정된 사실만 근거로 삼아 1인칭으로 답하세요. \
-맥락에 없는 내용은 지어내지 말고, 모르는 것은 모른다고 말하세요.";
+맥락에 없는 내용은 지어내지 말고, 모르는 것은 모른다고 말하세요. \
+[이전 대화]가 있으면 그 흐름을 이어서 답하고, 지시대명사는 이전 대화에서 가리키는 대상으로 해석하세요.";
 
 /// Render the prompt pair.
 ///
@@ -134,6 +165,7 @@ pub fn render_prompt(
     ctx: &PersonaContext,
     user_input: &str,
     kind: Option<DraftKind>,
+    history: &[ChatTurn],
 ) -> PersonaPrompt {
     let system = match kind {
         Some(k) => format!("{PERSONA_INSTRUCTIONS}\n{}", kind_directive(k)),
@@ -149,6 +181,18 @@ pub fn render_prompt(
             e.body
         ));
     }
+    if !history.is_empty() {
+        doc.push_str("\n[이전 대화]\n");
+        let start = history.len().saturating_sub(MAX_HISTORY_TURNS);
+        for turn in &history[start..] {
+            let who = match turn.role {
+                ChatRole::Owner => "나",
+                ChatRole::Persona => "페르소나",
+            };
+            doc.push_str(&format!("{who}: {}\n", turn.text));
+        }
+    }
+
     doc.push_str("\n[요청]\n");
     doc.push_str(user_input);
 
@@ -238,7 +282,7 @@ mod tests {
     fn system_prompt_carries_no_owner_data() {
         let facts = vec![fact("비밀 제목", "a@b.com 이라는 주소", true)];
         let ctx = select_context(&facts, "주소", &ContextSelection::default(), 1);
-        let p = render_prompt(&ctx, "내 주소 알려줘", None);
+        let p = render_prompt(&ctx, "내 주소 알려줘", None, &[]);
         assert!(!p.system.contains("비밀 제목"));
         assert!(!p.system.contains("a@b.com"));
         assert!(!p.system.contains("내 주소 알려줘"));
@@ -251,8 +295,8 @@ mod tests {
     #[test]
     fn draft_kind_directive_lands_in_system_prompt() {
         let ctx = PersonaContext::default();
-        let email = render_prompt(&ctx, "요청", Some(DraftKind::Email));
-        let msg = render_prompt(&ctx, "요청", Some(DraftKind::Message));
+        let email = render_prompt(&ctx, "요청", Some(DraftKind::Email), &[]);
+        let msg = render_prompt(&ctx, "요청", Some(DraftKind::Message), &[]);
         assert!(email.system.contains("제목: "));
         assert!(msg.system.contains("메신저"));
         assert_ne!(email.system, msg.system);

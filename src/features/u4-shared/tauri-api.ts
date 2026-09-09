@@ -6,6 +6,7 @@
 // point of the port (U4-NFR-M5).
 
 import type {
+  ChatTurn,
   DashboardDto,
   Draft,
   DraftRequest,
@@ -40,8 +41,8 @@ export class TauriApi implements KnowsMeApi {
   getGraph(filter: GraphFilter): Promise<GraphDto> {
     return this.invoke<GraphDto>(COMMANDS.graph, { filter });
   }
-  personaChat(prompt: string): Promise<PersonaReply> {
-    return this.invoke<PersonaReply>(COMMANDS.chat, { prompt });
+  personaChat(prompt: string, history: ChatTurn[] = []): Promise<PersonaReply> {
+    return this.invoke<PersonaReply>(COMMANDS.chat, { prompt, history });
   }
   personaDraft(req: DraftRequest): Promise<Draft> {
     return this.invoke<Draft>(COMMANDS.draft, { req });

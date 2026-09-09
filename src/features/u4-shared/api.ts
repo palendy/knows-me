@@ -6,6 +6,7 @@
 // redefine them.
 
 import type {
+  ChatTurn,
   DashboardDto,
   Draft,
   DraftRequest,
@@ -22,8 +23,8 @@ export interface KnowsMeApi {
   getMiniHome(limit?: number): Promise<MiniHomeDto>;
   /** US-5.3 */
   getGraph(filter: GraphFilter): Promise<GraphDto>;
-  /** US-6.1 */
-  personaChat(prompt: string): Promise<PersonaReply>;
+  /** US-6.1. `history` carries prior turns, oldest first. */
+  personaChat(prompt: string, history?: ChatTurn[]): Promise<PersonaReply>;
   /** US-6.2 */
   personaDraft(req: DraftRequest): Promise<Draft>;
 }

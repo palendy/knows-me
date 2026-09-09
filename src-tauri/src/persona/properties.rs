@@ -168,7 +168,10 @@ proptest! {
 
     #[test]
     fn chat_request_json_round_trips(prompt in arb_sensitive_text()) {
-        let original = ChatRequestBody { prompt };
+        let original = ChatRequestBody {
+            prompt,
+            history: vec![],
+        };
         let decoded: ChatRequestBody =
             serde_json::from_str(&serde_json::to_string(&original).unwrap()).unwrap();
         prop_assert_eq!(original, decoded);
@@ -329,7 +332,7 @@ proptest! {
             let svc = PersonaService::new(kn, Arc::new(PatternMasker), llm_for_svc);
             // Errors are fine here (blank/oversized prompts); the invariant is
             // about what reached the gateway, not about the call succeeding.
-            let _ = svc.chat(question.clone()).await;
+            let _ = svc.chat(question.clone(), vec![]).await;
         });
 
         let seen = llm.seen.lock().unwrap();

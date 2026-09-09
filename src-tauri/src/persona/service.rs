@@ -14,9 +14,11 @@ use async_trait::async_trait;
 
 use crate::core::error::{AppError, Result};
 use crate::core::traits::{KnowledgeApi, LlmClient, Masker, PersonaApi};
-use crate::core::types::{Draft, DraftKind, DraftRequest, Fact, FactFilter, PersonaReply};
+use crate::core::types::{
+    ChatTurn, Draft, DraftKind, DraftRequest, Fact, FactFilter, FactRef, PersonaReply,
+};
 
-use super::context::{render_prompt, select_context, title_relevance};
+use super::context::{render_prompt, retrieval_query, select_context, title_relevance};
 use super::{
     ContextSelection, PersonaContext, DEFAULT_FETCH_CAP, MAX_PROMPT_CHARS, NO_CONTEXT_REPLY,
 };
@@ -110,7 +112,15 @@ impl PersonaService {
     }
 
     /// The one place where anything leaves the device.
-    async fn ground_and_ask(&self, user_input: &str, kind: Option<DraftKind>) -> Result<String> {
+    ///
+    /// Returns the answer plus the facts it was grounded in, so the caller can
+    /// show the owner what the persona actually read.
+    async fn ground_and_ask(
+        &self,
+        user_input: &str,
+        kind: Option<DraftKind>,
+        history: &[ChatTurn],
+    ) -> Result<(String, Vec<FactRef>)> {
         if user_input.trim().is_empty() {
             return Err(AppError::InvalidInput("빈 요청입니다".into()));
         }
@@ -120,13 +130,26 @@ impl PersonaService {
             )));
         }
 
-        let ctx = self.build_context(user_input).await?;
+        // A follow-up ("그거 더 자세히") names nothing on its own, so retrieval
+        // runs over the whole thread. Without this the persona keeps answering
+        // the pronoun instead of the subject.
+        let retrieval_query = retrieval_query(user_input, history);
+        let ctx = self.build_context(&retrieval_query).await?;
         // BR-P4: no grounding means no cloud call at all.
         if ctx.is_empty() {
-            return Ok(NO_CONTEXT_REPLY.to_string());
+            return Ok((NO_CONTEXT_REPLY.to_string(), vec![]));
         }
 
-        let prompt = render_prompt(&ctx, user_input, kind);
+        let sources: Vec<FactRef> = ctx
+            .entries
+            .iter()
+            .map(|e| FactRef {
+                id: e.id,
+                title: e.title.clone(),
+            })
+            .collect();
+
+        let prompt = render_prompt(&ctx, user_input, kind, history);
         // Single mask pass: `system` is a static template with no owner data,
         // so one call yields one UnmaskMap and no placeholder collisions.
         let (masked, unmask_map) = self.masker.mask(&prompt.user_document);
@@ -135,21 +158,25 @@ impl PersonaService {
 
         // Restoration is local-only; `unmask_map` is dropped at end of scope
         // and never persisted or transmitted (BR-P3).
-        Ok(self
+        let text = self
             .masker
-            .unmask(&crate::core::types::MaskedText { text: raw }, &unmask_map))
+            .unmask(&crate::core::types::MaskedText { text: raw }, &unmask_map);
+        Ok((text, sources))
     }
 }
 
 #[async_trait]
 impl PersonaApi for PersonaService {
-    async fn chat(&self, prompt: String) -> Result<PersonaReply> {
-        let text = self.ground_and_ask(&prompt, None).await?;
-        Ok(PersonaReply { text })
+    async fn chat(&self, prompt: String, history: Vec<ChatTurn>) -> Result<PersonaReply> {
+        let (text, sources) = self.ground_and_ask(&prompt, None, &history).await?;
+        Ok(PersonaReply { text, sources })
     }
 
     async fn draft(&self, req: DraftRequest) -> Result<Draft> {
-        let text = self.ground_and_ask(&req.prompt, Some(req.kind)).await?;
+        // Drafting is a one-shot request, not a conversation.
+        let (text, _sources) = self
+            .ground_and_ask(&req.prompt, Some(req.kind), &[])
+            .await?;
         Ok(Draft { text })
     }
 }
@@ -157,7 +184,7 @@ impl PersonaApi for PersonaService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::MaskedText;
+    use crate::core::types::{ChatRole, MaskedText};
     use crate::mocks::{CannedLlm, InMemoryKnowledge, NoopMasker};
     use crate::persona::testgen::fact;
     use std::sync::Mutex;
@@ -254,7 +281,7 @@ mod tests {
             llm.clone(),
         );
 
-        let reply = svc.chat("배포 어떻게 해?".into()).await.unwrap();
+        let reply = svc.chat("배포 어떻게 해?".into(), vec![]).await.unwrap();
 
         assert_eq!(reply.text, NO_CONTEXT_REPLY);
         assert!(
@@ -272,7 +299,7 @@ mod tests {
         let llm = Arc::new(SpyLlm::default());
         let svc = PersonaService::new(kn, Arc::new(NoopMasker), llm.clone());
 
-        let reply = svc.chat("배포".into()).await.unwrap();
+        let reply = svc.chat("배포".into(), vec![]).await.unwrap();
 
         assert_eq!(reply.text, NO_CONTEXT_REPLY);
         assert!(llm.calls.lock().unwrap().is_empty());
@@ -283,7 +310,7 @@ mod tests {
         let llm = Arc::new(SpyLlm::default());
         let svc = PersonaService::new(seeded_knowledge().await, Arc::new(NoopMasker), llm.clone());
 
-        svc.chat("배포".into()).await.unwrap();
+        svc.chat("배포".into(), vec![]).await.unwrap();
 
         let calls = llm.calls.lock().unwrap();
         assert_eq!(calls.len(), 1);
@@ -304,7 +331,7 @@ mod tests {
         let llm = Arc::new(SpyLlm::default());
         let svc = PersonaService::new(kn, Arc::new(AtSignMasker), llm.clone());
 
-        svc.chat("연락처 알려줘".into()).await.unwrap();
+        svc.chat("연락처 알려줘".into(), vec![]).await.unwrap();
 
         let calls = llm.calls.lock().unwrap();
         let (_, input) = &calls[0];
@@ -323,7 +350,7 @@ mod tests {
             Arc::new(FailingLlm),
         );
 
-        let err = svc.chat("배포".into()).await.unwrap_err();
+        let err = svc.chat("배포".into(), vec![]).await.unwrap_err();
         assert!(matches!(err, AppError::External(_)));
     }
 
@@ -336,15 +363,90 @@ mod tests {
         );
 
         assert!(matches!(
-            svc.chat("   ".into()).await.unwrap_err(),
+            svc.chat("   ".into(), vec![]).await.unwrap_err(),
             AppError::InvalidInput(_)
         ));
         assert!(matches!(
-            svc.chat("가".repeat(MAX_PROMPT_CHARS + 1))
+            svc.chat("가".repeat(MAX_PROMPT_CHARS + 1), vec![])
                 .await
                 .unwrap_err(),
             AppError::InvalidInput(_)
         ));
+    }
+
+    #[tokio::test]
+    async fn a_follow_up_is_answered_in_the_thread_it_belongs_to() {
+        // "그거" names nothing. Without the thread the persona retrieves on the
+        // pronoun and answers about something else entirely.
+        let kn = Arc::new(InMemoryKnowledge::default());
+        kn.upsert(fact("배포 절차", "main 머지 후 make deploy", true))
+            .await
+            .unwrap();
+        kn.upsert(fact("커피 취향", "산미 있는 원두를 좋아한다", true))
+            .await
+            .unwrap();
+        let llm = Arc::new(SpyLlm::default());
+        let svc = PersonaService::new(kn, Arc::new(NoopMasker), llm.clone()).with_selection(
+            ContextSelection {
+                max_facts: 1,
+                scope: None,
+            },
+        );
+
+        svc.chat(
+            "그거 더 자세히".into(),
+            vec![
+                ChatTurn {
+                    role: ChatRole::Owner,
+                    text: "배포 절차 알려줘".into(),
+                },
+                ChatTurn {
+                    role: ChatRole::Persona,
+                    text: "make deploy 입니다".into(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        let calls = llm.calls.lock().unwrap();
+        let (_, document) = &calls[0];
+        assert!(
+            document.contains("make deploy"),
+            "the thread's subject must drive retrieval, got: {document}"
+        );
+        assert!(
+            document.contains("[이전 대화]"),
+            "prior turns must reach the model"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_reply_names_the_facts_it_was_grounded_in() {
+        let kn = Arc::new(InMemoryKnowledge::default());
+        kn.upsert(fact("배포 절차", "main 머지 후 make deploy", true))
+            .await
+            .unwrap();
+        let svc = PersonaService::new(kn, Arc::new(NoopMasker), Arc::new(CannedLlm));
+
+        let reply = svc.chat("배포".into(), vec![]).await.unwrap();
+
+        assert_eq!(reply.sources.len(), 1);
+        assert_eq!(reply.sources[0].title, "배포 절차");
+    }
+
+    #[tokio::test]
+    async fn an_ungrounded_reply_claims_no_sources() {
+        let svc = PersonaService::new(
+            Arc::new(InMemoryKnowledge::default()),
+            Arc::new(NoopMasker),
+            Arc::new(CannedLlm),
+        );
+
+        let reply = svc.chat("아무거나".into(), vec![]).await.unwrap();
+
+        assert_eq!(reply.text, NO_CONTEXT_REPLY);
+        assert!(reply.sources.is_empty());
     }
 
     #[tokio::test]

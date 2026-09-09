@@ -318,9 +318,37 @@ pub struct MiniHomeDto {
 // Persona
 // ---------------------------------------------------------------------------
 
+/// Who said a turn in a persona conversation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChatRole {
+    Owner,
+    Persona,
+}
+
+/// One prior turn, replayed so follow-up questions resolve.
+///
+/// Without this the persona answers every question cold: "그거 더 자세히"
+/// has no referent, which is most of what a real conversation is made of.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChatTurn {
+    pub role: ChatRole,
+    pub text: String,
+}
+
+/// A fact the persona used as grounding, named so the owner can check it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FactRef {
+    pub id: FactId,
+    pub title: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PersonaReply {
     pub text: String,
+    /// The confirmed facts this answer was grounded in. Empty when the persona
+    /// declined to answer for lack of context.
+    #[serde(default)]
+    pub sources: Vec<FactRef>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]

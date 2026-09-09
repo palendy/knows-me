@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { PersonaChatView } from "./PersonaChatView";
 import { FailingApi, MockApi, withOverrides } from "../u4-shared/mock-api";
 import { EXAMPLE_QUESTIONS } from "./PersonaChatView";
+import type { ChatTurn } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 
 describe("PersonaChatView", () => {
@@ -68,7 +69,7 @@ describe("PersonaChatView", () => {
           failNext = false;
           throw new Error("일시적 오류");
         }
-        return { text: `복구됨: ${prompt}` };
+        return { text: `복구됨: ${prompt}`, sources: [] };
       },
     });
 
@@ -82,6 +83,46 @@ describe("PersonaChatView", () => {
     await waitFor(() =>
       expect(screen.getByText("복구됨: 배포 절차")).toBeInTheDocument(),
     );
+  });
+
+  it("sends the prior turns with a follow-up", async () => {
+    // Without this a follow-up like "그거 더 자세히" has no referent.
+    const seen: ChatTurn[][] = [];
+    const api = withOverrides(new MockApi(), {
+      async personaChat(prompt: string, history: ChatTurn[] = []) {
+        seen.push(history);
+        return { text: `응답: ${prompt}`, sources: [] };
+      },
+    });
+
+    render(<PersonaChatView api={api} />);
+    const box = screen.getByLabelText("질문");
+
+    await userEvent.type(box, "배포 절차");
+    await userEvent.click(screen.getByRole("button", { name: "보내기" }));
+    await screen.findByText("응답: 배포 절차");
+
+    await userEvent.type(screen.getByLabelText(/이어서 질문/), "그거 더 자세히");
+    await userEvent.click(screen.getByRole("button", { name: "보내기" }));
+    await screen.findByText("응답: 그거 더 자세히");
+
+    expect(seen[0]).toEqual([]);
+    expect(seen[1]).toEqual([
+      { role: "Owner", text: "배포 절차" },
+      { role: "Persona", text: "응답: 배포 절차" },
+    ]);
+  });
+
+  it("shows which facts the answer was grounded in", async () => {
+    render(<PersonaChatView api={new MockApi()} />);
+
+    await userEvent.type(screen.getByLabelText("질문"), "배포");
+    await userEvent.click(screen.getByRole("button", { name: "보내기" }));
+
+    const disclosure = await screen.findByText(/근거로 삼은 사실 \d+개/);
+    expect(disclosure).toBeInTheDocument();
+    await userEvent.click(disclosure);
+    expect(screen.getByText("배포 절차")).toBeInTheDocument();
   });
 
   it("offers example questions before the first turn", async () => {

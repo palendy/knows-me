@@ -5,6 +5,7 @@
 // against this adapter matches what the real backend will do.
 
 import type {
+  ChatTurn,
   DashboardDto,
   Draft,
   DraftRequest,
@@ -92,13 +93,17 @@ export class MockApi implements KnowsMeApi {
     };
   }
 
-  async personaChat(prompt: string): Promise<PersonaReply> {
+  async personaChat(prompt: string, history: ChatTurn[] = []): Promise<PersonaReply> {
+    // Mirror the service: a follow-up retrieves over the whole thread, so
+    // "그거 더 자세히" resolves the same way it does against the real backend.
+    const query = [prompt, ...history.filter((t) => t.role === "Owner").map((t) => t.text)]
+      .join(" ")
+      .toLowerCase();
     // Term-wise matching, mirroring the Rust service. Matching the whole query
     // as one substring would mean a natural question ("내 배포 절차 알려줘")
     // never hits a fact whose title is just "배포 절차" — the demo path would
     // answer "no context" for every question a person would actually type.
-    const terms = prompt
-      .toLowerCase()
+    const terms = query
       .split(/[^\p{L}\p{N}]+/u)
       .filter((t) => t.length >= 2);
 
@@ -110,7 +115,7 @@ export class MockApi implements KnowsMeApi {
     // "에디터가" will not substring-match "에디터", so term scoring alone
     // would strand perfectly answerable questions.
     if (confirmed.length === 0) {
-      return { text: NO_CONTEXT_REPLY };
+      return { text: NO_CONTEXT_REPLY, sources: [] };
     }
 
     const scored = confirmed
@@ -128,6 +133,7 @@ export class MockApi implements KnowsMeApi {
 
     return {
       text: scored.map((x) => `${x.fact.title}: ${x.fact.body}`).join("\n"),
+      sources: scored.map((x) => ({ id: x.fact.id, title: x.fact.title })),
     };
   }
 
@@ -164,19 +170,25 @@ export class FailingApi implements KnowsMeApi {
  *
  * Spreading a class instance (`{ ...new MockApi(), getDashboard }`) silently
  * drops every prototype method, so tests delegate explicitly instead.
+ *
+ * Each delegate forwards `...args`. An earlier version listed parameters one by
+ * one, and when `personaChat` gained a `history` argument the helper quietly
+ * dropped it — the call still succeeded, so a test written to prove the thread
+ * reaches the backend passed against a helper that had thrown it away.
  */
 export function withOverrides(
   base: KnowsMeApi,
   overrides: Partial<KnowsMeApi>,
 ): KnowsMeApi {
   return {
-    getDashboard: () => (overrides.getDashboard ?? base.getDashboard.bind(base))(),
-    getMiniHome: (limit) =>
-      (overrides.getMiniHome ?? base.getMiniHome.bind(base))(limit),
-    getGraph: (filter) => (overrides.getGraph ?? base.getGraph.bind(base))(filter),
-    personaChat: (prompt) =>
-      (overrides.personaChat ?? base.personaChat.bind(base))(prompt),
-    personaDraft: (req) =>
-      (overrides.personaDraft ?? base.personaDraft.bind(base))(req),
+    getDashboard: (...args) =>
+      overrides.getDashboard?.(...args) ?? base.getDashboard(...args),
+    getMiniHome: (...args) =>
+      overrides.getMiniHome?.(...args) ?? base.getMiniHome(...args),
+    getGraph: (...args) => overrides.getGraph?.(...args) ?? base.getGraph(...args),
+    personaChat: (...args) =>
+      overrides.personaChat?.(...args) ?? base.personaChat(...args),
+    personaDraft: (...args) =>
+      overrides.personaDraft?.(...args) ?? base.personaDraft(...args),
   };
 }

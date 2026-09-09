@@ -125,6 +125,11 @@ pub trait InterviewApi: Send + Sync {
 /// Persona avatar: chat + "act on my behalf" drafting.
 #[async_trait]
 pub trait PersonaApi: Send + Sync {
-    async fn chat(&self, prompt: String) -> Result<PersonaReply>;
+    /// Answer as the owner's persona.
+    ///
+    /// `history` carries prior turns, oldest first, so follow-ups resolve
+    /// against what was already said. Callers that have no history pass an
+    /// empty slice.
+    async fn chat(&self, prompt: String, history: Vec<ChatTurn>) -> Result<PersonaReply>;
     async fn draft(&self, req: DraftRequest) -> Result<Draft>;
 }
