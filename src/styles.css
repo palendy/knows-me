@@ -118,7 +118,7 @@ button, input:not([type='radio']):not([type='checkbox']), textarea, select { bor
 .journey-eyebrow span { color: #9c774e; margin-right: 7px; }
 .journey-hero h3 { font-size: clamp(28px, 2.7vw, 38px); line-height: 1.28; letter-spacing: -.05em; font-weight: 600; margin: 0; color: #493b4e; }
 .journey-description { color: #6d5c64; font-size: 12px; line-height: 1.9; margin: 15px 0 19px; word-break: keep-all; }
-.journey-action { background: #fffaf0e8; color: #594467; border: 1px solid #c6a995; padding: 10px 15px; border-radius: 30px; font-size: 12px; box-shadow: 0 3px 8px #67475a08; }
+.journey-action { display: inline-flex; align-items: center; background: radial-gradient(ellipse at 18% 0%, #fce7ff26, transparent 65%), linear-gradient(125deg, #89769e 0%, #807095 48%, #746389 100%); color: #fffaf3; border: 1px solid #756488; padding: 10px 15px 10px 22px; border-radius: 30px; font-size: 12px; line-height: 1.5; box-shadow: inset 0 1px 0 #fff5ff38, inset 0 -1px 0 #503b6812, 0 3px 8px #67475a18; }
 .journey-action span { margin-left: 20px; }
 .journey-caption { position: absolute; right: 20px; bottom: 17px; background: #3f3944cc; color: #fff5e6; padding: 6px 12px; border: 1px solid #fff5e659; border-radius: 20px; font-size: 8px; letter-spacing: .16em; }
 .dashboard-stats { background: transparent; border: 0; padding: 0; gap: 14px; margin-bottom: 30px; }
