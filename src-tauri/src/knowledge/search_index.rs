@@ -219,7 +219,18 @@ impl SearchIndex {
     }
 
     /// Graph projection: nodes = (scope-filtered) facts, edges = stored links
-    /// whose target is also in the node set (KR-5 — dangling links skipped).
+    /// plus topic-derived links, both restricted to the node set (KR-5 —
+    /// dangling links skipped).
+    ///
+    /// Facts are stored with no explicit `links` today (nothing populates them),
+    /// so a links-only projection is always edgeless — the graph reads as
+    /// scattered dots. Topics are the signal that separate observations are
+    /// about the same thing, so facts that share a topic are connected here.
+    /// To avoid a topic that every fact carries turning into a complete graph
+    /// (O(n^2) edges), each topic group is connected as a *chain* of its facts
+    /// in id order: n-1 edges per topic, and every member stays reachable.
+    /// Duplicate/undirected edges are collapsed by the frontend's
+    /// `normalizeGraph`, so a pair sharing several topics is fine here.
     pub fn graph(&self, filter: &GraphFilter) -> GraphDto {
         let node_ids: HashSet<FactId> = self
             .meta
@@ -234,7 +245,10 @@ impl SearchIndex {
                 label: self.meta[id].title.clone(),
             })
             .collect();
+
         let mut edges = Vec::new();
+
+        // 1) Explicit stored links (once these are ever populated).
         for id in &node_ids {
             for link in &self.meta[id].links {
                 if node_ids.contains(link) {
@@ -245,6 +259,26 @@ impl SearchIndex {
                 }
             }
         }
+
+        // 2) Topic-derived links: chain the facts within each shared topic.
+        //    Sorted by id so the projection is deterministic across calls.
+        let mut by_topic: BTreeMap<&str, Vec<FactId>> = BTreeMap::new();
+        for id in &node_ids {
+            for topic in &self.meta[id].topics {
+                by_topic.entry(topic.as_str()).or_default().push(*id);
+            }
+        }
+        for members in by_topic.values_mut() {
+            // FactId isn't Ord; sort by the uuid bytes for a stable order.
+            members.sort_unstable_by_key(|id| *id.0.as_bytes());
+            for pair in members.windows(2) {
+                edges.push(GraphEdge {
+                    from: pair[0],
+                    to: pair[1],
+                });
+            }
+        }
+
         GraphDto { nodes, edges }
     }
 

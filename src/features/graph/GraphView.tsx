@@ -1,26 +1,24 @@
 // US-5.3 — the knowledge graph.
 //
-// Rendered as plain SVG with a deterministic ring layout rather than a physics
-// simulation: the same graph must land in the same place every time, or the
-// owner loses their spatial memory of it between visits (BR-V4).
+// Rendered as an Obsidian-style force-directed canvas (react-force-graph-2d):
+// nodes float on a d3-force simulation and settle so the picture reads as a web
+// of connections you can pan, zoom, and drag. The canvas has no accessibility
+// tree, so a visually-hidden list of node buttons carries keyboard/SR support
+// and is what the tests drive.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import type { FactId, GraphDto, Scope } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import { StateShell } from "../u4-shared/StateShell";
 import { muted } from "../u4-shared/styles";
 import "../u4-shared/work-views.css";
-import {
-  layoutGraph,
-  neighborsOf,
-  normalizeGraph,
-} from "../u4-shared/graph-layout";
+import { neighborsOf, toForceGraph } from "../u4-shared/graph-force";
 import { load, loading, type ViewState } from "../u4-shared/view-state";
+
+const ForceGraphCanvas = lazy(() => import("./ForceGraphCanvas"));
 
 interface Props {
   api: KnowsMeApi;
-  width?: number;
-  height?: number;
   embedded?: boolean;
 }
 
@@ -31,7 +29,18 @@ const SCOPES: Array<{ value: Scope | ""; label: string }> = [
   { value: "Unknown", label: "미분류" },
 ];
 
-export function GraphView({ api, width = 640, height = 480, embedded = false }: Props) {
+/**
+ * A live <canvas> 2D context is unavailable under jsdom, so react-force-graph
+ * throws on render there. Detect it and skip the canvas in tests; the hidden
+ * accessibility list still renders and is what the suite asserts against.
+ */
+const canRenderCanvas =
+  typeof document !== "undefined" &&
+  typeof HTMLCanvasElement !== "undefined" &&
+  typeof HTMLCanvasElement.prototype.getContext === "function" &&
+  document.createElement("canvas").getContext("2d") !== null;
+
+export function GraphView({ api, embedded = false }: Props) {
   const [state, setState] = useState<ViewState<GraphDto>>(loading);
   const [scope, setScope] = useState<Scope | "">("");
   const [selected, setSelected] = useState<FactId | null>(null);
@@ -47,35 +56,31 @@ export function GraphView({ api, width = 640, height = 480, embedded = false }: 
 
   useEffect(refresh, [refresh]);
 
-  const normalized = useMemo(
-    () => (state.status === "ready" ? normalizeGraph(state.data) : null),
+  const graph = useMemo(
+    () => (state.status === "ready" ? toForceGraph(state.data) : null),
     [state],
   );
-  const layout = useMemo(
-    () => (normalized ? layoutGraph(normalized, width, height) : null),
-    [normalized, width, height],
-  );
   const neighbors = useMemo(
-    () =>
-      normalized && selected ? neighborsOf(normalized, selected) : new Set<FactId>(),
-    [normalized, selected],
+    () => (graph && selected ? neighborsOf(graph, selected) : new Set<FactId>()),
+    [graph, selected],
   );
-
-  const isDimmed = (id: FactId) =>
-    selected !== null && id !== selected && !neighbors.has(id);
 
   const toggle = (id: FactId) => setSelected((cur) => (cur === id ? null : id));
+  const selectedNode = graph?.nodes.find((n) => n.id === selected);
 
   return (
-    <section aria-label="지식 그래프" className={`graph-workspace${embedded ? " graph-workspace--embedded" : ""}`}>
+    <section
+      aria-label="지식 그래프"
+      className={`graph-workspace${embedded ? " graph-workspace--embedded" : ""}`}
+    >
       <header className="work-view-header">
-        <div>{embedded ? <h3>지식 그래프</h3> : <h2>지식 그래프</h2>}<p>따로 쌓인 기록이 어떻게 이어지는지 살펴보세요.</p></div>
+        <div>
+          {embedded ? <h3>지식 그래프</h3> : <h2>지식 그래프</h2>}
+          <p>따로 쌓인 기록이 어떻게 이어지는지 살펴보세요.</p>
+        </div>
         <label>
           범위{" "}
-          <select
-            value={scope}
-            onChange={(e) => setScope(e.target.value as Scope | "")}
-          >
+          <select value={scope} onChange={(e) => setScope(e.target.value as Scope | "")}>
             {SCOPES.map((s) => (
               <option key={s.label} value={s.value}>
                 {s.label}
@@ -91,72 +96,84 @@ export function GraphView({ api, width = 640, height = 480, embedded = false }: 
         onRetry={refresh}
       >
         {() =>
-          layout === null ? null : (
+          graph === null ? null : (
             <div className="graph-panel">
-              <div className="graph-toolbar"><span>내 맥락의 연결</span><span>사실 <strong>{layout.nodes.length}</strong> · 연결 <strong>{layout.edges.length}</strong></span></div>
-              {normalized?.truncated && (
+              <div className="graph-toolbar">
+                <span>내 맥락의 연결</span>
+                <span>
+                  사실 <strong>{graph.nodes.length}</strong> · 연결{" "}
+                  <strong>{graph.links.length}</strong>
+                </span>
+              </div>
+              {graph.truncated && (
                 <p role="status" style={muted}>
                   노드가 많아 연결이 많은 상위 항목만 표시하고 있습니다.
                 </p>
               )}
-              <div className="graph-explorer"><svg
-                viewBox={`0 0 ${layout.width} ${layout.height}`}
-                width="100%"
-                role="img"
-                aria-label={`사실 ${layout.nodes.length}개, 연결 ${layout.edges.length}개`}
-                onClick={() => setSelected(null)}
-                className="graph-canvas"
-              >
-                {layout.edges.map((e) => (
-                  <line
-                    key={`${e.from}-${e.to}`}
-                    x1={e.x1}
-                    y1={e.y1}
-                    x2={e.x2}
-                    y2={e.y2}
-                    stroke="#c7d1c8"
-                    strokeWidth={1}
-                    opacity={isDimmed(e.from) && isDimmed(e.to) ? 0.15 : 1}
-                  />
-                ))}
-                {layout.nodes.map((n) => (
-                  <g
-                    key={n.id}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={n.label}
-                    aria-pressed={selected === n.id}
-                    opacity={isDimmed(n.id) ? 0.2 : 1}
-                    style={{ cursor: "pointer" }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      toggle(n.id);
-                    }}
-                    onKeyDown={(ev) => {
-                      if (ev.key === "Enter" || ev.key === " ") {
-                        ev.preventDefault();
-                        toggle(n.id);
-                      }
-                    }}
-                  >
-                    <circle
-                      cx={n.x}
-                      cy={n.y}
-                      r={6 + Math.min(6, n.degree)}
-                      fill={selected === n.id ? "#365d4b" : "#91a491"}
-                      stroke={selected === n.id ? "#e0e9df" : "#fff"}
-                      strokeWidth={4}
-                    />
-                    <text x={n.x > layout.width * 0.7 ? n.x - 16 : n.x + 16} textAnchor={n.x > layout.width * 0.7 ? "end" : "start"} y={n.y + 4} fontSize={11} fill="#252923">
-                      {n.label.length > 22 ? `${n.label.slice(0, 21)}…` : n.label}
-                    </text>
-                  </g>
-                ))}
-              </svg><aside className="graph-inspector">
-                <span className="work-eyebrow">{selected ? "선택한 사실" : "연결 살펴보기"}</span>
-                <h3>{selected ? layout.nodes.find((n) => n.id === selected)?.label : "기록 사이의 관계"}</h3>
-                {selected ? <><p>직접 연결된 사실 {neighbors.size}개</p><ul>{layout.nodes.filter((n) => neighbors.has(n.id)).map((n) => <li key={n.id}><button type="button" onClick={() => toggle(n.id)}>{n.label}<span aria-hidden="true">↗</span></button></li>)}</ul></> : <p>점을 선택하면 연결된 사실을 함께 볼 수 있어요. 연결이 많은 사실일수록 중심에 가깝게 표시됩니다.</p>}
-              </aside></div>
+
+              <div className="graph-explorer">
+                <div
+                  className="graph-canvas-region"
+                  role="img"
+                  aria-label={`사실 ${graph.nodes.length}개, 연결 ${graph.links.length}개`}
+                >
+                  {canRenderCanvas && (
+                    <Suspense fallback={<div className="graph-canvas-loading" />}>
+                      <ForceGraphCanvas
+                        data={graph}
+                        selected={selected}
+                        neighbors={neighbors}
+                        onSelect={setSelected}
+                      />
+                    </Suspense>
+                  )}
+
+                  {/* Visually-hidden but focusable node list: keyboard + screen
+                      reader access to a canvas that exposes no a11y tree. */}
+                  <ul className="graph-node-list">
+                    {graph.nodes.map((n) => (
+                      <li key={n.id}>
+                        <button
+                          type="button"
+                          aria-pressed={selected === n.id}
+                          onClick={() => toggle(n.id)}
+                        >
+                          {n.label}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <aside className="graph-inspector">
+                  <span className="work-eyebrow">
+                    {selected ? "선택한 사실" : "연결 살펴보기"}
+                  </span>
+                  <h3>{selected ? selectedNode?.label : "기록 사이의 관계"}</h3>
+                  {selected ? (
+                    <>
+                      <p>직접 연결된 사실 {neighbors.size}개</p>
+                      <ul>
+                        {graph.nodes
+                          .filter((n) => neighbors.has(n.id))
+                          .map((n) => (
+                            <li key={n.id}>
+                              <button type="button" onClick={() => toggle(n.id)}>
+                                {n.label}
+                                <span aria-hidden="true">↗</span>
+                              </button>
+                            </li>
+                          ))}
+                      </ul>
+                    </>
+                  ) : (
+                    <p>
+                      점을 선택하면 연결된 사실을 함께 볼 수 있어요. 그래프는
+                      드래그·확대·이동할 수 있습니다.
+                    </p>
+                  )}
+                </aside>
+              </div>
 
               {selected !== null && (
                 <p role="status" className="graph-status">
