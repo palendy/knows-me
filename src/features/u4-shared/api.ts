@@ -8,6 +8,7 @@
 import type {
   ChatTurn,
   DashboardDto,
+  StoredTurn,
   Draft,
   DraftRequest,
   GraphDto,
@@ -27,4 +28,10 @@ export interface KnowsMeApi {
   personaChat(prompt: string, history?: ChatTurn[]): Promise<PersonaReply>;
   /** US-6.2 */
   personaDraft(req: DraftRequest): Promise<Draft>;
+  /**
+   * The saved conversation, oldest first. Lives in the encrypted vault, not
+   * browser storage — it is the owner's context in the clear.
+   */
+  loadChatHistory(): Promise<StoredTurn[]>;
+  saveChatHistory(turns: StoredTurn[]): Promise<void>;
 }

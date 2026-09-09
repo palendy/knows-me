@@ -145,6 +145,14 @@ export interface FactRef {
   title: string;
 }
 
+/** One persisted conversation turn, as the desktop crate stores it. */
+export interface StoredTurn {
+  role: ChatRole;
+  text: string;
+  sources: FactRef[];
+  error: string | null;
+}
+
 export interface PersonaReply {
   text: string;
   /** Facts the answer was grounded in; empty when it declined for lack of context. */

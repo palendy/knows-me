@@ -8,6 +8,7 @@
 import type {
   ChatTurn,
   DashboardDto,
+  StoredTurn,
   Draft,
   DraftRequest,
   GraphDto,
@@ -27,6 +28,8 @@ export const COMMANDS = {
   graph: "get_graph",
   chat: "persona_chat",
   draft: "persona_draft",
+  historyLoad: "persona_history_load",
+  historySave: "persona_history_save",
 } as const;
 
 export class TauriApi implements KnowsMeApi {
@@ -46,5 +49,11 @@ export class TauriApi implements KnowsMeApi {
   }
   personaDraft(req: DraftRequest): Promise<Draft> {
     return this.invoke<Draft>(COMMANDS.draft, { req });
+  }
+  loadChatHistory(): Promise<StoredTurn[]> {
+    return this.invoke<StoredTurn[]>(COMMANDS.historyLoad);
+  }
+  saveChatHistory(turns: StoredTurn[]): Promise<void> {
+    return this.invoke<void>(COMMANDS.historySave, { turns });
   }
 }

@@ -89,7 +89,25 @@ impl ProcessingService {
 
         // 3. Summarize + classify (masked-only, logged, retried).
         let summary_masked = self.gateway.summarize(raw.source, &masked).await?;
-        let labels = self.gateway.classify(raw.source, &masked).await?;
+
+        // Each item is classified on its own, so the model cannot know what an
+        // earlier item called the same subject — `gemini-api` here,
+        // `gemini-api-limits` there — and the topic pages fragment into
+        // near-synonyms that each look like a one-off. Showing it the labels
+        // already in use turns "invent a label" into "reuse one if it fits".
+        // The vocabulary is built from prior masked outputs, so appending it to
+        // masked input keeps the egress contract intact.
+        let classify_input = match self.existing_topics().await {
+            Some(vocab) if !vocab.is_empty() => MaskedText {
+                text: format!(
+                    "{}\n\n[topics already in use — reuse one of these when it fits: {}]",
+                    masked.text,
+                    vocab.join(", ")
+                ),
+            },
+            _ => masked.clone(),
+        };
+        let labels = self.gateway.classify(raw.source, &classify_input).await?;
 
         // 4. Local unmask for the stored body (US-2.2 AC2). For the image path
         //    there is no reverse map, so the summary is used as-is.
@@ -132,6 +150,21 @@ impl ProcessingService {
 
     /// Re-process everything parked in the pending queue (called on reconnection,
     /// e.g. from the U1 Scheduler tick — Q3=A).
+    /// The most-used topic labels, for the classifier to reuse.
+    ///
+    /// Capped so the hint stays a hint: a few dozen labels is a vocabulary, a
+    /// few hundred is a second document. Failure to read is not fatal — the
+    /// classifier simply invents labels as it did before.
+    async fn existing_topics(&self) -> Option<Vec<String>> {
+        const MAX_HINTS: usize = 40;
+        let pages = self
+            .knowledge
+            .topics(crate::core::types::FactFilter::default())
+            .await
+            .ok()?;
+        Some(pages.into_iter().take(MAX_HINTS).map(|p| p.topic).collect())
+    }
+
     pub async fn resume_pending(&self) -> Result<ProcessReport> {
         if !self.online.is_online() {
             return Ok(ProcessReport::default());

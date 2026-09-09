@@ -217,6 +217,11 @@ fn title_of(summary: &str) -> String {
         .and_then(|i| summary.lines().nth(i))
         .map(str::trim)
         .unwrap_or_else(|| summary.trim());
+    // Models decorate titles with markdown regardless of instruction; a
+    // heading that reads "**배포 절차**" in a list is noise, not emphasis.
+    let first = first
+        .trim_matches(|c| c == '*' || c == '#' || c == '`' || c == '_')
+        .trim();
     const MAX: usize = 80;
     if first.len() <= MAX {
         first.to_string()
@@ -232,6 +237,14 @@ fn title_of(summary: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn markdown_decoration_is_stripped_from_titles() {
+        match route(&["certain".into()], "**배포 절차**\n본문", &raw()) {
+            ProcessingDecision::Store(c) => assert_eq!(c.title, "배포 절차"),
+            other => panic!("expected Store, got {other:?}"),
+        }
+    }
 
     fn stored(labels: &[&str]) -> FactCandidate {
         let labels: Vec<String> = labels.iter().map(|l| l.to_string()).collect();

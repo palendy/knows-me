@@ -34,7 +34,8 @@ tokio = { version = "1", features = ["sync"] }
 # Command return types that are shaped here rather than in the core (e.g. the
 # ingest summary that merges an IngestReport with a ProcessReport).
 serde = { version = "1", features = ["derive"] }
-# The connect_source command receives a source-specific field map as free JSON.
+# The connect_source command receives a source-specific field map as free JSON,
+# and the persona chat history is stored as JSON in the encrypted vault.
 serde_json = "1"
 # Loads a local `.env` on startup (llm-http builds) so the LLM key/model are
 # read without manually exporting env vars.

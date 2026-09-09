@@ -7,6 +7,7 @@
 import type {
   ChatTurn,
   DashboardDto,
+  StoredTurn,
   Draft,
   DraftRequest,
   Fact,
@@ -140,6 +141,14 @@ export class MockApi implements KnowsMeApi {
   async personaDraft(req: DraftRequest): Promise<Draft> {
     return { text: `[${req.kind} 초안]\n${req.prompt}` };
   }
+
+  private history: StoredTurn[] = [];
+  async loadChatHistory(): Promise<StoredTurn[]> {
+    return [...this.history];
+  }
+  async saveChatHistory(turns: StoredTurn[]): Promise<void> {
+    this.history = [...turns];
+  }
 }
 
 /** An adapter that always fails — for exercising error states in tests. */
@@ -161,6 +170,14 @@ export class FailingApi implements KnowsMeApi {
     this.fail();
   }
   async personaDraft(): Promise<Draft> {
+    this.fail();
+  }
+  async loadChatHistory(): Promise<StoredTurn[]> {
+    // A vault that cannot be read has no history to offer; the view must still
+    // open, so this is an empty thread rather than a thrown error.
+    return [];
+  }
+  async saveChatHistory(): Promise<void> {
     this.fail();
   }
 }
@@ -190,5 +207,9 @@ export function withOverrides(
       overrides.personaChat?.(...args) ?? base.personaChat(...args),
     personaDraft: (...args) =>
       overrides.personaDraft?.(...args) ?? base.personaDraft(...args),
+    loadChatHistory: (...args) =>
+      overrides.loadChatHistory?.(...args) ?? base.loadChatHistory(...args),
+    saveChatHistory: (...args) =>
+      overrides.saveChatHistory?.(...args) ?? base.saveChatHistory(...args),
   };
 }

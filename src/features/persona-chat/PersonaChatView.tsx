@@ -4,8 +4,9 @@
 // about the owner *knowing* what leaves the device, and a notice they have
 // already dismissed does not tell them anything.
 
-import { useState, type FormEvent } from "react";
-import type { ChatTurn, FactRef } from "../../shared/contracts";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import type { ChatTurn, FactRef, StoredTurn } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import "../u4-shared/work-views.css";
 import { messageOf } from "../u4-shared/view-state";
@@ -32,6 +33,25 @@ function toHistory(messages: Message[]): ChatTurn[] {
     }));
 }
 
+/** The thread as the vault stores it — what was on screen, sources included. */
+function toStored(messages: Message[]): StoredTurn[] {
+  return messages.map((m) => ({
+    role: m.role === "user" ? ("Owner" as const) : ("Persona" as const),
+    text: m.text,
+    sources: m.sources ?? [],
+    error: m.error ?? null,
+  }));
+}
+
+function fromStored(turns: StoredTurn[]): Message[] {
+  return turns.map((t) => ({
+    role: t.role === "Owner" ? ("user" as const) : ("persona" as const),
+    text: t.text,
+    sources: t.sources.length > 0 ? t.sources : undefined,
+    error: t.error ?? undefined,
+  }));
+}
+
 const MAX_PROMPT_CHARS = 4000;
 
 /**
@@ -49,6 +69,45 @@ export function PersonaChatView({ api }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  // The saved thread arrives asynchronously; until it does, a save would
+  // overwrite the vault with an empty list.
+  const [loaded, setLoaded] = useState(false);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  // Resume where the owner left off. The thread lives in the encrypted vault,
+  // so a locked or unreadable vault simply means starting fresh.
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .loadChatHistory()
+      .then((turns) => {
+        if (!cancelled) setMessages(fromStored(turns));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  // Persist after every change once the initial load has settled. A failed
+  // save is not surfaced: the conversation on screen is intact either way.
+  useEffect(() => {
+    if (!loaded) return;
+    void api.saveChatHistory(toStored(messages)).catch(() => {});
+  }, [api, messages, loaded]);
+
+  // Keep the newest turn in view. `scrollIntoView` is a browser API that not
+  // every host provides (jsdom, some embedded webviews), so it is a courtesy,
+  // never a requirement.
+  useEffect(() => {
+    const last = listRef.current?.lastElementChild;
+    if (last && typeof last.scrollIntoView === "function") {
+      last.scrollIntoView({ block: "end" });
+    }
+  }, [messages, sending]);
 
   const canSend = input.trim().length > 0 && input.length <= MAX_PROMPT_CHARS && !sending;
 
@@ -85,6 +144,21 @@ export function PersonaChatView({ api }: Props) {
     void send(input.trim());
   }
 
+  // Enter sends, Shift+Enter breaks the line — the convention every chat
+  // client the owner already uses follows. IME composition (Korean input
+  // assembles syllables before committing) must not be interrupted: an Enter
+  // that lands mid-composition is the IME's, not ours.
+  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key !== "Enter" || e.shiftKey || e.nativeEvent.isComposing) return;
+    e.preventDefault();
+    if (canSend) void send(input.trim());
+  }
+
+  function startNew() {
+    setMessages([]);
+    setInput("");
+  }
+
   const lastUserPrompt = [...messages].reverse().find((m) => m.role === "user");
   const canFollowUp = messages.some((m) => m.role === "persona");
 
@@ -92,6 +166,11 @@ export function PersonaChatView({ api }: Props) {
     <section aria-label="나와 대화" className="chat-workspace">
       <header className="work-view-header">
         <div><h2>나와 대화</h2><p>쌓아 둔 맥락에서 나에게 필요한 답을 찾아보세요.</p></div>
+        {messages.length > 0 && (
+          <button type="button" className="chat-new" onClick={startNew} disabled={sending}>
+            새 대화
+          </button>
+        )}
       </header>
       <div className="chat-content">
 
@@ -111,11 +190,21 @@ export function PersonaChatView({ api }: Props) {
           </ul>
         </div>
       ) : (
-        <ul aria-label="대화" className="chat-messages" aria-live="polite">
+        <ul aria-label="대화" className="chat-messages" aria-live="polite" ref={listRef}>
           {messages.map((m, i) => (
             <li key={i} className={`chat-message chat-message--${m.role}`}>
               <div className="chat-speaker">{m.role === "user" ? "나" : "knows me"}</div>
-              <div className="chat-bubble">{m.text}</div>
+              {m.role === "persona" ? (
+                // Persona answers arrive as markdown (lists, emphasis, code);
+                // shown raw, the asterisks and hashes read as noise. The
+                // owner's own turns are plain text and stay that way — a
+                // literal asterisk they typed should look like one.
+                <div className="chat-bubble chat-markdown">
+                  <ReactMarkdown>{m.text}</ReactMarkdown>
+                </div>
+              ) : (
+                <div className="chat-bubble">{m.text}</div>
+              )}
               {m.sources && m.sources.length > 0 && (
                 <details className="chat-sources">
                   <summary>근거로 삼은 사실 {m.sources.length}개</summary>
@@ -152,7 +241,8 @@ export function PersonaChatView({ api }: Props) {
           rows={3}
           maxLength={MAX_PROMPT_CHARS}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="나에 대해 궁금한 것을 물어보세요"
+          onKeyDown={onKeyDown}
+          placeholder="나에 대해 궁금한 것을 물어보세요 — Enter로 보내고, Shift+Enter로 줄을 바꿉니다"
         />
         <div className="chat-composer-footer"><span>{input.length.toLocaleString()} / 4,000</span><button type="submit" className="work-primary" disabled={!canSend}>
           {sending ? "보내는 중…" : "보내기"}
@@ -160,7 +250,7 @@ export function PersonaChatView({ api }: Props) {
       </form>
       <p role="note" className="chat-privacy">
         외부 LLM에 보낼 때 이메일·전화번호 등 식별자는 마스킹되어 전송되고, 답변은
-        기기 안에서 원문으로 복원됩니다.
+        기기 안에서 원문으로 복원됩니다. 대화는 암호화된 저장소에 보관됩니다.
       </p>
       </div>
     </section>

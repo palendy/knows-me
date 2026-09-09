@@ -10,3 +10,24 @@
   .chat-suggestions { margin-top: 20px; }
   .chat-suggestions button { min-height: 66px; }
 }
+
+/* Persona answers are rendered markdown. Keep the bubble's own padding and
+   let block elements inside it breathe without doubling margins. */
+.chat-markdown > :first-child { margin-top: 0; }
+.chat-markdown > :last-child { margin-bottom: 0; }
+.chat-markdown p { margin: 0 0 0.6em; }
+.chat-markdown ul, .chat-markdown ol { margin: 0.2em 0 0.6em; padding-left: 1.3em; }
+.chat-markdown li + li { margin-top: 0.2em; }
+.chat-markdown code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; padding: 1px 5px; border-radius: 4px; background: rgba(0, 0, 0, 0.06); }
+.chat-markdown pre { overflow-x: auto; padding: 10px 12px; border-radius: 6px; background: rgba(0, 0, 0, 0.06); }
+.chat-markdown pre code { padding: 0; background: none; }
+.chat-markdown h1, .chat-markdown h2, .chat-markdown h3 { font-size: 1em; margin: 0.8em 0 0.3em; }
+.chat-markdown blockquote { margin: 0.4em 0; padding-left: 10px; border-left: 3px solid rgba(0, 0, 0, 0.15); color: #5c5c62; }
+
+.chat-new { font-size: 12px; padding: 6px 10px; border: 1px solid #d2dbd7; border-radius: 6px; background: transparent; color: #5c5c62; cursor: pointer; }
+.chat-new:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
+.chat-new:disabled { opacity: 0.5; cursor: default; }
+/* The bubble preserves whitespace for the owner's plain text; rendered
+   markdown supplies its own block spacing, and pre-wrap on top of that
+   doubles every paragraph gap. */
+.chat-markdown { white-space: normal; }

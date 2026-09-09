@@ -241,6 +241,53 @@ async fn disconnect_source(
         .map_err(err)
 }
 
+// --- U4: persona conversation persistence -------------------------------------
+
+/// One persisted turn. Lives in the desktop crate because it is UI state — what
+/// the owner saw on screen, sources included — not a domain object.
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
+struct StoredTurn {
+    role: knows_me_core::core::types::ChatRole,
+    text: String,
+    #[serde(default)]
+    sources: Vec<knows_me_core::core::types::FactRef>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+const CHAT_NS: &str = "persona";
+const CHAT_KEY: &str = "history";
+
+/// The saved thread, or empty if there is none yet.
+///
+/// Goes through the encrypted store rather than browser storage: a conversation
+/// with the persona is the owner's context in the clear, and "everything at rest
+/// is encrypted" is the invariant the whole app rests on. Reading requires the
+/// vault to be unlocked, which is the right gate.
+#[tauri::command]
+async fn persona_history_load(state: tauri::State<'_, AppState>) -> CmdResult<Vec<StoredTurn>> {
+    use knows_me_core::core::traits::EncryptedStore;
+    let bytes = state.store().get(CHAT_NS, CHAT_KEY).await.map_err(err)?;
+    match bytes {
+        None => Ok(vec![]),
+        Some(b) => serde_json::from_slice(&b).map_err(|e| format!("chat history: {e}")),
+    }
+}
+
+#[tauri::command]
+async fn persona_history_save(
+    state: tauri::State<'_, AppState>,
+    turns: Vec<StoredTurn>,
+) -> CmdResult<()> {
+    use knows_me_core::core::traits::EncryptedStore;
+    let bytes = serde_json::to_vec(&turns).map_err(|e| format!("chat history: {e}"))?;
+    state
+        .store()
+        .put(CHAT_NS, CHAT_KEY, &bytes)
+        .await
+        .map_err(err)
+}
+
 // --- U2: collection -----------------------------------------------------------
 
 /// What one triggered sync produced. Combines the collection counts
@@ -359,6 +406,8 @@ fn main() {
             connect_source,
             disconnect_source,
             trigger_ingest,
+            persona_history_load,
+            persona_history_save,
         ])
         .run(tauri::generate_context!())
         .expect("error while running knows-me");
