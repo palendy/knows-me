@@ -68,6 +68,15 @@ pub async fn set_server_enabled(state: &AppState, on: bool) -> Result<()> {
     state.save_config(cfg).await
 }
 
+/// Enable/disable the sharing (MCP) servers flag (persisted). The servers
+/// themselves are owned by the sharing vertical; this is just the config toggle
+/// the desktop shell reads on activate.
+pub async fn set_sharing_enabled(state: &AppState, on: bool) -> Result<()> {
+    let mut cfg = state.config();
+    cfg.sharing_enabled = on;
+    state.save_config(cfg).await
+}
+
 /// Store an external-system credential, encrypted (US-7.3).
 pub async fn store_credential(
     state: &AppState,

@@ -13,11 +13,12 @@
 
 use std::sync::Arc;
 
+use knows_me_core::core::error::{AppError, Result};
 use knows_me_core::core::traits::{
     Connector, CredentialStore, EncryptedStore, IngestionApi, InterviewApi, KeyManager,
     KnowledgeApi, Masker, PersonaApi,
 };
-use knows_me_core::core::types::SourceConfig;
+use knows_me_core::core::types::{Category, SourceConfig};
 use knows_me_core::ingestion::connectors::{
     FileConnector, GmailConnector, NotionConnector, SessionConnector,
 };
@@ -29,6 +30,11 @@ use knows_me_core::persona::{
 };
 use knows_me_core::processing::service::AlwaysOnline;
 use knows_me_core::processing::{PendingQueue, ProcessingService, ProcessingSink, TransferLog};
+use knows_me_core::sharing::mcp::{McpHandle, McpServer, DEFAULT_PORT as MCP_DEFAULT_PORT};
+use knows_me_core::sharing::{
+    AccessError, IssuedToken, KnowledgeSharing, QuickTunnel, SharingApi, Token, TokenInfo,
+    TokenStore, TunnelHandle,
+};
 use knows_me_core::AppState;
 use tokio::sync::Mutex;
 
@@ -46,6 +52,19 @@ pub struct ServiceSet {
     /// Local REST server handle. `Some` while running; dropping it stops the
     /// server, so it must live here for the life of the session.
     pub local_api: Option<LocalApiHandle>,
+    /// Sharing surface over the same knowledge store — backs both MCP listeners
+    /// and the token-issuance UI. Always built; only the servers below are gated.
+    pub sharing: Arc<KnowledgeSharing>,
+    /// Consumer-token vault (over the encrypted store). Always built so tokens can
+    /// be issued/revoked even before the servers are turned on.
+    pub tokens: Arc<TokenStore>,
+    /// Owner-loopback MCP listener (step ⓐ). `Some` while sharing is enabled.
+    pub mcp_owner: Option<McpHandle>,
+    /// Bearer-only shared MCP listener (step ⓑ), the surface a tunnel fronts.
+    pub mcp_shared: Option<McpHandle>,
+    /// cloudflared quick tunnel fronting the shared listener. `Some` while up.
+    /// Dropping it kills cloudflared, so it must live here for the session.
+    pub tunnel: Option<TunnelHandle>,
 }
 
 impl ServiceSet {
@@ -60,6 +79,13 @@ impl ServiceSet {
         // Rebuild the search index from the decrypted store now that we can read.
         knowledge_svc.build_index().await.ok();
         let knowledge: Arc<dyn KnowledgeApi> = knowledge_svc.clone();
+
+        // Sharing surface (MCP tools + token issuance) over the same concrete
+        // knowledge service, plus the consumer-token vault over the encrypted
+        // store. Both are built regardless of the toggle; only the listeners
+        // started below are gated on `sharing_enabled`.
+        let sharing = Arc::new(KnowledgeSharing::new(knowledge_svc.clone()));
+        let tokens = Arc::new(TokenStore::new(store.clone()));
 
         let interview: Arc<dyn InterviewApi> = Arc::new(InterviewService::new(
             store.clone(),
@@ -125,6 +151,14 @@ impl ServiceSet {
             None
         };
 
+        // The tunnel is never auto-started — it publishes a public URL, so it is an
+        // explicit owner action (a command), not a side effect of unlocking.
+        let (mcp_owner, mcp_shared) = if state.config().sharing_enabled {
+            start_mcp_servers(sharing.clone(), tokens.clone()).await
+        } else {
+            (None, None)
+        };
+
         ServiceSet {
             knowledge,
             interview,
@@ -133,6 +167,29 @@ impl ServiceSet {
             ingestion,
             sink,
             local_api,
+            sharing,
+            tokens,
+            mcp_owner,
+            mcp_shared,
+            tunnel: None,
+        }
+    }
+
+    /// Gracefully stop every server this session started — the persona local API,
+    /// both MCP listeners, and any tunnel. Used on lock and when discarding a set
+    /// built for a vault that locked mid-build.
+    async fn stop_servers(&mut self) {
+        if let Some(h) = self.local_api.as_mut() {
+            h.stop().await;
+        }
+        if let Some(h) = self.mcp_owner.as_mut() {
+            h.stop().await;
+        }
+        if let Some(h) = self.mcp_shared.as_mut() {
+            h.stop().await;
+        }
+        if let Some(t) = self.tunnel.as_mut() {
+            t.stop().await;
         }
     }
 }
@@ -167,6 +224,55 @@ async fn start_local_api(persona: Arc<dyn PersonaApi>) -> Option<LocalApiHandle>
     }
 }
 
+/// Start both MCP listeners: the owner-loopback server (step ⓐ) and the
+/// Bearer-only shared server (step ⓑ, the surface a tunnel fronts). Bind failures
+/// are logged, not fatal — unlocking must not hinge on a free port. The shared
+/// listener binds above the owner's *actual* bound port so the two never collide.
+async fn start_mcp_servers(
+    sharing: Arc<KnowledgeSharing>,
+    tokens: Arc<TokenStore>,
+) -> (Option<McpHandle>, Option<McpHandle>) {
+    let owner = match McpServer::start_owner(sharing.clone(), tokens.clone(), MCP_DEFAULT_PORT).await
+    {
+        Ok(h) => {
+            eprintln!("[mcp] owner listening on 127.0.0.1:{}", h.port());
+            Some(h)
+        }
+        Err(e) => {
+            eprintln!("[mcp] owner failed to start: {e}");
+            None
+        }
+    };
+    let shared_start = owner
+        .as_ref()
+        .map(|h| h.port().saturating_add(1))
+        .unwrap_or(MCP_DEFAULT_PORT.saturating_add(1));
+    let shared = match McpServer::start_shared(sharing, tokens, shared_start).await {
+        Ok(h) => {
+            eprintln!("[mcp] shared listening on 127.0.0.1:{}", h.port());
+            Some(h)
+        }
+        Err(e) => {
+            eprintln!("[mcp] shared failed to start: {e}");
+            None
+        }
+    };
+    (owner, shared)
+}
+
+/// Map a sharing [`AccessError`] onto the core [`AppError`] for the command
+/// layer. Owner-scope reads realistically only ever hit `Locked`/`Unavailable`;
+/// the rest are mapped defensively.
+fn access_err(e: AccessError) -> AppError {
+    match e {
+        AccessError::Locked => AppError::Locked,
+        AccessError::Unavailable => AppError::Io("지식 저장소에 연결할 수 없습니다".to_string()),
+        AccessError::NotFound => AppError::NotFound("category".to_string()),
+        AccessError::Unauthorized => AppError::Io("unauthorized".to_string()),
+        AccessError::InvalidInput => AppError::InvalidInput("category".to_string()),
+    }
+}
+
 /// Managed Tauri state holding the current session's services (empty while
 /// locked). Guarded by an async mutex so command handlers can rebuild/tear down
 /// without blocking the runtime.
@@ -194,18 +300,17 @@ impl Services {
         let mut guard = self.0.lock().await;
         if state.key_manager().is_unlocked() {
             *guard = Some(set);
-        } else if let Some(handle) = set.local_api.as_mut() {
-            handle.stop().await;
+        } else {
+            // Locked mid-build: discard, stopping every server we just started.
+            set.stop_servers().await;
         }
     }
 
-    /// Tear down services on lock, gracefully stopping the local API.
+    /// Tear down services on lock, gracefully stopping every running server.
     pub async fn deactivate(&self) {
         let mut guard = self.0.lock().await;
         if let Some(mut set) = guard.take() {
-            if let Some(handle) = set.local_api.as_mut() {
-                handle.stop().await;
-            }
+            set.stop_servers().await;
         }
     }
 
@@ -234,6 +339,153 @@ impl Services {
             .as_ref()
             .and_then(|s| s.local_api.as_ref())
             .map(|h| h.port())
+    }
+
+    // --- Sharing (MCP) --------------------------------------------------------
+
+    /// Enable/disable the sharing (MCP) servers on the live session (config is
+    /// persisted by the caller). No-op if locked. Turning sharing off also tears
+    /// down any tunnel that was fronting the shared listener.
+    pub async fn set_sharing_enabled(&self, on: bool) {
+        let mut guard = self.0.lock().await;
+        let Some(set) = guard.as_mut() else { return };
+        let running = set.mcp_owner.is_some() || set.mcp_shared.is_some();
+        match (on, running) {
+            (true, false) => {
+                let (owner, shared) =
+                    start_mcp_servers(set.sharing.clone(), set.tokens.clone()).await;
+                set.mcp_owner = owner;
+                set.mcp_shared = shared;
+            }
+            (false, true) => {
+                if let Some(h) = set.mcp_owner.as_mut() {
+                    h.stop().await;
+                }
+                set.mcp_owner = None;
+                if let Some(h) = set.mcp_shared.as_mut() {
+                    h.stop().await;
+                }
+                set.mcp_shared = None;
+                if let Some(t) = set.tunnel.as_mut() {
+                    t.stop().await;
+                }
+                set.tunnel = None;
+            }
+            _ => {}
+        }
+    }
+
+    /// `(owner-loopback port, shared port)` — each `Some` while that listener runs.
+    pub async fn mcp_ports(&self) -> (Option<u16>, Option<u16>) {
+        let guard = self.0.lock().await;
+        match guard.as_ref() {
+            Some(s) => (
+                s.mcp_owner.as_ref().map(|h| h.port()),
+                s.mcp_shared.as_ref().map(|h| h.port()),
+            ),
+            None => (None, None),
+        }
+    }
+
+    /// The public tunnel URL fronting the shared listener, if a tunnel is up.
+    pub async fn tunnel_url(&self) -> Option<String> {
+        self.0
+            .lock()
+            .await
+            .as_ref()
+            .and_then(|s| s.tunnel.as_ref())
+            .map(|t| t.url().to_string())
+    }
+
+    /// Issue a consumer token for `id` granting `categories`. Requires unlock.
+    pub async fn issue_token(&self, id: String, categories: Vec<Category>) -> Result<IssuedToken> {
+        self.tokens_arc().await?.issue(id, categories).await
+    }
+
+    /// Revoke every live token issued under `id`; reports whether any changed.
+    pub async fn revoke_token(&self, id: &str) -> Result<bool> {
+        self.tokens_arc().await?.revoke(id).await
+    }
+
+    /// List live tokens' public metadata (never secrets).
+    pub async fn list_tokens(&self) -> Result<Vec<TokenInfo>> {
+        self.tokens_arc().await?.list().await
+    }
+
+    /// The owner's own category vocabulary — the grant choices the issuance UI
+    /// offers. Uses the owner token, so it spans Private+Shared categories.
+    pub async fn owner_categories(&self) -> Result<Vec<String>> {
+        let sharing = {
+            let guard = self.0.lock().await;
+            guard.as_ref().ok_or(AppError::Locked)?.sharing.clone()
+        };
+        sharing
+            .list_categories(&Token::owner())
+            .await
+            .map_err(access_err)
+    }
+
+    /// Start a cloudflared quick tunnel fronting the shared MCP listener, returning
+    /// its public URL. Requires sharing on (the shared listener running). Replaces
+    /// any prior tunnel.
+    pub async fn start_tunnel(&self) -> Result<String> {
+        // Read the shared port up front; don't hold the lock across the spawn,
+        // which awaits cloudflared for a few seconds.
+        let shared_port = {
+            let guard = self.0.lock().await;
+            let set = guard.as_ref().ok_or(AppError::Locked)?;
+            match set.mcp_shared.as_ref() {
+                Some(h) => h.port(),
+                None => {
+                    return Err(AppError::InvalidInput(
+                        "공유 서버가 꺼져 있습니다. 지식 공유를 먼저 켜세요.".into(),
+                    ))
+                }
+            }
+        };
+
+        let handle = QuickTunnel::start(shared_port).await?;
+        let url = handle.url().to_string();
+
+        let mut guard = self.0.lock().await;
+        match guard.as_mut() {
+            Some(set) => {
+                if let Some(mut old) = set.tunnel.take() {
+                    old.stop().await;
+                }
+                set.tunnel = Some(handle);
+                Ok(url)
+            }
+            // Locked while spawning — don't leak the cloudflared child.
+            None => {
+                let mut h = handle;
+                h.stop().await;
+                Err(AppError::Locked)
+            }
+        }
+    }
+
+    /// Stop the tunnel, if one is running. Idempotent.
+    pub async fn stop_tunnel(&self) {
+        let mut guard = self.0.lock().await;
+        if let Some(set) = guard.as_mut() {
+            if let Some(t) = set.tunnel.as_mut() {
+                t.stop().await;
+            }
+            set.tunnel = None;
+        }
+    }
+
+    /// The consumer-token vault of the active session, or `Locked`.
+    async fn tokens_arc(&self) -> Result<Arc<TokenStore>> {
+        Ok(self
+            .0
+            .lock()
+            .await
+            .as_ref()
+            .ok_or(AppError::Locked)?
+            .tokens
+            .clone())
     }
 
     /// Run `f` against the active service set, or return `AppError::Locked` if
