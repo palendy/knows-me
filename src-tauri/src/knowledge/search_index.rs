@@ -30,6 +30,9 @@ fn topic_key(topic: &str) -> String {
 /// Stable synthetic id for a topic hub node, derived from its merge key so the
 /// same subject keeps the same node identity across calls (a stable layout).
 /// A hash into the uuid space; collision with a real v4 fact id is negligible.
+///
+/// This is NOT a fetchable fact id — no fact is stored under it. Consumers must
+/// branch on [`GraphNode::kind`] rather than feeding a node id back into `get`.
 fn topic_node_id(key: &str) -> FactId {
     let digest = Sha256::digest(format!("topic:{key}").as_bytes());
     let mut bytes = [0u8; 16];
@@ -286,7 +289,8 @@ impl SearchIndex {
         // 2) Topic hubs. Group facts by the merge key so spelling variants land
         //    on one hub; carry surface-spelling counts to name it, and a member
         //    set so a fact reaching a topic through two spellings links once.
-        //    BTreeMap keeps the projection deterministic across calls.
+        //    BTreeMap orders hubs by key and members are sorted below, so the
+        //    edge projection is deterministic across calls.
         struct Hub<'a> {
             surfaces: BTreeMap<&'a str, usize>,
             members: Vec<FactId>,
@@ -310,12 +314,16 @@ impl SearchIndex {
                 }
             }
         }
-        for (key, hub) in &hubs {
+        for (key, hub) in &mut hubs {
             if hub.members.len() < 2 {
                 continue;
             }
-            // Most common surface spelling names the hub (ties: longer wins),
-            // matching `topic_pages`.
+            // Members arrive in HashSet iteration order; sort by uuid bytes so
+            // the emitted edges have a stable order across calls (FactId isn't
+            // Ord).
+            hub.members.sort_unstable_by_key(|id| *id.0.as_bytes());
+            // Most common surface spelling names the hub; ties go to the
+            // lexicographically smallest surface form, matching `topic_pages`.
             let label = hub
                 .surfaces
                 .iter()

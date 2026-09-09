@@ -36,6 +36,11 @@ impl QueryService {
     /// graph — which already carries every edge, so connection degree comes for
     /// free. Fetching each fact to count its links would be one round trip per
     /// fact and would blow U4-NFR-P2 on any real knowledge base.
+    ///
+    /// The graph now links facts to topic hubs, so a fact's degree here counts
+    /// the shared-topic hubs it sits on — topic participation, a fine
+    /// representativeness proxy. `rank_highlights` only looks degree up by fact
+    /// id, so the synthetic hub ids also present in the map are never read.
     pub async fn minihome(&self, limit: Option<usize>) -> Result<MiniHomeDto> {
         let limit = limit.unwrap_or(DEFAULT_HIGHLIGHTS);
         let summaries = self

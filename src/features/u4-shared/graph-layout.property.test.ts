@@ -5,6 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
+import type { GraphDto } from "../../shared/contracts";
 import { normalizeGraph } from "./graph-layout";
 import { neighborsOf, toForceGraph } from "./graph-force";
 import { arbGraph } from "./testgen";
@@ -55,6 +56,33 @@ describe("normalizeGraph", () => {
         expect(n.truncated).toBe(distinct > cap);
       }),
     );
+  });
+
+  it("prunes a topic hub the cap stranded below two members", () => {
+    // The hub connects three facts (degree 3) so the cap keeps it, but a cap of
+    // 2 keeps only the hub plus one fact — stranding the hub at one member. It
+    // must be dropped rather than left as a lone pendant, and no edge may dangle
+    // to it.
+    const g: GraphDto = {
+      nodes: [
+        { id: "f1", label: "A", kind: "fact" },
+        { id: "f2", label: "B", kind: "fact" },
+        { id: "f3", label: "C", kind: "fact" },
+        { id: "hub", label: "t", kind: "topic" },
+      ],
+      edges: [
+        { from: "f1", to: "hub" },
+        { from: "f2", to: "hub" },
+        { from: "f3", to: "hub" },
+      ],
+    };
+    const n = normalizeGraph(g, 2);
+    expect(n.truncated).toBe(true);
+    expect(n.nodes.some((x) => x.kind === "topic")).toBe(false);
+    const ids = new Set(n.nodes.map((x) => x.id));
+    for (const e of n.edges) {
+      expect(ids.has(e.from) && ids.has(e.to)).toBe(true);
+    }
   });
 });
 

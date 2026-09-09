@@ -29,7 +29,8 @@ function degreeMap(edges: readonly GraphEdge[]): Map<FactId, number> {
 
 /**
  * Drop self-loops, collapse duplicates, remove edges whose endpoints are not
- * both present, and cap the node count (BR-V3, U4-NFR-P4).
+ * both present, cap the node count (BR-V3, U4-NFR-P4), and finally drop topic
+ * hubs the cap stranded below their ≥2-member floor.
  *
  * Cleanup comes first and truncation second: ranking nodes by a degree counted
  * over raw edges would let self-loops and duplicates inflate a node past one
@@ -71,9 +72,26 @@ export function normalizeGraph(g: GraphDto, maxNodes: number = MAX_NODES): Norma
     })
     .slice(0, Math.max(0, maxNodes));
 
-  // Pass 3 — re-check the cleaned edges against what survived the cap.
-  const present = new Set(kept.map((n) => n.id));
+  // Pass 3 — drop topic hubs the cap stranded below the backend's ≥2-member
+  // floor. Truncation can cut a hub's members while keeping the hub (hubs rank
+  // high by degree), leaving exactly the lone pendant that floor exists to
+  // prevent. Count each kept node's surviving connections; remove any topic
+  // node left with fewer than two.
+  const keptSet = new Set(kept.map((n) => n.id));
+  const survivingDegree = new Map<FactId, number>();
+  for (const e of cleaned) {
+    if (keptSet.has(e.from) && keptSet.has(e.to)) {
+      survivingDegree.set(e.from, (survivingDegree.get(e.from) ?? 0) + 1);
+      survivingDegree.set(e.to, (survivingDegree.get(e.to) ?? 0) + 1);
+    }
+  }
+  const nodes = kept.filter(
+    (n) => n.kind !== "topic" || (survivingDegree.get(n.id) ?? 0) >= 2,
+  );
+
+  // Pass 4 — re-check the cleaned edges against what survived cap + prune.
+  const present = new Set(nodes.map((n) => n.id));
   const edges = cleaned.filter((e) => present.has(e.from) && present.has(e.to));
 
-  return { nodes: kept, edges, truncated };
+  return { nodes, edges, truncated };
 }

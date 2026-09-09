@@ -123,7 +123,9 @@ export function GraphView({ api, embedded = false }: Props) {
                 <div
                   className="graph-canvas-region"
                   role="img"
-                  aria-label={`사실 ${factCount}개, 연결 ${graph.links.length}개`}
+                  aria-label={`사실 ${factCount}개, 연결 ${graph.links.length}개${
+                    topicCount > 0 ? `, 주제 ${topicCount}개` : ""
+                  }`}
                 >
                   {canRenderCanvas && (
                     <Suspense fallback={<div className="graph-canvas-loading" />}>
@@ -193,8 +195,9 @@ export function GraphView({ api, embedded = false }: Props) {
 
               {selected !== null && (
                 <p role="status" className="graph-status">
-                  선택한 사실과 직접 연결된 항목 {neighbors.size}개를 강조하고
-                  있습니다. 배경을 클릭하면 해제됩니다.
+                  {selectedNode?.kind === "topic" ? "선택한 주제와" : "선택한 사실과"}{" "}
+                  직접 연결된 항목 {neighbors.size}개를 강조하고 있습니다. 배경을
+                  클릭하면 해제됩니다.
                 </p>
               )}
             </div>
