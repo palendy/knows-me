@@ -97,6 +97,36 @@ impl ServiceSet {
             }
         }
 
+        // Local-dev housekeeping for Notion: `KNOWSME_NOTION_RESET_N=<n>` drops
+        // the previously-collected Notion facts, forgets their seen-markers, and
+        // clears the incremental cursor so the next "collect" re-pulls pages from
+        // scratch. The connector caps that run at N pages (see
+        // `notion::http::max_pages_per_sync`), so exactly the oldest N re-flow
+        // through the real processing pipeline — enough to verify the
+        // collect → process → dashboard path a few items at a time. No-op without
+        // the env; release builds never take this branch.
+        #[cfg(debug_assertions)]
+        if std::env::var("KNOWSME_NOTION_RESET_N")
+            .ok()
+            .and_then(|v| v.trim().parse::<usize>().ok())
+            .is_some_and(|n| n > 0)
+        {
+            use knows_me_core::core::types::SourceKind;
+            match knowledge_svc.delete_facts_from_source(SourceKind::Notion).await {
+                Ok(n) => eprintln!("[dev-reset] removed {n} Notion fact(s)"),
+                Err(e) => eprintln!("[dev-reset] fact purge failed: {e}"),
+            }
+            let cursors = IngestionCursorStore::new(store.clone());
+            match cursors.clear_seen(SourceKind::Notion).await {
+                Ok(n) => eprintln!("[dev-reset] cleared {n} Notion seen-marker(s)"),
+                Err(e) => eprintln!("[dev-reset] seen clear failed: {e}"),
+            }
+            match cursors.clear_cursor(SourceKind::Notion).await {
+                Ok(()) => eprintln!("[dev-reset] cleared Notion cursor"),
+                Err(e) => eprintln!("[dev-reset] cursor clear failed: {e}"),
+            }
+        }
+
         let knowledge: Arc<dyn KnowledgeApi> = knowledge_svc.clone();
 
         // Sharing surface (MCP tools + token issuance) over the same concrete

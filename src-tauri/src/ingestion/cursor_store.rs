@@ -67,6 +67,14 @@ impl IngestionCursorStore {
             .await
     }
 
+    /// Forget the incremental cursor for `source` so the next sync starts from
+    /// scratch (every page the token can see becomes eligible again, subject to
+    /// the seen-set). Idempotent. Local-dev housekeeping; the normal path never
+    /// clears the cursor.
+    pub async fn clear_cursor(&self, source: SourceKind) -> Result<()> {
+        self.store.delete(NS_CURSOR, source_tag(source)).await
+    }
+
     /// Whether `(source, external_id)` was already collected (dedup, Q1=A).
     pub async fn is_seen(&self, source: SourceKind, external_id: &str) -> Result<bool> {
         Ok(self

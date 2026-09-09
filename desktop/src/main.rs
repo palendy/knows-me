@@ -697,6 +697,14 @@ async fn trigger_ingest_all(
                 .trigger_all(source, &reporter, MAX_PASSES)
                 .await?;
             let processed = s.sink.take();
+            eprintln!(
+                "[ingest-all] source={source:?} collected={} skipped={} → facts_created={} queue_items={} filtered={}",
+                ingest.collected,
+                ingest.skipped,
+                processed.facts_created,
+                processed.queue_items_created,
+                processed.filtered
+            );
             Ok(IngestSummary {
                 collected: ingest.collected,
                 skipped: ingest.skipped,
@@ -726,6 +734,14 @@ async fn trigger_ingest(
             // returns, processing for those items is done and the totals are
             // ready to collect.
             let processed = s.sink.take();
+            eprintln!(
+                "[ingest] source={source:?} collected={} skipped={} → facts_created={} queue_items={} filtered={}",
+                ingest.collected,
+                ingest.skipped,
+                processed.facts_created,
+                processed.queue_items_created,
+                processed.filtered
+            );
             Ok(IngestSummary {
                 collected: ingest.collected,
                 skipped: ingest.skipped,
@@ -752,6 +768,14 @@ fn main() {
     // a `.env` in the default build was read by nothing and the owner's chosen
     // model was silently ignored.
     let _ = dotenvy::dotenv();
+
+    // Startup diagnostic: which LLM the processing pipeline will actually use.
+    // A summarizer that returns NOTHING for thin pages is the difference between
+    // a Notion page becoming a dashboard fact or being filtered out.
+    eprintln!(
+        "[llm] active backend: {}",
+        knows_me_core::llm::active_model_label()
+    );
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

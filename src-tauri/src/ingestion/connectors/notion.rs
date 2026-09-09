@@ -104,6 +104,23 @@ pub(crate) mod http {
     /// cursor advances so the next run continues (mirrors the Session connector).
     const MAX_PAGES_PER_SYNC: usize = 100;
 
+    /// The effective per-sync cap. Normally [`MAX_PAGES_PER_SYNC`], but a debug
+    /// build honors `KNOWSME_NOTION_RESET_N` so a developer who just cleared the
+    /// cursor can re-pull only the first N pages (ascending edit order) to verify
+    /// the processing → dashboard path a handful of items at a time. Release
+    /// builds always use the constant.
+    fn max_pages_per_sync() -> usize {
+        #[cfg(debug_assertions)]
+        if let Ok(n) = std::env::var("KNOWSME_NOTION_RESET_N") {
+            if let Ok(n) = n.trim().parse::<usize>() {
+                if n > 0 {
+                    return n;
+                }
+            }
+        }
+        MAX_PAGES_PER_SYNC
+    }
+
     fn client(token: &str) -> Result<reqwest::Client> {
         use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
         let mut headers = HeaderMap::new();
@@ -182,6 +199,7 @@ pub(crate) mod http {
             .and_then(|c| DateTime::parse_from_rfc3339(&c.0).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
+        let cap = max_pages_per_sync();
         let mut items = Vec::new();
         let mut newest = since;
         let mut start_cursor: Option<String> = None;
@@ -251,7 +269,7 @@ pub(crate) mod http {
                 // Report page-by-page. `total_seen` is what search has revealed
                 // so far (grows across batches); good enough to drive a bar.
                 progress.progress(SourceKind::Notion, items.len(), total_seen);
-                if items.len() >= MAX_PAGES_PER_SYNC {
+                if items.len() >= cap {
                     break 'outer;
                 }
             }
