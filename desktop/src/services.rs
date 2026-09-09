@@ -232,17 +232,17 @@ async fn start_mcp_servers(
     sharing: Arc<KnowledgeSharing>,
     tokens: Arc<TokenStore>,
 ) -> (Option<McpHandle>, Option<McpHandle>) {
-    let owner = match McpServer::start_owner(sharing.clone(), tokens.clone(), MCP_DEFAULT_PORT).await
-    {
-        Ok(h) => {
-            eprintln!("[mcp] owner listening on 127.0.0.1:{}", h.port());
-            Some(h)
-        }
-        Err(e) => {
-            eprintln!("[mcp] owner failed to start: {e}");
-            None
-        }
-    };
+    let owner =
+        match McpServer::start_owner(sharing.clone(), tokens.clone(), MCP_DEFAULT_PORT).await {
+            Ok(h) => {
+                eprintln!("[mcp] owner listening on 127.0.0.1:{}", h.port());
+                Some(h)
+            }
+            Err(e) => {
+                eprintln!("[mcp] owner failed to start: {e}");
+                None
+            }
+        };
     let shared_start = owner
         .as_ref()
         .map(|h| h.port().saturating_add(1))
