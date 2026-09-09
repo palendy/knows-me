@@ -13,6 +13,8 @@ dist/
 # Local env / secrets (never commit)
 .env
 .env.*
+# ...except the template, which holds placeholders only.
+!.env.example
 *.local
 
 # Icon-generation source (regenerate with `npx tauri icon`); committed assets live in desktop/icons/
