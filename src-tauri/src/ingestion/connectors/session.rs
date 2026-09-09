@@ -47,9 +47,26 @@ const EXCLUDED_DIR_NAMES: &[&str] = &["subagents", "shell-snapshots", "todos", "
 /// session is where conclusions and decisions live.
 const MAX_CHARS_PER_ITEM: usize = 24_000;
 
-/// How many of the owner's turns to keep, and how long each may be.
-const MAX_PROMPTS: usize = 12;
-const MAX_PROMPT_CHARS: usize = 400;
+/// Character budget for the owner's own words inside one digest.
+///
+/// This is the part of the digest that is actually *about the person* — why
+/// they are doing something, what they are worried about, what they decided
+/// and why. Everything else (tool profile, file profile, commands) describes
+/// activity, and activity is the least useful thing extraction can produce.
+///
+/// It was previously a count — the last 12 turns, clipped to 400 characters
+/// each. Measured against a real transcript directory, that kept a median of
+/// **6.6% of what the owner had typed** while using **7.7% of the item budget
+/// above**: 93% of the input was discarded to save room that was then left
+/// empty. 73% of sessions ran past the 12-turn cap.
+const PROMPT_BUDGET_CHARS: usize = 18_000;
+
+/// Cap on a single turn, so one pasted document cannot eat the whole budget.
+///
+/// Generous on purpose: a turn explaining *why* — the reasoning this whole
+/// pipeline exists to capture — routinely runs past a few hundred characters,
+/// and the old 400-character clip cut those off mid-sentence.
+const MAX_PROMPT_CHARS: usize = 3_000;
 
 /// First line of each prompt this app itself sends to the Claude CLI backend.
 ///
@@ -96,6 +113,50 @@ fn push_prompt(out: &mut Vec<String>, text: &str) {
     if !clipped.is_empty() {
         out.push(clipped);
     }
+}
+
+/// Choose which of the owner's turns fit the budget, keeping both ends.
+///
+/// Taking only the tail was wrong for the thing this pipeline is for. A
+/// session's *end* holds what was decided; its *beginning* holds why the owner
+/// set out to do it and what was bothering them — and "why" is precisely what
+/// a tail-only window drops. So turns are taken alternately from the front and
+/// the back, front first, and the middle (iteration detail: retries, small
+/// corrections) is what gives way when something has to.
+///
+/// Returns the kept turns in their original order, and how many were dropped
+/// so the digest can say so rather than silently presenting a gap as continuous.
+fn select_prompts(prompts: &[String], budget: usize) -> (Vec<&String>, usize) {
+    let total: usize = prompts.iter().map(|p| p.chars().count() + 3).sum();
+    if total <= budget {
+        return (prompts.iter().collect(), 0);
+    }
+
+    let (mut head, mut tail) = (Vec::new(), Vec::new());
+    let (mut lo, mut hi) = (0usize, prompts.len());
+    let mut spent = 0usize;
+    let mut take_front = true;
+    while lo < hi {
+        let idx = if take_front { lo } else { hi - 1 };
+        let cost = prompts[idx].chars().count() + 3;
+        if spent + cost > budget {
+            break;
+        }
+        spent += cost;
+        if take_front {
+            head.push(&prompts[idx]);
+            lo += 1;
+        } else {
+            tail.push(&prompts[idx]);
+            hi -= 1;
+        }
+        take_front = !take_front;
+    }
+
+    let dropped = hi - lo;
+    tail.reverse();
+    head.extend(tail);
+    (head, dropped)
 }
 
 /// Collapse an MCP tool id (`mcp__<server-uuid>__notion-update-page`) to
@@ -435,9 +496,11 @@ impl SessionConnector {
 
         if !prompts.is_empty() {
             out.push_str("[사용자 발화]\n");
-            // The last turns are where a session lands on a decision.
-            let start = prompts.len().saturating_sub(MAX_PROMPTS);
-            for p in &prompts[start..] {
+            let (kept, dropped) = select_prompts(&prompts, PROMPT_BUDGET_CHARS);
+            for (i, p) in kept.iter().enumerate() {
+                if dropped > 0 && i == kept.len() / 2 {
+                    out.push_str(&format!("- (중략: 발화 {dropped}개)\n"));
+                }
                 out.push_str(&format!("- {p}\n"));
             }
             out.push('\n');
@@ -868,6 +931,59 @@ mod digest_tests {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn everything_is_kept_when_it_fits() {
+        let p: Vec<String> = ["왜 이걸 하냐면", "그래서 이렇게 했다", "결론"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let (kept, dropped) = select_prompts(&p, 18_000);
+        assert_eq!(dropped, 0);
+        assert_eq!(kept.len(), 3);
+    }
+
+    #[test]
+    fn the_opening_survives_a_budget_squeeze() {
+        // The regression this replaced: a tail-only window kept the last turns
+        // and dropped the first, which is where the owner says *why* they are
+        // doing something — the one thing the knowledge base exists to hold.
+        let mut p: Vec<String> = vec!["왜 이걸 하냐면 배포가 계속 실패해서다".into()];
+        p.extend((0..200).map(|i| format!("중간 반복 {i}")));
+        p.push("결론: main 직접 푸시 금지".into());
+
+        let (kept, dropped) = select_prompts(&p, 400);
+        let text: Vec<&str> = kept.iter().map(|s| s.as_str()).collect();
+
+        assert!(dropped > 0, "a 202-turn session must not fit in 400 chars");
+        assert!(
+            text.first().is_some_and(|t| t.starts_with("왜 이걸")),
+            "the opening turn must survive: {text:?}"
+        );
+        assert!(
+            text.last().is_some_and(|t| t.starts_with("결론")),
+            "the closing turn must survive: {text:?}"
+        );
+    }
+
+    #[test]
+    fn kept_turns_stay_in_the_order_they_were_said() {
+        // Taking from both ends must not hand the model a shuffled transcript.
+        let p: Vec<String> = (0..40).map(|i| format!("{i:02} 발화")).collect();
+        let (kept, _) = select_prompts(&p, 200);
+        let nums: Vec<&str> = kept.iter().map(|s| &s.as_str()[..2]).collect();
+        let mut sorted = nums.clone();
+        sorted.sort_unstable();
+        assert_eq!(nums, sorted, "order was not preserved: {nums:?}");
+    }
+
+    #[test]
+    fn a_budget_too_small_for_any_turn_drops_everything_rather_than_panicking() {
+        let p: Vec<String> = vec!["아주 긴 발화".repeat(20)];
+        let (kept, dropped) = select_prompts(&p, 1);
+        assert!(kept.is_empty());
+        assert_eq!(dropped, 1);
+    }
 
     #[test]
     fn the_apps_own_extraction_prompts_are_not_owner_speech() {
