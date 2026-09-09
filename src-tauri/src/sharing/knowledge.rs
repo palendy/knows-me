@@ -184,6 +184,8 @@ mod tests {
                 confirmed_at: Some(Utc::now()),
                 visibility,
                 category: category.map(cat),
+                topics: vec![],
+                kind: Default::default(),
             },
         }
     }
