@@ -4,7 +4,7 @@
 - **Project Name**: knows-me
 - **Project Type**: Greenfield
 - **Start Date**: 2026-09-08T06:46:46Z
-- **Current Stage**: CONSTRUCTION - U1/U2/U3 머지 완료(main). U4 (Interface & Persona) 완료 + 동료 코드리뷰(xhigh) 반영 — branch `construction/u4-interface-persona`, PR #2. 남은 것: Build and Test(전 유닛 통합).
+- **Current Stage**: CONSTRUCTION - **전 유닛(U1~U4) main 병합 완료 + 통합 배선(G1~G5) 해소 완료**. 순서: U4 PR #2 병합(`511d944`) → 앱 배선 G1~G6(`9b821a3`) → 코드리뷰 반영(`d60cdd5`/`53ad360`) → U2 세션 수집 실배선(`789741e`) → `.env.example`(`cf2fa02`). 실제 앱 창 기동 확인 완료(사용자, 2026-09-09). **남은 것**: G6 TransferLog 일원화 결정, stale 브랜치 정리(construction/integration·construction/u4-interface-persona·chore/cargo-fmt), Build and Test 최종 승인.
 
 ## Construction Notes
 - **U1 full implementation done** (branch `feat/u1-core-platform-security`, user directive "내가 U1을 맡았어 … 자율주행"): real security + LLM gateway + platform + onboarding UI on top of the Milestone 0 contracts.
@@ -28,16 +28,16 @@
 - U4 Interface & Persona (Dev D) — US-5.x, US-6.x
 - Integration order: U1 → U3 → U2 → U4 (development parallel via mocks)
 
-## ⚠️ 통합 미완 항목 (Build and Test)
-4개 유닛 라이브러리는 전부 완성·검증되었고 실물끼리 정상 결합한다. 그러나 **실행되는 앱은 U1(온보딩/잠금)만 노출한다** — 빌드 산출물 `dist/assets/*.js`에 대시보드·미니홈피·그래프·페르소나 챗 화면이 존재하지 않음을 확인했다.
-- **G1** `src/App.tsx` — U4 뷰 4종 라우팅 없음 (U1 소유)
-- **G2** `desktop/src/main.rs` — U1 command 7개만 등록, U3/U4 command 없음 (U1 소유)
-- **G3** `core::app_state::AppState` — U1 컴포넌트만 보유 (U1 소유)
-- **G4** `src/features/queue/` — 인터뷰 Queue UI 미구현 (U3 소유)
-- **G5** `LocalApiServer::start()` 호출 지점 없음 → US-6.2 AC1 전제 미충족 (U1 소유)
-- **G6** `TransferLog`가 `llm::`/`processing::` 2종 공존 (U1/U2)
+## ✅ 통합 배선 (Build and Test) — G1~G5 해소 완료
+4개 유닛 라이브러리가 완성·검증된 뒤, 앱 배선이 `9b821a3`에서 수행되어 main에 병합되었다. 실행 앱이 잠금 해제 후 6탭(대시보드·대기열·미니홈피·그래프·페르소나·설정)을 노출한다.
+- **G1** ✅ `src/App.tsx` — 잠금 해제 후 6탭 셸(`UnlockedShell`); 뷰는 포트(`KnowsMeApi`/`InterviewApi`)만 의존, Tauri면 어댑터·아니면 mock 주입
+- **G2** ✅ `desktop/src/main.rs` — U3/U4 command 등록(get_dashboard/get_minihome/get_graph, persona_chat/persona_draft, queue_list/queue_answer, local_api_status/set_server_enabled 등)
+- **G3** ✅ AppState는 U1 소유로 불변 유지; 별도 `Services` managed state가 unlock 시 서비스 조립·lock 시 해제 (`desktop/src/services.rs` 신규)
+- **G4** ✅ `src/features/queue/` 신설 — 포트·Tauri 어댑터·mock·`QueueView`·테스트
+- **G5** ✅ unlock 시 `server_enabled`면 LocalApiServer 기동, 핸들을 `ServiceSet`에 보관(drop 시 종료 방지), 토글·포트 조회 command
+- **G6** ⏳ **미결정** — `TransferLog`가 `llm::`(메모리) / `processing::`(암호화 저장) 2종 공존. 배선 범위 외로 미룸(정보성). U4 경로는 U1 `TransferLog` 사용. 단일 출처 일원화 결정 필요.
 
-상세·근거·권고 순서: `aidlc-docs/construction/build-and-test/integration-verification-report.md`
+상세: `aidlc-docs/construction/build-and-test/app-wiring-report.md`(해소 내역) · `integration-verification-report.md`(배선 전 발견 근거)
 
 ## U4 Construction Notes (Dev D)
 - **유닛 경계 준수**: U1(`core/**`, `mocks.rs`, Tauri 셸, `vite.config.ts`), U2(`ingestion/`, `processing/`), U3(`knowledge/`, `interview/`, `src/features/queue/`) 파일을 일절 수정하지 않음. 공용 파일은 `Cargo.toml`(dependency 추가)과 `lib.rs`(`pub mod persona;` 1줄)만 추가 변경.
@@ -98,9 +98,9 @@
 - [x] NFR Design — **U2 DONE, U3 DONE, U4 DONE** (2 artifacts each); U1은 본구현과 함께 처리
 - [ ] Infrastructure Design — SKIP (local desktop app, no cloud infra)
 - [x] Code Generation — **U1 DONE (merged), U2 DONE (merged, 35 tests), U3 DONE (merged, 26 tests), U4 DONE (PR #2)**
-- [~] Build and Test — 부분 완료. 자동 검증 전부 통과(Rust 160 + FE 41, 실패 0), 유닛 간 실물 연동 통합 테스트 9건 신규 추가·통과. **미완: 앱 배선(G1~G6)** — `aidlc-docs/construction/build-and-test/integration-verification-report.md` §3
+- [~] Build and Test — **앱 배선(G1~G5) 해소·main 병합 완료**. 재검증(로컬 2026-09-09): `cargo fmt --check`(src-tauri) clean · `cargo test`(core) 통합 9 + PBT 3 포함 실패 0 · `npm test` 51 pass(App.test teardown uncaught 2건, 비치명) · `tsc --noEmit` clean. 실제 앱 창 기동 확인 완료(사용자). **남은 것**: G6 TransferLog 일원화 결정, stale 브랜치 정리, Build and Test 최종 승인. 상세: `build-and-test/app-wiring-report.md`
 
-**U4 — Interface & Persona (Dev D)** — branch `construction/u4-interface-persona`, PR #2
+**U4 — Interface & Persona (Dev D)** — PR #2 **머지 완료(`511d944`)**; 이후 통합 배선(`9b821a3~`)이 main에 반영됨
 - [x] Functional Design (domain-entities, business-logic-model, business-rules, frontend-components)
 - [x] NFR Requirements (nfr-requirements, tech-stack-decisions)
 - [x] NFR Design (nfr-design-patterns, logical-components)

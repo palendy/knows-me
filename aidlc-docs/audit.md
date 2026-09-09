@@ -438,3 +438,15 @@ Q1=B (Cloud LLM API only); Q2=C ("LLM위키 방식이 좋은데 굳이 유사한
 **Context**: CONSTRUCTION - Build and Test 통합 배선 완료. 실물 창 기동은 헤드리스 제약으로 사용자 수동 확인(`npx tauri dev`) 안내.
 
 ---
+
+## Build and Test — 상태 실측 + 문서 정리
+**Timestamp**: 2026-09-09T00:00:00Z
+**User Input**: "u1~u4로 네 명으로 일을 나눠서 진행했고 지금 내가 통합할거야. 뭘 하면 되지" → (AskUserQuestion) "앱은 실행 확인 완료. 일단 현재 상태 반영해서 문서 정리해줘."
+**AI Response**: 통합 커밋이 이미 main에 반영돼 있음을 git 로그로 확인(511d944 U4 머지 → 9b821a3 G1~G6 배선 → d60cdd5/53ad360 코드리뷰 → 789741e U2 배선 → cf2fa02 .env.example). `aidlc-state.md`가 뒤처져 있어 실측 후 갱신.
+- **로컬 재검증(2026-09-09, macOS)**: `cargo fmt --check`(src-tauri) clean · `cargo test`(core) 통합 9 + PBT 3 포함 실패 0 · `npm test` 51 pass(App.test teardown uncaught 2건, 비치명) · `tsc --noEmit` clean · node_modules 존재.
+- **브랜치 병합 상태 확인**: `construction/u4-interface-persona` = main에 완전 병합(미병합 0). `construction/integration` 3커밋은 main에 다른 해시로 재적용된 중복. `chore/cargo-fmt` 1커밋은 main fmt가 이미 clean이라 불필요. → 3개 다 삭제 가능(사용자 미승인, 보류).
+- **문서 갱신**: `aidlc-state.md` — Current Stage(전 유닛 병합+G1~G5 해소), ⚠️ 통합 미완 항목 → ✅ 통합 배선(G1~G5 해소, G6 미결정), Build and Test 진행 줄(재검증 결과), U4 헤더(PR #2 머지 완료).
+- **실제 앱 창 기동**: 사용자가 확인 완료로 보고.
+**Context**: CONSTRUCTION - Build and Test 문서를 실측 상태로 정리. 코드 변경 없음. 남은 것: G6 TransferLog 일원화 결정, stale 브랜치 정리, Build and Test 최종 승인.
+
+---
