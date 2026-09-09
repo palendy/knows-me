@@ -11,10 +11,13 @@ import type {
   StoredTurn,
   Draft,
   DraftRequest,
+  Fact,
+  FactId,
   GraphDto,
   GraphFilter,
   MiniHomeDto,
   PersonaReply,
+  Visibility,
 } from "../../shared/contracts";
 
 export interface KnowsMeApi {
@@ -24,6 +27,15 @@ export interface KnowsMeApi {
   getMiniHome(limit?: number): Promise<MiniHomeDto>;
   /** US-5.3 */
   getGraph(filter: GraphFilter): Promise<GraphDto>;
+  /** US-5.3 — the full page record, for the wiki inspector's sharing control. */
+  getFact(id: FactId): Promise<Fact>;
+  /**
+   * US-5.3 — set a page's sharing state: its visibility and (normalized)
+   * category. `category` null clears it. This is the owner's "approve-share +
+   * assign-category" gate — the single place a page becomes reachable by a
+   * consumer token (`Shared` AND a granted category).
+   */
+  setFactSharing(id: FactId, visibility: Visibility, category: string | null): Promise<void>;
   /** US-6.1. `history` carries prior turns, oldest first. */
   personaChat(prompt: string, history?: ChatTurn[]): Promise<PersonaReply>;
   /** US-6.2 */

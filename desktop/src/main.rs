@@ -20,8 +20,8 @@ mod services;
 use knows_me_core::core::commands::{self, AppStatus, SourceStatus};
 use knows_me_core::core::types::{
     AnswerInput, AnswerResult, AppConfig, Category, ChatTurn, DashboardDto, Draft, DraftRequest,
-    GraphDto, GraphFilter, MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort,
-    SourceConfig, SourceKind, TransferPolicy, TransferRecord,
+    Fact, FactId, GraphDto, GraphFilter, MiniHomeDto, PersonaReply, QueueItem, QueueItemId,
+    QueueSort, SourceConfig, SourceKind, TransferPolicy, TransferRecord, Visibility,
 };
 use knows_me_core::AppState;
 use services::Services;
@@ -422,6 +422,39 @@ async fn get_graph(
         .map_err(err)
 }
 
+/// Fetch a single fact (owner scope) so the wiki inspector can show and edit its
+/// sharing state (visibility + category).
+#[tauri::command]
+async fn get_fact(services: tauri::State<'_, Services>, id: FactId) -> CmdResult<Fact> {
+    services
+        .with(|s| async move { s.knowledge.get(id).await })
+        .await
+        .map_err(err)
+}
+
+/// Set a fact's sharing state: its `visibility` and (normalized) `category`.
+///
+/// This is the owner's "approve-share + assign-category" gate — the single place
+/// a page becomes reachable by a consumer token, which requires `Shared` AND a
+/// granted category. `category` is validated/normalized via `Category::parse`;
+/// `None` clears it.
+#[tauri::command]
+async fn set_fact_sharing(
+    services: tauri::State<'_, Services>,
+    id: FactId,
+    visibility: Visibility,
+    category: Option<String>,
+) -> CmdResult<()> {
+    let category = category
+        .map(|c| Category::parse(&c))
+        .transpose()
+        .map_err(err)?;
+    services
+        .with(|s| async move { s.knowledge.set_sharing(id, visibility, category).await.map(|_| ()) })
+        .await
+        .map_err(err)
+}
+
 #[tauri::command]
 async fn persona_chat(
     services: tauri::State<'_, Services>,
@@ -810,6 +843,8 @@ fn main() {
             get_dashboard,
             get_minihome,
             get_graph,
+            get_fact,
+            set_fact_sharing,
             persona_chat,
             persona_draft,
             queue_list,

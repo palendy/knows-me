@@ -7,7 +7,7 @@
 // and is what the tests drive.
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import type { FactId, GraphDto, Scope } from "../../shared/contracts";
+import type { Fact, FactId, GraphDto, Scope, Visibility } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import { StateShell } from "../u4-shared/StateShell";
 import { muted } from "../u4-shared/styles";
@@ -183,6 +183,9 @@ export function GraphView({ api, embedded = false }: Props) {
                             </li>
                           ))}
                       </ul>
+                      {selectedNode?.kind === "fact" && (
+                        <SharingControl api={api} factId={selected} />
+                      )}
                     </>
                   ) : (
                     <p>
@@ -205,5 +208,144 @@ export function GraphView({ api, embedded = false }: Props) {
         }
       </StateShell>
     </section>
+  );
+}
+
+/**
+ * The owner's "approve-share + assign-category" gate, shown in the inspector for
+ * a selected fact. A page becomes reachable by a teammate's token only when it
+ * is `Shared` AND carries a category the token grants, so publishing requires a
+ * category — chosen from the page's own topics (a topic normalizes identically
+ * to a category, so promoting one never changes which facts it covers).
+ */
+function SharingControl({ api, factId }: { api: KnowsMeApi; factId: FactId }) {
+  const [fact, setFact] = useState<Fact | null>(null);
+  const [visibility, setVisibility] = useState<Visibility>("Private");
+  const [category, setCategory] = useState<string>("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setFact(null);
+    setError(null);
+    setSaved(false);
+    void api
+      .getFact(factId)
+      .then((f) => {
+        if (!active) return;
+        setFact(f);
+        setVisibility(f.metadata.visibility ?? "Private");
+        setCategory(f.metadata.category ?? "");
+      })
+      .catch(() => {
+        if (active) setError("페이지 정보를 불러오지 못했습니다.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [api, factId]);
+
+  const topics = fact?.metadata.topics ?? [];
+  // Always offer the page's current category, even if re-classification has
+  // since dropped it from `topics` — otherwise a controlled <select> would show
+  // blank while state still held the old value, and Save would silently
+  // re-persist a category the owner can't see.
+  const current = fact?.metadata.category ?? null;
+  const options = current && !topics.includes(current) ? [current, ...topics] : topics;
+  const missingCategory = visibility === "Shared" && !category;
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await api.setFactSharing(factId, visibility, category || null);
+      setSaved(true);
+    } catch {
+      setError("공유 설정을 저장하지 못했습니다.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="graph-sharing">
+      <span className="work-eyebrow">공유</span>
+      {error && (
+        <p role="alert" style={{ color: "#b00020" }}>
+          {error}
+        </p>
+      )}
+      <fieldset className="graph-sharing-visibility" disabled={busy || fact === null}>
+        <legend>공개 범위</legend>
+        <label>
+          <input
+            type="radio"
+            name={`vis-${factId}`}
+            checked={visibility === "Private"}
+            onChange={() => {
+              setVisibility("Private");
+              setSaved(false);
+            }}
+          />
+          <span>비공개</span>
+        </label>
+        <label>
+          <input
+            type="radio"
+            name={`vis-${factId}`}
+            checked={visibility === "Shared"}
+            onChange={() => {
+              setVisibility("Shared");
+              setSaved(false);
+            }}
+          />
+          <span>공개</span>
+        </label>
+      </fieldset>
+
+      <label className="graph-sharing-category">
+        <span>범주</span>
+        <select
+          aria-label="공유 범주"
+          value={category}
+          disabled={busy || fact === null || options.length === 0}
+          onChange={(e) => {
+            setCategory(e.target.value);
+            setSaved(false);
+          }}
+        >
+          <option value="">(범주 없음)</option>
+          {options.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {options.length === 0 && (
+        <p style={muted}>이 페이지엔 주제 태그가 없어 공유 범주를 지정할 수 없습니다.</p>
+      )}
+      {missingCategory && options.length > 0 && (
+        <p style={muted}>공개하려면 범주를 선택하세요.</p>
+      )}
+
+      <button
+        type="button"
+        className="work-primary"
+        disabled={busy || fact === null || missingCategory}
+        onClick={() => void save()}
+      >
+        저장
+      </button>
+      {saved && (
+        <p role="status" style={muted}>
+          저장되었습니다.
+        </p>
+      )}
+    </div>
   );
 }

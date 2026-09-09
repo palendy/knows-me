@@ -34,6 +34,8 @@ export interface FactMetadata {
   topics?: string[];
   kind?: FactKind;
   visibility?: Visibility;
+  /** Sharing grant unit; null/absent = uncategorized (unreachable by consumers). */
+  category?: string | null;
 }
 
 export interface Fact {

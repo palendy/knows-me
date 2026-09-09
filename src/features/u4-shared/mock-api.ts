@@ -11,10 +11,12 @@ import type {
   Draft,
   DraftRequest,
   Fact,
+  FactId,
   GraphDto,
   GraphFilter,
   MiniHomeDto,
   PersonaReply,
+  Visibility,
 } from "../../shared/contracts";
 import type { KnowsMeApi } from "./api";
 import { selectHighlights } from "./selection";
@@ -33,6 +35,7 @@ function fact(
   body: string,
   links: string[],
   confirmed = true,
+  topics: string[] = [],
 ): Fact {
   return {
     id: id(n),
@@ -44,13 +47,16 @@ function fact(
       confirmed,
       scope: n % 2 === 0 ? "Company" : "Personal",
       confirmed_at: confirmed ? `2026-09-0${(n % 8) + 1}T09:00:00Z` : null,
+      topics,
+      visibility: "Private",
+      category: null,
     },
   };
 }
 
 export const SAMPLE_FACTS: Fact[] = [
-  fact(1, "배포 절차", "main 에 머지되면 make deploy 로 배포한다", [id(2), id(3), id(4)]),
-  fact(2, "코드 리뷰 규칙", "PR 은 최소 1인 승인 후 머지한다", [id(1)]),
+  fact(1, "배포 절차", "main 에 머지되면 make deploy 로 배포한다", [id(2), id(3), id(4)], true, ["deploy"]),
+  fact(2, "코드 리뷰 규칙", "PR 은 최소 1인 승인 후 머지한다", [id(1)], true, ["review", "deploy"]),
   fact(3, "테스트 명령", "cargo test 와 npm test 를 둘 다 돌린다", [id(1)]),
   fact(4, "선호 에디터", "neovim 을 주로 쓴다", [id(1)]),
   fact(5, "커피 취향", "산미 있는 원두를 좋아한다", []),
@@ -59,10 +65,15 @@ export const SAMPLE_FACTS: Fact[] = [
 
 /** In-memory adapter over a fixed fact set. */
 export class MockApi implements KnowsMeApi {
+  private readonly facts: Fact[];
   constructor(
-    private readonly facts: Fact[] = SAMPLE_FACTS,
+    facts: Fact[] = SAMPLE_FACTS,
     private readonly pendingQueue = 3,
-  ) {}
+  ) {
+    // Clone so setFactSharing mutations don't leak into the shared fixture (and
+    // across test instances that share SAMPLE_FACTS).
+    this.facts = facts.map((f) => ({ ...f, metadata: { ...f.metadata } }));
+  }
 
   async getDashboard(): Promise<DashboardDto> {
     const confirmed = this.facts.filter((f) => f.metadata.confirmed);
@@ -92,6 +103,19 @@ export class MockApi implements KnowsMeApi {
           .map((l) => ({ from: f.id, to: l })),
       ),
     };
+  }
+
+  async getFact(id: FactId): Promise<Fact> {
+    const f = this.facts.find((x) => x.id === id);
+    if (!f) throw new Error(`fact not found: ${id}`);
+    return { ...f, metadata: { ...f.metadata } };
+  }
+
+  async setFactSharing(id: FactId, visibility: Visibility, category: string | null): Promise<void> {
+    const f = this.facts.find((x) => x.id === id);
+    if (!f) throw new Error(`fact not found: ${id}`);
+    f.metadata.visibility = visibility;
+    f.metadata.category = category;
   }
 
   async personaChat(prompt: string, history: ChatTurn[] = []): Promise<PersonaReply> {
@@ -166,6 +190,12 @@ export class FailingApi implements KnowsMeApi {
   async getGraph(): Promise<GraphDto> {
     this.fail();
   }
+  async getFact(): Promise<Fact> {
+    this.fail();
+  }
+  async setFactSharing(): Promise<void> {
+    this.fail();
+  }
   async personaChat(): Promise<PersonaReply> {
     this.fail();
   }
@@ -203,6 +233,9 @@ export function withOverrides(
     getMiniHome: (...args) =>
       overrides.getMiniHome?.(...args) ?? base.getMiniHome(...args),
     getGraph: (...args) => overrides.getGraph?.(...args) ?? base.getGraph(...args),
+    getFact: (...args) => overrides.getFact?.(...args) ?? base.getFact(...args),
+    setFactSharing: (...args) =>
+      overrides.setFactSharing?.(...args) ?? base.setFactSharing(...args),
     personaChat: (...args) =>
       overrides.personaChat?.(...args) ?? base.personaChat(...args),
     personaDraft: (...args) =>

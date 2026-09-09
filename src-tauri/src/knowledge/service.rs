@@ -22,8 +22,8 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::core::error::{AppError, Result};
 use crate::core::traits::{EncryptedStore, KnowledgeApi};
 use crate::core::types::{
-    DashboardDto, Fact, FactChange, FactFilter, FactId, FactSummary, GraphDto, GraphFilter,
-    QueueItem, TopicPage,
+    Category, DashboardDto, Fact, FactChange, FactFilter, FactId, FactSummary, GraphDto,
+    GraphFilter, QueueItem, TopicPage, Visibility,
 };
 use crate::knowledge::fact_store::FactStore;
 use crate::knowledge::history::HistoryTracker;
@@ -180,6 +180,32 @@ impl KnowledgeApi for KnowledgeService {
             .ok_or_else(|| AppError::NotFound(format!("fact {id:?}")))
     }
 
+    async fn set_sharing(
+        &self,
+        id: FactId,
+        visibility: Visibility,
+        category: Option<Category>,
+    ) -> Result<Fact> {
+        self.ensure_index().await?;
+        // P-6: hold the write lock across the read-modify-write so a concurrent
+        // upsert of the same fact cannot be lost. Only sharing metadata changes,
+        // so no history entry (KR-3 tracks body edits, not visibility/category).
+        let _w = self.write_lock.lock().await;
+        let mut fact = self
+            .facts
+            .get(id)
+            .await?
+            .ok_or_else(|| AppError::NotFound(format!("fact {id:?}")))?;
+        fact.metadata.visibility = visibility;
+        fact.metadata.category = category;
+        self.facts.put(&fact).await?;
+        {
+            let mut idx = self.index.lock().expect("index mutex poisoned");
+            idx.upsert(&fact);
+        }
+        Ok(fact)
+    }
+
     async fn links(&self, id: FactId) -> Result<Vec<FactId>> {
         Ok(self.get(id).await?.links)
     }
@@ -290,6 +316,36 @@ mod tests {
         let s = svc();
         let f = fact(FactId::new(), "   ", "b", Scope::Personal);
         assert!(matches!(s.upsert(f).await, Err(AppError::InvalidInput(_))));
+    }
+
+    #[tokio::test]
+    async fn sharing_fields_round_trip_through_upsert() {
+        // The path `set_fact_sharing` drives: a fact filed private/uncategorized
+        // (the ingest default), then the owner promotes a topic to the sharing
+        // category and approves sharing. Both fields must persist.
+        use crate::core::types::{Category, Visibility};
+        let s = svc();
+        let id = FactId::new();
+        let mut f = fact(id, "배포 절차", "make deploy", Scope::Company);
+        f.metadata.topics = vec!["deploy".into()];
+        s.upsert(f).await.unwrap();
+        let filed = s.get(id).await.unwrap();
+        assert_eq!(filed.metadata.visibility, Visibility::Private);
+        assert!(filed.metadata.category.is_none());
+
+        s.set_sharing(
+            id,
+            Visibility::Shared,
+            Some(Category::parse("deploy").unwrap()),
+        )
+        .await
+        .unwrap();
+
+        let got = s.get(id).await.unwrap();
+        assert_eq!(got.metadata.visibility, Visibility::Shared);
+        assert_eq!(got.metadata.category.as_ref().unwrap().as_str(), "deploy");
+        // Sharing edits are not body edits, so no history entry is created.
+        assert!(s.history(id).await.unwrap().is_empty());
     }
 
     #[tokio::test]

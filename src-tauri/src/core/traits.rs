@@ -168,6 +168,16 @@ pub trait KnowledgeApi: Send + Sync {
     /// what happened but not what matters; significance lives in repetition and
     /// recency, which only exist across items.
     async fn topics(&self, filter: FactFilter) -> Result<Vec<TopicPage>>;
+    /// Atomically set a fact's sharing state — its `visibility` and `category` —
+    /// holding the same write path as [`upsert`](Self::upsert) so a concurrent
+    /// edit cannot be lost (P-6). This is the owner's "approve-share +
+    /// assign-category" gate; returns the updated fact.
+    async fn set_sharing(
+        &self,
+        id: FactId,
+        visibility: Visibility,
+        category: Option<Category>,
+    ) -> Result<Fact>;
 }
 
 /// The interview queue (confirm/deepen items) and answer intake.

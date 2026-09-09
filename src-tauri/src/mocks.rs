@@ -89,6 +89,21 @@ impl KnowledgeApi for InMemoryKnowledge {
             .ok_or_else(|| AppError::NotFound(format!("fact {id:?}")))
     }
 
+    async fn set_sharing(
+        &self,
+        id: FactId,
+        visibility: Visibility,
+        category: Option<Category>,
+    ) -> Result<Fact> {
+        let mut facts = self.facts.lock().unwrap();
+        let fact = facts
+            .get_mut(&id)
+            .ok_or_else(|| AppError::NotFound(format!("fact {id:?}")))?;
+        fact.metadata.visibility = visibility;
+        fact.metadata.category = category;
+        Ok(fact.clone())
+    }
+
     async fn links(&self, id: FactId) -> Result<Vec<FactId>> {
         Ok(self
             .facts

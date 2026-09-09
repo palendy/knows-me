@@ -601,7 +601,6 @@ impl Services {
 /// closure. All owned `Arc`s so the closure's future can outlive the lock guard
 /// without borrowing the [`ServiceSet`].
 pub struct ServiceRef {
-    #[allow(dead_code)]
     pub knowledge: Arc<dyn KnowledgeApi>,
     pub interview: Arc<dyn InterviewApi>,
     pub query: Arc<QueryService>,

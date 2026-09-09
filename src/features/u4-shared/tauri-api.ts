@@ -11,10 +11,13 @@ import type {
   StoredTurn,
   Draft,
   DraftRequest,
+  Fact,
+  FactId,
   GraphDto,
   GraphFilter,
   MiniHomeDto,
   PersonaReply,
+  Visibility,
 } from "../../shared/contracts";
 import type { KnowsMeApi } from "./api";
 
@@ -26,6 +29,8 @@ export const COMMANDS = {
   dashboard: "get_dashboard",
   minihome: "get_minihome",
   graph: "get_graph",
+  fact: "get_fact",
+  setFactSharing: "set_fact_sharing",
   chat: "persona_chat",
   draft: "persona_draft",
   historyLoad: "persona_history_load",
@@ -43,6 +48,12 @@ export class TauriApi implements KnowsMeApi {
   }
   getGraph(filter: GraphFilter): Promise<GraphDto> {
     return this.invoke<GraphDto>(COMMANDS.graph, { filter });
+  }
+  getFact(id: FactId): Promise<Fact> {
+    return this.invoke<Fact>(COMMANDS.fact, { id });
+  }
+  setFactSharing(id: FactId, visibility: Visibility, category: string | null): Promise<void> {
+    return this.invoke<void>(COMMANDS.setFactSharing, { id, visibility, category });
   }
   personaChat(prompt: string, history: ChatTurn[] = []): Promise<PersonaReply> {
     return this.invoke<PersonaReply>(COMMANDS.chat, { prompt, history });

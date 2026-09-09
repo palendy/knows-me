@@ -2,6 +2,15 @@
 @media(max-width:850px){.graph-explorer{grid-template-columns:minmax(0,1fr)}.graph-inspector{border-left:0;border-top:1px solid var(--border)}.graph-inspector ul{display:flex;flex-wrap:wrap;gap:8px}.graph-inspector li+li{margin-top:0}.chat-welcome{padding-top:24px}}@media(max-width:560px){.work-view-header{align-items:flex-start;gap:16px;flex-wrap:wrap}.work-view-header h2{font-size:25px}.chat-suggestions{grid-template-columns:1fr}.chat-suggestions button{min-height:52px}.chat-welcome h3{font-size:22px}.queue-card{padding:20px}.queue-metadata{gap:8px}.queue-metadata time{margin-left:0}.queue-summary{font-size:11px}.graph-canvas-region{min-height:320px}.chat-message{max-width:95%}}
 .graph-workspace--embedded .work-view-header{margin-bottom:18px}.graph-workspace--embedded .work-view-header h3{font-size:18px;font-weight:600;letter-spacing:-.5px;margin:0}.graph-workspace--embedded .work-view-header p{font-size:12px}.graph-workspace--embedded .graph-canvas-region{min-height:420px}.graph-workspace--embedded .graph-toolbar{padding:14px 20px}
 .chat-suggestions button, .graph-inspector button { color: var(--text); border: 1px solid var(--border); }
+.graph-sharing{border-top:1px solid var(--border);margin-top:20px;padding-top:18px;display:grid;gap:12px}
+.graph-sharing .work-eyebrow{display:block}
+.graph-sharing fieldset{border:0;padding:0;margin:0;display:flex;gap:16px}
+.graph-sharing legend{font-size:11px;color:var(--muted);margin-bottom:8px;padding:0}
+.graph-sharing fieldset label{display:flex;align-items:center;gap:6px;width:auto;font-size:13px}
+.graph-sharing input[type=radio]{width:auto;margin:0}
+.graph-sharing-category{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.graph-sharing-category select{flex:1;padding:8px 10px;background:var(--card,#fff);border:1px solid var(--border);border-radius:6px;color:var(--text)}
+.graph-sharing button.work-primary{width:auto;justify-content:center;background:var(--accent,#365d4b);border:1px solid var(--accent,#365d4b);color:#fff;padding:9px 14px;border-radius:8px}
 @media (min-width: 721px) and (max-height: 850px) {
   .chat-workspace .work-view-header { margin-bottom: 18px; }
   .chat-welcome { padding: 10px 0 20px; }
