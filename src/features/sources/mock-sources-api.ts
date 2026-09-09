@@ -146,9 +146,9 @@ export class MockSourcesApi implements SourcesApi {
   async listSessionProjects(): Promise<SessionProject[]> {
     await new Promise((r) => setTimeout(r, 60));
     return [
-      { path: "/p/knows-me", label: "Work/18_avatar/knows-me", sessions: 103, newest: "2026-09-09T04:00:00Z" },
-      { path: "/p/trade", label: "Work/06_trade_follow", sessions: 19, newest: "2026-09-02T10:00:00Z" },
-      { path: "/p/hack", label: "Work/18_avatar/dsdn_hackerton", sessions: 12, newest: "2026-08-30T09:00:00Z" },
+      { path: "/p/knows-me", label: "Work/18_avatar/knows-me", sessions: 103 },
+      { path: "/p/trade", label: "Work/06_trade_follow", sessions: 19 },
+      { path: "/p/hack", label: "Work/18_avatar/dsdn_hackerton", sessions: 12 },
     ];
   }
 

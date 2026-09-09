@@ -607,8 +607,15 @@ impl knows_me_core::core::traits::ProgressReporter for EmitProgress {
 /// and must not be narrowed by the scope currently in force — a picker that
 /// hides the projects you excluded gives you no way to put them back.
 #[tauri::command]
-fn list_session_projects() -> Vec<knows_me_core::ingestion::connectors::SessionProject> {
-    knows_me_core::ingestion::connectors::SessionConnector::available_projects()
+async fn list_session_projects() -> Vec<knows_me_core::ingestion::connectors::SessionProject> {
+    // A synchronous command runs on the Tauri runtime (main) thread, so this
+    // unbounded `read_dir` + per-file `stat` scan froze the UI while the scope
+    // dialog opened. Push it to a blocking thread like `discover_claude_installs`.
+    tokio::task::spawn_blocking(
+        knows_me_core::ingestion::connectors::SessionConnector::available_projects,
+    )
+    .await
+    .unwrap_or_default()
 }
 
 /// Narrow (or reset) which project directories collection reads from.

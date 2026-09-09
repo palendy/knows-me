@@ -66,6 +66,4 @@ export interface SessionProject {
   /** Readable name derived from the working directory the sessions belong to. */
   label: string;
   sessions: number;
-  /** Most recent transcript timestamp (RFC 3339), or null if unknown. */
-  newest: string | null;
 }
