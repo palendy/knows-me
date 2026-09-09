@@ -435,10 +435,23 @@ pub struct DashboardDto {
     pub recent_facts: Vec<FactSummary>,
 }
 
+/// What a graph node stands for. Facts are the records themselves; topics are
+/// synthetic hub nodes that the facts sharing a subject connect to, so the view
+/// reads as constellations around a subject rather than one long chain.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum GraphNodeKind {
+    #[default]
+    Fact,
+    Topic,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GraphNode {
     pub id: FactId,
     pub label: String,
+    #[serde(default)]
+    pub kind: GraphNodeKind,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

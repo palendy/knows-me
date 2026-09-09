@@ -22,6 +22,8 @@ interface Props {
 
 // knows-me light palette (matches --accent #365d4b).
 const NODE_IDLE = "#91a491";
+// Topic hubs get a warm hue so they read as landmarks against the green facts.
+const TOPIC_IDLE = "#b98b3e";
 const NODE_SELECTED = "#365d4b";
 const NODE_NEIGHBOR = "#5f7d64";
 const LABEL_INK = "#252923";
@@ -31,9 +33,11 @@ const LINK_ACTIVE = "#365d4b";
 const BG = "#fafbf8";
 
 /** Radius grows gently with connection count. Kept small relative to the
- *  simulation's link distance (~48) so nodes read as points, not blobs. */
+ *  simulation's link distance (~48) so nodes read as points, not blobs. Topic
+ *  hubs start larger and are allowed to grow more, so they anchor the view. */
 function nodeRadius(n: ForceNode): number {
-  return 3 + Math.min(4, n.degree * 0.8);
+  const isTopic = n.kind === "topic";
+  return (isTopic ? 5 : 3) + Math.min(isTopic ? 7 : 4, n.degree * 0.8);
 }
 
 /** Link endpoints are strings before the sim runs, node objects afterwards. */
@@ -132,7 +136,8 @@ export default function ForceGraphCanvas({ data, selected, neighbors, onSelect }
       // Node dot.
       ctx.beginPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI);
-      ctx.fillStyle = isSelected ? NODE_SELECTED : isNeighbor ? NODE_NEIGHBOR : NODE_IDLE;
+      const idleFill = node.kind === "topic" ? TOPIC_IDLE : NODE_IDLE;
+      ctx.fillStyle = isSelected ? NODE_SELECTED : isNeighbor ? NODE_NEIGHBOR : idleFill;
       ctx.strokeStyle = isSelected ? "#e0e9df" : "#ffffff";
       ctx.lineWidth = 1.5;
       ctx.fill();

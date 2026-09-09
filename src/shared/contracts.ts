@@ -111,9 +111,14 @@ export interface DashboardDto {
   recent_facts: FactSummary[];
 }
 
+/** A fact node is a record; a topic node is a synthetic hub the facts sharing
+ *  a subject connect to, so the graph reads as constellations, not a chain. */
+export type GraphNodeKind = "fact" | "topic";
+
 export interface GraphNode {
   id: FactId;
   label: string;
+  kind: GraphNodeKind;
 }
 
 export interface GraphEdge {

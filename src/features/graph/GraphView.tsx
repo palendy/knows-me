@@ -67,6 +67,8 @@ export function GraphView({ api, embedded = false }: Props) {
 
   const toggle = (id: FactId) => setSelected((cur) => (cur === id ? null : id));
   const selectedNode = graph?.nodes.find((n) => n.id === selected);
+  const factCount = graph?.nodes.filter((n) => n.kind === "fact").length ?? 0;
+  const topicCount = (graph?.nodes.length ?? 0) - factCount;
 
   return (
     <section
@@ -101,8 +103,14 @@ export function GraphView({ api, embedded = false }: Props) {
               <div className="graph-toolbar">
                 <span>내 맥락의 연결</span>
                 <span>
-                  사실 <strong>{graph.nodes.length}</strong> · 연결{" "}
-                  <strong>{graph.links.length}</strong>
+                  사실 <strong>{factCount}</strong>
+                  {topicCount > 0 && (
+                    <>
+                      {" "}
+                      · 주제 <strong>{topicCount}</strong>
+                    </>
+                  )}{" "}
+                  · 연결 <strong>{graph.links.length}</strong>
                 </span>
               </div>
               {graph.truncated && (
@@ -115,7 +123,7 @@ export function GraphView({ api, embedded = false }: Props) {
                 <div
                   className="graph-canvas-region"
                   role="img"
-                  aria-label={`사실 ${graph.nodes.length}개, 연결 ${graph.links.length}개`}
+                  aria-label={`사실 ${factCount}개, 연결 ${graph.links.length}개`}
                 >
                   {canRenderCanvas && (
                     <Suspense fallback={<div className="graph-canvas-loading" />}>
@@ -147,12 +155,20 @@ export function GraphView({ api, embedded = false }: Props) {
 
                 <aside className="graph-inspector">
                   <span className="work-eyebrow">
-                    {selected ? "선택한 사실" : "연결 살펴보기"}
+                    {selected
+                      ? selectedNode?.kind === "topic"
+                        ? "선택한 주제"
+                        : "선택한 사실"
+                      : "연결 살펴보기"}
                   </span>
                   <h3>{selected ? selectedNode?.label : "기록 사이의 관계"}</h3>
                   {selected ? (
                     <>
-                      <p>직접 연결된 사실 {neighbors.size}개</p>
+                      <p>
+                        {selectedNode?.kind === "topic"
+                          ? `이 주제에 연결된 사실 ${neighbors.size}개`
+                          : `연결된 항목 ${neighbors.size}개`}
+                      </p>
                       <ul>
                         {graph.nodes
                           .filter((n) => neighbors.has(n.id))

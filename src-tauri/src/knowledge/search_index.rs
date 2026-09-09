@@ -12,11 +12,30 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
+use sha2::{Digest, Sha256};
+use uuid::Uuid;
 
 use crate::core::types::{
     Fact, FactFilter, FactId, FactKind, FactSummary, GraphDto, GraphEdge, GraphFilter, GraphNode,
-    Scope, TopicPage, Visibility,
+    GraphNodeKind, Scope, TopicPage, Visibility,
 };
+
+/// Merge key that collapses spelling variants of one subject: `ai-dlc` and
+/// `aidlc` share a key so they are treated as the same topic. Separators are
+/// dropped; the surface spellings are kept elsewhere for display.
+fn topic_key(topic: &str) -> String {
+    topic.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// Stable synthetic id for a topic hub node, derived from its merge key so the
+/// same subject keeps the same node identity across calls (a stable layout).
+/// A hash into the uuid space; collision with a real v4 fact id is negligible.
+fn topic_node_id(key: &str) -> FactId {
+    let digest = Sha256::digest(format!("topic:{key}").as_bytes());
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    FactId(Uuid::from_bytes(bytes))
+}
 
 /// Assemble topic pages from the indexed facts.
 ///
@@ -36,7 +55,7 @@ pub fn topic_pages(
         BTreeMap::new();
     for f in facts {
         for t in &f.topics {
-            let key: String = t.chars().filter(|c| c.is_alphanumeric()).collect();
+            let key = topic_key(t);
             if key.is_empty() {
                 continue;
             }
@@ -218,19 +237,22 @@ impl SearchIndex {
             .collect()
     }
 
-    /// Graph projection: nodes = (scope-filtered) facts, edges = stored links
-    /// plus topic-derived links, both restricted to the node set (KR-5 —
-    /// dangling links skipped).
+    /// Graph projection: fact nodes plus synthetic *topic hub* nodes, with each
+    /// fact linked to the topics it carries (KR-5 — edges stay within the node
+    /// set). Explicit stored links are kept too, once anything populates them.
     ///
-    /// Facts are stored with no explicit `links` today (nothing populates them),
-    /// so a links-only projection is always edgeless — the graph reads as
-    /// scattered dots. Topics are the signal that separate observations are
-    /// about the same thing, so facts that share a topic are connected here.
-    /// To avoid a topic that every fact carries turning into a complete graph
-    /// (O(n^2) edges), each topic group is connected as a *chain* of its facts
-    /// in id order: n-1 edges per topic, and every member stays reachable.
-    /// Duplicate/undirected edges are collapsed by the frontend's
-    /// `normalizeGraph`, so a pair sharing several topics is fine here.
+    /// Facts share no explicit `links` today, so a links-only projection is
+    /// edgeless — scattered dots. Topics are the signal that separate
+    /// observations are about the same thing, so we make each topic a hub and
+    /// wire its facts to it. This reads as constellations around a subject
+    /// rather than the one long chain a fact-to-fact projection produced, and
+    /// it is linear in memberships: a topic every fact carries becomes one big
+    /// hub, not an O(n^2) clique. Spelling variants (`ai-dlc` / `aidlc`) merge
+    /// via [`topic_key`], matching how `topic_pages` groups them; the most
+    /// common surface spelling names the hub.
+    ///
+    /// A topic with only one fact links nothing, so it is skipped — a lone
+    /// pendant node adds clutter without showing a connection.
     pub fn graph(&self, filter: &GraphFilter) -> GraphDto {
         let node_ids: HashSet<FactId> = self
             .meta
@@ -238,11 +260,12 @@ impl SearchIndex {
             .filter(|(_, m)| filter.scope.is_none_or(|s| s == m.scope))
             .map(|(id, _)| *id)
             .collect();
-        let nodes = node_ids
+        let mut nodes: Vec<GraphNode> = node_ids
             .iter()
             .map(|id| GraphNode {
                 id: *id,
                 label: self.meta[id].title.clone(),
+                kind: GraphNodeKind::Fact,
             })
             .collect();
 
@@ -260,21 +283,55 @@ impl SearchIndex {
             }
         }
 
-        // 2) Topic-derived links: chain the facts within each shared topic.
-        //    Sorted by id so the projection is deterministic across calls.
-        let mut by_topic: BTreeMap<&str, Vec<FactId>> = BTreeMap::new();
+        // 2) Topic hubs. Group facts by the merge key so spelling variants land
+        //    on one hub; carry surface-spelling counts to name it, and a member
+        //    set so a fact reaching a topic through two spellings links once.
+        //    BTreeMap keeps the projection deterministic across calls.
+        struct Hub<'a> {
+            surfaces: BTreeMap<&'a str, usize>,
+            members: Vec<FactId>,
+            seen: HashSet<FactId>,
+        }
+        let mut hubs: BTreeMap<String, Hub> = BTreeMap::new();
         for id in &node_ids {
             for topic in &self.meta[id].topics {
-                by_topic.entry(topic.as_str()).or_default().push(*id);
+                let key = topic_key(topic);
+                if key.is_empty() {
+                    continue;
+                }
+                let hub = hubs.entry(key).or_insert_with(|| Hub {
+                    surfaces: BTreeMap::new(),
+                    members: Vec::new(),
+                    seen: HashSet::new(),
+                });
+                *hub.surfaces.entry(topic.as_str()).or_insert(0) += 1;
+                if hub.seen.insert(*id) {
+                    hub.members.push(*id);
+                }
             }
         }
-        for members in by_topic.values_mut() {
-            // FactId isn't Ord; sort by the uuid bytes for a stable order.
-            members.sort_unstable_by_key(|id| *id.0.as_bytes());
-            for pair in members.windows(2) {
+        for (key, hub) in &hubs {
+            if hub.members.len() < 2 {
+                continue;
+            }
+            // Most common surface spelling names the hub (ties: longer wins),
+            // matching `topic_pages`.
+            let label = hub
+                .surfaces
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+                .map(|(s, _)| (*s).to_string())
+                .unwrap_or_else(|| key.clone());
+            let hub_id = topic_node_id(key);
+            nodes.push(GraphNode {
+                id: hub_id,
+                label,
+                kind: GraphNodeKind::Topic,
+            });
+            for member in &hub.members {
                 edges.push(GraphEdge {
-                    from: pair[0],
-                    to: pair[1],
+                    from: *member,
+                    to: hub_id,
                 });
             }
         }
