@@ -21,3 +21,6 @@ dist/
 # OS
 .DS_Store
 Thumbs.db
+
+# 로컬 데모 볼트 (headless example 산출물)
+.knowsme-demo/

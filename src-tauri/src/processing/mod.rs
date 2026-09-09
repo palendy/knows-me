@@ -17,5 +17,5 @@ pub mod transfer_log;
 pub use llm_gateway::LlmGateway;
 pub use pending::PendingQueue;
 pub use router::{route, ProcessingDecision};
-pub use service::ProcessingService;
+pub use service::{ProcessingService, ProcessingSink};
 pub use transfer_log::{TransferLog, TransferLogEntry, TransferOp};

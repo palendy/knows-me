@@ -25,8 +25,17 @@ fn source_tag(source: SourceKind) -> &'static str {
     }
 }
 
+/// Storage key for the seen-set.
+///
+/// `external_id` is whatever the connector considers stable — for the session
+/// connector that is a full filesystem path, which can run to hundreds of
+/// characters and overflow the store's filename limit. Nothing needs to read
+/// the original id back out of the seen-set, so it is digested; the source tag
+/// stays in the clear to keep keys source-scoped and debuggable.
 fn seen_key(source: SourceKind, external_id: &str) -> String {
-    format!("{}:{}", source_tag(source), external_id)
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(external_id.as_bytes());
+    format!("{}:{:x}", source_tag(source), digest)
 }
 
 /// Thin idempotency + cursor layer over [`EncryptedStore`].

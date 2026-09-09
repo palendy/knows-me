@@ -9,27 +9,51 @@ import { MiniHomeView } from "./features/minihome/MiniHomeView";
 import { GraphView } from "./features/graph/GraphView";
 import { PersonaChatView } from "./features/persona-chat/PersonaChatView";
 import { QueueView } from "./features/queue/QueueView";
+import { SourcesView } from "./features/sources/SourcesView";
 import type { KnowsMeApi } from "./features/u4-shared/api";
 import { MockApi } from "./features/u4-shared/mock-api";
 import { TauriApi } from "./features/u4-shared/tauri-api";
 import type { InterviewApi } from "./features/queue/api";
 import { MockInterviewApi } from "./features/queue/mock-interview-api";
 import { TauriInterviewApi } from "./features/queue/tauri-interview-api";
+import type { SourcesApi } from "./features/sources/api";
+import { MockSourcesApi } from "./features/sources/mock-sources-api";
+import { TauriSourcesApi } from "./features/sources/tauri-sources-api";
 
 // Views depend only on the ports (KnowsMeApi / InterviewApi). Under Tauri we
 // inject the real command adapters; in a plain browser (`npm run dev` without
 // Tauri) we inject mocks so the whole shell is runnable and screenshottable.
-function makeApis(): { api: KnowsMeApi; interview: InterviewApi } {
+function makeApis(): {
+  api: KnowsMeApi;
+  interview: InterviewApi;
+  sources: SourcesApi;
+} {
   if (inTauri) {
-    return { api: new TauriApi(call), interview: new TauriInterviewApi(call) };
+    return {
+      api: new TauriApi(call),
+      interview: new TauriInterviewApi(call),
+      sources: new TauriSourcesApi(call),
+    };
   }
-  return { api: new MockApi(), interview: new MockInterviewApi() };
+  return {
+    api: new MockApi(),
+    interview: new MockInterviewApi(),
+    sources: new MockSourcesApi(),
+  };
 }
 
-type Tab = "dashboard" | "queue" | "minihome" | "graph" | "persona" | "settings";
+type Tab =
+  | "dashboard"
+  | "sources"
+  | "queue"
+  | "minihome"
+  | "graph"
+  | "persona"
+  | "settings";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "대시보드" },
+  { id: "sources", label: "소스" },
   { id: "queue", label: "대기열" },
   { id: "minihome", label: "미니홈피" },
   { id: "graph", label: "지식 그래프" },
@@ -86,7 +110,7 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
   const [dataVersion, setDataVersion] = useState(0);
   const bump = useCallback(() => setDataVersion((v) => v + 1), []);
 
-  const { api, interview } = useMemo(makeApis, []);
+  const { api, interview, sources } = useMemo(makeApis, []);
 
   return (
     <div>
@@ -107,6 +131,7 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
 
       <div role="tabpanel">
         {tab === "dashboard" && <DashboardView key={dataVersion} api={api} />}
+        {tab === "sources" && <SourcesView api={sources} onIngested={bump} />}
         {tab === "queue" && <QueueView api={interview} onChanged={bump} />}
         {tab === "minihome" && <MiniHomeView key={dataVersion} api={api} />}
         {tab === "graph" && <GraphView key={dataVersion} api={api} />}

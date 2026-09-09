@@ -1907,6 +1907,7 @@ name = "knows-me"
 version = "0.1.0"
 dependencies = [
  "knows-me-core",
+ "serde",
  "tauri",
  "tauri-build",
  "tokio",
@@ -1927,6 +1928,7 @@ dependencies = [
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "tokio",
  "uuid",

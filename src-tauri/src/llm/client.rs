@@ -8,6 +8,29 @@
 //! Callers MUST pass already-masked text (US-2.2); every call is recorded to the
 //! [`TransferLog`](crate::llm::transfer_log::TransferLog) for transparency (NFR-2).
 
+/// Token budget for classification calls.
+///
+/// The labels themselves need a handful of tokens; the headroom is for
+/// reasoning models that emit an internal reasoning block before the answer.
+/// At Flash-tier pricing the unused headroom costs nothing, and without it the
+/// call comes back with `content: null`.
+#[cfg(feature = "llm-http")]
+const CLASSIFY_MAX_TOKENS: u32 = 1024;
+
+/// Normalize a configured base URL so both `https://host` and `https://host/v1`
+/// work.
+///
+/// Each client appends its own versioned path (`/v1/messages`,
+/// `/v1/chat/completions`). OpenAI-compatible gateways publish their endpoint
+/// *with* the `/v1` — OpenRouter documents `https://openrouter.ai/api/v1` — so
+/// pasting the documented URL produced `.../v1/v1/chat/completions` and a bare
+/// 404 with nothing pointing at the cause.
+#[cfg(feature = "llm-http")]
+fn normalize_base_url(raw: &str) -> String {
+    let trimmed = raw.trim().trim_end_matches('/');
+    trimmed.strip_suffix("/v1").unwrap_or(trimmed).to_string()
+}
+
 #[cfg(feature = "llm-http")]
 pub use http_impl::{AnthropicLlm, LlmConfig};
 
@@ -28,6 +51,8 @@ mod http_impl {
     use crate::core::types::MaskedText;
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
+
+    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS};
 
     const API_VERSION: &str = "2023-06-01";
     const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -51,8 +76,10 @@ mod http_impl {
                 api_key,
                 model: std::env::var("ANTHROPIC_MODEL")
                     .unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
-                base_url: std::env::var("ANTHROPIC_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
+                base_url: normalize_base_url(
+                    &std::env::var("ANTHROPIC_BASE_URL")
+                        .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
+                ),
             })
         }
     }
@@ -130,7 +157,14 @@ mod http_impl {
             self.transfer_log
                 .record_text("classify", &self.config.model, input);
             let raw = self
-                .call(prompts::CLASSIFY_SYSTEM, json!(input.text), 128)
+                // Classification output is a few short labels, but reasoning
+                // models spend the budget on internal reasoning before emitting
+                // any of them — 128 tokens leaves nothing for the answer.
+                .call(
+                    prompts::CLASSIFY_SYSTEM,
+                    json!(input.text),
+                    CLASSIFY_MAX_TOKENS,
+                )
                 .await?;
             Ok(prompts::parse_labels(&raw))
         }
@@ -190,6 +224,8 @@ mod openai_impl {
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
 
+    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS};
+
     const DEFAULT_BASE_URL: &str = "https://api.openai.com";
     const DEFAULT_MODEL: &str = "gpt-4o";
 
@@ -210,8 +246,10 @@ mod openai_impl {
             Ok(Self {
                 api_key,
                 model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
-                base_url: std::env::var("OPENAI_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
+                base_url: normalize_base_url(
+                    &std::env::var("OPENAI_BASE_URL")
+                        .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
+                ),
             })
         }
     }
@@ -276,7 +314,20 @@ mod openai_impl {
                 return Err(AppError::External(format!("LLM API {status}: {msg}")));
             }
 
-            Ok(Self::extract_text(&payload))
+            let text = Self::extract_text(&payload);
+            if text.trim().is_empty() {
+                // A 200 with empty content is not a usable answer. Reasoning
+                // models (Gemini Flash, o-series) spend the token budget on
+                // internal reasoning first and return `content: null` when it
+                // runs out — silently passing "" upward makes classification
+                // yield no labels and every item look uncertain.
+                return Err(AppError::External(format!(
+                    "LLM returned an empty completion (model {}; the token budget may have been \
+                     consumed by reasoning — raise max_tokens)",
+                    self.config.model
+                )));
+            }
+            Ok(text)
         }
 
         /// Pull `choices[0].message.content` out of a chat-completions response.
@@ -311,7 +362,14 @@ mod openai_impl {
             self.transfer_log
                 .record_text("classify", &self.config.model, input);
             let raw = self
-                .call(prompts::CLASSIFY_SYSTEM, json!(input.text), 128)
+                // Classification output is a few short labels, but reasoning
+                // models spend the budget on internal reasoning before emitting
+                // any of them — 128 tokens leaves nothing for the answer.
+                .call(
+                    prompts::CLASSIFY_SYSTEM,
+                    json!(input.text),
+                    CLASSIFY_MAX_TOKENS,
+                )
                 .await?;
             Ok(prompts::parse_labels(&raw))
         }
@@ -381,5 +439,39 @@ mod openai_impl {
             assert!(uses_completion_tokens("gpt-5"));
             assert!(uses_completion_tokens("GPT-5-mini")); // case-insensitive
         }
+    }
+}
+
+#[cfg(all(test, feature = "llm-http"))]
+mod normalize_tests {
+    use super::normalize_base_url;
+
+    #[test]
+    fn accepts_both_documented_forms_of_a_gateway_url() {
+        // OpenRouter documents the /v1 form; OpenAI documents the bare host.
+        assert_eq!(
+            normalize_base_url("https://openrouter.ai/api/v1"),
+            "https://openrouter.ai/api"
+        );
+        assert_eq!(
+            normalize_base_url("https://openrouter.ai/api/v1/"),
+            "https://openrouter.ai/api"
+        );
+        assert_eq!(
+            normalize_base_url("https://api.openai.com"),
+            "https://api.openai.com"
+        );
+        assert_eq!(
+            normalize_base_url("  https://api.openai.com/  "),
+            "https://api.openai.com"
+        );
+    }
+
+    #[test]
+    fn does_not_strip_a_v1_that_is_part_of_a_host_or_path_segment() {
+        assert_eq!(
+            normalize_base_url("https://gw.example.com/openai-v1"),
+            "https://gw.example.com/openai-v1"
+        );
     }
 }

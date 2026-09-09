@@ -22,6 +22,7 @@ use crate::core::types::{
     Fact, FactCandidate, FactMetadata, MaskedText, ProcessReport, QueueItem, QueueItemId,
     QueueItemKind, RawItem,
 };
+use crate::ingestion::service::RawItemSink;
 use crate::processing::llm_gateway::LlmGateway;
 use crate::processing::pending::PendingQueue;
 use crate::processing::router::{route, ProcessingDecision};
@@ -143,6 +144,43 @@ impl ProcessingService {
             .map(|p| p.raw)
             .collect();
         self.process(items).await
+    }
+}
+
+/// Bridges Ingestion (U2) to Processing (U2).
+///
+/// `IngestionService` speaks [`RawItemSink`], which returns nothing;
+/// `ProcessingApi::process` returns a [`ProcessReport`] the UI wants to show
+/// ("N facts, M questions"). This adapter accumulates those reports so a
+/// triggered sync can report what actually came of it.
+pub struct ProcessingSink {
+    processing: Arc<ProcessingService>,
+    totals: std::sync::Mutex<ProcessReport>,
+}
+
+impl ProcessingSink {
+    pub fn new(processing: Arc<ProcessingService>) -> Self {
+        Self {
+            processing,
+            totals: std::sync::Mutex::new(ProcessReport::default()),
+        }
+    }
+
+    /// Totals accumulated since the last [`ProcessingSink::take`].
+    pub fn take(&self) -> ProcessReport {
+        std::mem::take(&mut self.totals.lock().expect("totals mutex poisoned"))
+    }
+}
+
+#[async_trait]
+impl RawItemSink for ProcessingSink {
+    async fn accept(&self, items: Vec<RawItem>) -> Result<()> {
+        let report = self.processing.process(items).await?;
+        let mut totals = self.totals.lock().expect("totals mutex poisoned");
+        totals.facts_created += report.facts_created;
+        totals.queue_items_created += report.queue_items_created;
+        totals.filtered += report.filtered;
+        Ok(())
     }
 }
 

@@ -46,11 +46,34 @@ impl FileEncryptedStore {
     fn path(&self, ns: &str, key: &str) -> PathBuf {
         self.ns_dir(ns).join(format!("{}.bin", B64URL.encode(key)))
     }
+
+    /// Reject a key whose encoded filename would exceed the filesystem limit.
+    ///
+    /// Base64 expands by 4/3, so a ~190-character key already overflows the
+    /// common 255-byte name limit. Without this check the caller gets a bare
+    /// "File name too long (os error 63)" naming neither the key nor the cause.
+    /// Callers whose natural key is unbounded (a filesystem path, a URL) must
+    /// digest it before storing — see [`crate::ingestion::cursor_store`].
+    fn check_key(ns: &str, key: &str) -> Result<()> {
+        let encoded_len = B64URL.encode(key).len() + ".bin".len();
+        if encoded_len > MAX_FILE_NAME_BYTES {
+            return Err(AppError::InvalidInput(format!(
+                "storage key too long for namespace {ns}: {} chars encodes to a {encoded_len}-byte \
+                 filename (limit {MAX_FILE_NAME_BYTES}); digest the key before storing",
+                key.chars().count()
+            )));
+        }
+        Ok(())
+    }
 }
+
+/// Conservative filename limit. macOS/Linux allow 255 bytes per component.
+const MAX_FILE_NAME_BYTES: usize = 255;
 
 #[async_trait]
 impl EncryptedStore for FileEncryptedStore {
     async fn put(&self, ns: &str, key: &str, bytes: &[u8]) -> Result<()> {
+        Self::check_key(ns, key)?;
         let handle = self.keys.current_key()?;
         let blob = vault::encrypt(bytes, &handle)?;
         let dir = self.ns_dir(ns);
@@ -60,6 +83,7 @@ impl EncryptedStore for FileEncryptedStore {
     }
 
     async fn get(&self, ns: &str, key: &str) -> Result<Option<Vec<u8>>> {
+        Self::check_key(ns, key)?;
         let handle = self.keys.current_key()?;
         let path = self.path(ns, key);
         match std::fs::read(&path) {

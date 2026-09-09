@@ -35,7 +35,9 @@ impl PendingQueue {
     /// Park an item. Key = external_id (dedup: re-queuing the same item bumps
     /// attempts rather than duplicating).
     pub async fn push(&self, raw: RawItem, at_rfc3339: &str) -> Result<()> {
-        let key = format!("{}:{}", source_tag(&raw), raw.external_id);
+        // Same reason as the seen-set: `external_id` may be a long filesystem
+        // path, and the store keys files by name.
+        let key = pending_key(&raw);
         let attempts = match self.store.get(NS_PENDING, &key).await? {
             Some(bytes) => {
                 let prev: PendingProcessingItem = serde_json::from_slice(&bytes)
@@ -75,6 +77,15 @@ impl PendingQueue {
     pub async fn is_empty(&self) -> Result<bool> {
         Ok(self.len().await? == 0)
     }
+}
+
+/// Storage key for a parked item — digested for the same reason as the
+/// ingestion seen-set: `external_id` can be a long filesystem path, and the
+/// encrypted store keys files by name.
+fn pending_key(raw: &RawItem) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(raw.external_id.as_bytes());
+    format!("{}:{:x}", source_tag(raw), digest)
 }
 
 fn source_tag(raw: &RawItem) -> &'static str {

@@ -42,6 +42,9 @@ axum = { version = "0.7", default-features = false, features = ["http1", "json",
 # Security (all pure-Rust — RustCrypto): password KDF + authenticated encryption.
 argon2 = "0.5"
 aes-gcm = "0.10"
+# Digest for storage keys whose natural form (a filesystem path) is too long to
+# survive base64 encoding into a filename.
+sha2 = "0.10"
 rand = "0.8"
 zeroize = "1"
 base64 = "0.22"

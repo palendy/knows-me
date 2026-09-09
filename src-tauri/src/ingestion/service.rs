@@ -80,8 +80,12 @@ impl IngestionService {
         }
 
         let result = self.run_one_inner(source, report).await;
-        if result.is_err() {
-            report.errors += 1; // BR-I4 / US-1.1 AC3: record and continue.
+        if let Err(e) = result {
+            // BR-I4 / US-1.1 AC3: one source failing must not stop the others.
+            // The count alone leaves the owner with "1 error" and no way to act
+            // on it, so the cause goes to the log even though it is contained.
+            eprintln!("[ingestion] {source:?} failed: {e}");
+            report.errors += 1;
         }
         self.unlock(source);
     }

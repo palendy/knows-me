@@ -20,7 +20,8 @@ mod services;
 use knows_me_core::core::commands::{self, AppStatus};
 use knows_me_core::core::types::{
     AnswerInput, AnswerResult, AppConfig, DashboardDto, Draft, DraftRequest, GraphDto, GraphFilter,
-    MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, TransferPolicy, TransferRecord,
+    MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, SourceKind, TransferPolicy,
+    TransferRecord,
 };
 use knows_me_core::AppState;
 use services::Services;
@@ -196,6 +197,46 @@ async fn queue_answer(
         .map_err(err)
 }
 
+// --- U2: collection -----------------------------------------------------------
+
+/// What one triggered sync produced. Combines the collection counts
+/// (`IngestReport`) with what processing made of them, so the UI can say
+/// "collected 12, 3 facts, 2 questions" rather than just "done".
+#[derive(serde::Serialize)]
+struct IngestSummary {
+    collected: usize,
+    skipped: usize,
+    errors: usize,
+    facts_created: usize,
+    queue_items_created: usize,
+    filtered: usize,
+}
+
+#[tauri::command]
+async fn trigger_ingest(
+    services: tauri::State<'_, Services>,
+    source: Option<SourceKind>,
+) -> CmdResult<IngestSummary> {
+    services
+        .with(|s| async move {
+            let ingest = s.ingestion.trigger(source).await?;
+            // Ingestion feeds the sink synchronously, so by the time `trigger`
+            // returns, processing for those items is done and the totals are
+            // ready to collect.
+            let processed = s.sink.take();
+            Ok(IngestSummary {
+                collected: ingest.collected,
+                skipped: ingest.skipped,
+                errors: ingest.errors,
+                facts_created: processed.facts_created,
+                queue_items_created: processed.queue_items_created,
+                filtered: processed.filtered,
+            })
+        })
+        .await
+        .map_err(err)
+}
+
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
@@ -223,6 +264,7 @@ fn main() {
             persona_draft,
             queue_list,
             queue_answer,
+            trigger_ingest,
         ])
         .run(tauri::generate_context!())
         .expect("error while running knows-me");

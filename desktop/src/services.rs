@@ -14,10 +14,15 @@
 use std::sync::Arc;
 
 use knows_me_core::core::traits::{
-    EncryptedStore, InterviewApi, KeyManager, KnowledgeApi, Masker, PersonaApi,
+    CredentialStore, EncryptedStore, IngestionApi, InterviewApi, KeyManager, KnowledgeApi, Masker,
+    PersonaApi,
 };
+use knows_me_core::ingestion::connectors::{FileConnector, GmailConnector, NotionConnector, SessionConnector};
+use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
+use knows_me_core::processing::service::AlwaysOnline;
+use knows_me_core::processing::{PendingQueue, ProcessingService, ProcessingSink, TransferLog};
 use knows_me_core::persona::{
     LocalApiHandle, LocalApiServer, PersonaService, QueryService, DEFAULT_PORT,
 };
@@ -30,6 +35,11 @@ pub struct ServiceSet {
     pub interview: Arc<dyn InterviewApi>,
     pub query: Arc<QueryService>,
     pub persona: Arc<dyn PersonaApi>,
+    /// U2 collection orchestrator (Session/File/Notion/Gmail connectors).
+    pub ingestion: Arc<dyn IngestionApi>,
+    /// The sink ingestion feeds. Held so a triggered sync can report how many
+    /// facts/questions the processing pass actually produced.
+    pub sink: Arc<ProcessingSink>,
     /// Local REST server handle. `Some` while running; dropping it stops the
     /// server, so it must live here for the life of the session.
     pub local_api: Option<LocalApiHandle>,
@@ -49,15 +59,51 @@ impl ServiceSet {
         let knowledge: Arc<dyn KnowledgeApi> = knowledge_svc.clone();
 
         let interview: Arc<dyn InterviewApi> = Arc::new(InterviewService::new(
-            store,
+            store.clone(),
             knowledge.clone(),
             masker.clone(),
             llm.clone(),
         ));
 
         let query = Arc::new(QueryService::new(knowledge.clone()));
-        let persona: Arc<dyn PersonaApi> =
-            Arc::new(PersonaService::new(knowledge.clone(), masker, llm));
+        let persona: Arc<dyn PersonaApi> = Arc::new(PersonaService::new(
+            knowledge.clone(),
+            masker.clone(),
+            llm.clone(),
+        ));
+
+        // --- U2: collection + processing -----------------------------------
+        // Processing is what turns raw items into facts/questions, so it is the
+        // sink ingestion writes into. Both read through the same encrypted
+        // store, so both are only valid while unlocked — same lifetime as the
+        // rest of this set.
+        let processing = Arc::new(ProcessingService::new(
+            masker,
+            llm,
+            // U2 keeps its own store-backed transparency log, distinct from
+            // U1's in-memory one behind `list_transfers`.
+            Arc::new(TransferLog::new(store.clone())),
+            knowledge.clone(),
+            interview.clone(),
+            Arc::new(PendingQueue::new(store.clone())),
+            Arc::new(AlwaysOnline),
+        ));
+        let sink = Arc::new(ProcessingSink::new(processing));
+
+        let credentials: Arc<dyn CredentialStore> = state.store();
+        let mut registry = ConnectorRegistry::new();
+        // Session transcripts are already on disk — no credentials needed, so
+        // this one works the moment the vault opens.
+        registry.register(Arc::new(SessionConnector::from_config(None)));
+        registry.register(Arc::new(FileConnector::new()));
+        registry.register(Arc::new(NotionConnector::new(credentials.clone())));
+        registry.register(Arc::new(GmailConnector::new(credentials)));
+
+        let ingestion: Arc<dyn IngestionApi> = Arc::new(IngestionService::new(
+            Arc::new(registry),
+            Arc::new(IngestionCursorStore::new(store)),
+            sink.clone(),
+        ));
 
         let local_api = if state.config().server_enabled {
             start_local_api(persona.clone()).await
@@ -70,6 +116,8 @@ impl ServiceSet {
             interview,
             query,
             persona,
+            ingestion,
+            sink,
             local_api,
         }
     }
@@ -181,6 +229,8 @@ impl Services {
                 interview: set.interview.clone(),
                 query: set.query.clone(),
                 persona: set.persona.clone(),
+                ingestion: set.ingestion.clone(),
+                sink: set.sink.clone(),
             }
         };
         f(refs).await
@@ -196,4 +246,6 @@ pub struct ServiceRef {
     pub interview: Arc<dyn InterviewApi>,
     pub query: Arc<QueryService>,
     pub persona: Arc<dyn PersonaApi>,
+    pub ingestion: Arc<dyn IngestionApi>,
+    pub sink: Arc<ProcessingSink>,
 }

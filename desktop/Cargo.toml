@@ -25,3 +25,6 @@ tauri-build = { version = "2", features = [] }
 knows-me-core = { path = "../src-tauri" }
 tauri = { version = "2", features = [] }
 tokio = { version = "1", features = ["sync"] }
+# Command return types that are shaped here rather than in the core (e.g. the
+# ingest summary that merges an IngestReport with a ProcessReport).
+serde = { version = "1", features = ["derive"] }
