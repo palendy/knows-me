@@ -27,7 +27,8 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .app { min-height: 100vh; }
 .workspace { min-height: 100vh; display: grid; grid-template-columns: 224px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 31px 18px 24px; background: #f1f2ec; border-right: 1px solid var(--border); }
-.wordmark { display: flex; align-items: center; justify-content: center; gap: 11px; color: var(--text); text-decoration: none; font-family: Georgia, 'Palatino Linotype', 'Book Antiqua', 'Times New Roman', serif; font-size: 24px; font-weight: 500; letter-spacing: .2px; padding: 0; white-space: nowrap; }
+.wordmark { display: flex; align-items: center; justify-content: center; margin: 4px -10px 0; padding: 8px 0 6px; }
+.wordmark-img { display: block; width: 100%; height: auto; }
 .brand-symbol { display: inline-grid; place-items: center; text-align: center; flex: 0 0 auto; width: 32px; height: 32px; background: var(--accent); color: white; border-radius: 9px; font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; font-weight: 700; font-size: 18px; line-height: 1; }
 .workspace-label { margin: 46px 13px 13px; color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: space-between; }
 .workspace-label span { font-size: 8px; letter-spacing: 1.3px; }
@@ -64,7 +65,7 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .foot { text-align: center; font-size: 11px; }
 .auth-app { max-width: 470px; margin: auto; padding: 80px 20px 40px; }
 .brand { margin-bottom: 32px; text-align: center; }
-.brand h1 { font-family: Georgia, 'Palatino Linotype', 'Book Antiqua', 'Times New Roman', serif; font-size: 35px; font-weight: 500; letter-spacing: .3px; margin: 0; white-space: nowrap; overflow-wrap: normal; }
+.brand-logo { display: block; height: 60px; width: auto; max-width: 100%; margin: 0 auto; }
 .tagline { color: var(--muted); font-size: 12px; }
 .auth-app form > button { margin-top: 20px; width: 100%; }
 .auth-app .foot { margin-top: 24px; }
