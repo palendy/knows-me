@@ -128,12 +128,12 @@ impl IngestionService {
         if !fresh.is_empty() {
             self.sink.accept(fresh).await?;
         }
-        // Advance cursor only after a successful sync (BR-I3).
+        // Advance cursor only after a successful sync (BR-I3). `remaining` is
+        // deliberately *not* read here: this runs once per pass, so summing it
+        // over a multi-pass drain reports every pass's leftover added together
+        // instead of the count actually left. The caller reads it once, from
+        // the final cursor, via `source_remaining`.
         self.cursors.save_cursor(source, &next_cursor).await?;
-        report.remaining += connector
-            .remaining(Some(next_cursor.clone()))
-            .await
-            .unwrap_or(0);
 
         // Whether this pass moved the frontier at all. A pass can legitimately
         // yield no *items* while still advancing (a tooling-only transcript is
@@ -172,6 +172,20 @@ impl IngestionService {
             }
         }
     }
+
+    /// The backlog still waiting for `source` after its most recent sync.
+    ///
+    /// Read from the saved cursor so it reflects the *final* pass of a drain,
+    /// not a mid-run figure. Callers add this once per source, so across
+    /// sources it sums and within a source it does not double-count.
+    /// Best-effort: a source that cannot answer contributes nothing.
+    async fn source_remaining(&self, source: SourceKind) -> usize {
+        let Some(connector) = self.registry.get(source) else {
+            return 0;
+        };
+        let cursor = self.cursors.load_cursor(source).await.unwrap_or(None);
+        connector.remaining(cursor).await.unwrap_or(0)
+    }
 }
 
 #[async_trait]
@@ -201,6 +215,7 @@ impl IngestionApi for IngestionService {
         };
         for src in targets {
             self.run_one(src, &mut report, progress).await;
+            report.remaining += self.source_remaining(src).await;
         }
         Ok(report)
     }
@@ -223,12 +238,11 @@ impl IngestionApi for IngestionService {
                 report.skipped += 1;
                 continue;
             }
-            // `remaining` accumulates per pass; only the final pass's figure
-            // describes what is actually left.
-            report.remaining = 0;
             self.run_until_done(src, &mut report, progress, max_passes)
                 .await;
             self.unlock(src);
+            // Once, from the final cursor — see `source_remaining`.
+            report.remaining += self.source_remaining(src).await;
         }
         Ok(report)
     }
@@ -251,6 +265,13 @@ mod tests {
     impl Connector for BatchedConnector {
         fn id(&self) -> SourceKind {
             SourceKind::Session
+        }
+        /// Override the `Ok(0)` default so the report's `remaining` carries a
+        /// real figure — the accumulation bug (issue #14) only surfaces when a
+        /// source returns non-zero here, exactly as `SessionConnector` does.
+        async fn remaining(&self, c: Option<Cursor>) -> Result<usize> {
+            let done: usize = c.and_then(|c| c.0.parse().ok()).unwrap_or(0);
+            Ok(self.total.saturating_sub(done))
         }
         async fn sync(
             &self,

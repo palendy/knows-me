@@ -257,8 +257,6 @@ pub struct SessionProject {
     /// owner recognises.
     pub label: String,
     pub sessions: usize,
-    /// Most recent transcript mtime, RFC 3339, if any.
-    pub newest: Option<String>,
 }
 
 /// A readable name for a project directory.
@@ -378,15 +376,10 @@ impl SessionConnector {
                     continue;
                 }
                 let mut sessions = 0usize;
-                let mut newest: Option<DateTime<Utc>> = None;
                 if let Ok(files) = fs::read_dir(&path) {
                     for f in files.flatten() {
                         if f.path().extension().is_some_and(|e| e == "jsonl") {
                             sessions += 1;
-                            if let Some(m) = f.metadata().ok().and_then(|m| m.modified().ok()) {
-                                let m: DateTime<Utc> = m.into();
-                                newest = Some(newest.map_or(m, |n: DateTime<Utc>| n.max(m)));
-                            }
                         }
                     }
                 }
@@ -397,7 +390,6 @@ impl SessionConnector {
                     label: project_label(&path, &name),
                     path: path.to_string_lossy().into_owned(),
                     sessions,
-                    newest: newest.map(|d| d.to_rfc3339()),
                 });
             }
         }
