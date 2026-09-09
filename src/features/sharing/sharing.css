@@ -1,0 +1,139 @@
+/* Sharing (MCP) settings tab. Reuses the shared .settings-* primitives; these
+   are the sharing-specific bits (tunnel URL row, one-time secret box, category
+   chips, token list). */
+
+.sharing-hint {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid #e1e4db;
+  border-radius: 10px;
+  background: #f7f8f3;
+  color: #62675d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sharing-hint code {
+  background: #eceee7;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.sharing-url {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.sharing-url code {
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid #d9dcd2;
+  border-radius: 9px;
+  background: #fff;
+  color: #252923;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sharing-url button {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 9px 15px;
+}
+
+.sharing-secret {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #cddcc4;
+  border-radius: 12px;
+  background: #f2f6f0;
+}
+.sharing-secret > p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #3a3f37;
+  line-height: 1.6;
+}
+.sharing-secret em {
+  color: #9a493c;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.sharing-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.sharing-categories legend {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 0;
+  font-size: 13px;
+  font-weight: 550;
+  color: #3a3f37;
+}
+.sharing-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid #d9dcd2;
+  border-radius: 999px;
+  background: #fff;
+  color: #252923;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sharing-cat.is-selected {
+  border-color: #365d4b;
+  background: #e6edde;
+  color: #365d4b;
+}
+.sharing-cat input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #365d4b;
+}
+
+.sharing-tokens {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid #e1e4db;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+.sharing-tokens li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 21px;
+  border-bottom: 1px solid #eceee7;
+}
+.sharing-tokens li:last-child {
+  border-bottom: 0;
+}
+.sharing-tokens strong {
+  font-size: 14px;
+}
+.sharing-token-cats {
+  display: block;
+  margin-top: 4px;
+  color: #777b72;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sharing-tokens button {
+  flex-shrink: 0;
+  font-size: 12px;
+  padding: 8px 14px;
+}

@@ -11,6 +11,7 @@ beforeEach(() => {
   vi.mocked(ipc.getConfig).mockResolvedValue({
     transfer_policy: "MaskAndMinimize",
     server_enabled: false,
+    sharing_enabled: false,
     llm_provider: "claude-cli",
     llm_model: "test-model",
     llm_base_url: null,
@@ -53,7 +54,7 @@ describe("settings", () => {
   it("keeps the stored key when the field is left blank", async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.getConfig).mockResolvedValue({
-      transfer_policy: "MaskAndMinimize", server_enabled: false,
+      transfer_policy: "MaskAndMinimize", server_enabled: false, sharing_enabled: false,
       llm_provider: "anthropic", llm_model: "claude-opus-5", llm_base_url: null, llm_binary: null,
       llm_label: "claude-opus-5 (Anthropic)", has_api_key: true,
     });

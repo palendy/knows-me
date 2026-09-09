@@ -3,6 +3,7 @@ import type { ClaudeInstall, ConfigDto, LlmProvider, TransferPolicy, TransferRec
 import { ipc } from "../../shared/ipc";
 import { SourcesView } from "../sources/SourcesView";
 import type { SourcesApi } from "../sources/api";
+import { SharingSettings } from "../sharing/SharingSettings";
 import "./settings.css";
 
 const POLICIES: { value: TransferPolicy; label: string; desc: string }[] = [
@@ -20,9 +21,9 @@ const PROVIDERS: { value: LlmProvider; label: string; desc: string; needsKey: bo
 // set of aliases (the selected install's own configured model is added on top).
 const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
 
-export type SettingsTab = "general" | "sources" | "transfers";
+export type SettingsTab = "general" | "sources" | "sharing" | "transfers";
 const TABS: { id: SettingsTab; title: string }[] = [
-  { id: "general", title: "일반" }, { id: "sources", title: "연결 소스" }, { id: "transfers", title: "전송 기록" },
+  { id: "general", title: "일반" }, { id: "sources", title: "연결 소스" }, { id: "sharing", title: "공유" }, { id: "transfers", title: "전송 기록" },
 ];
 
 export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngested }: { onLock: () => void; initialTab?: SettingsTab; sourcesApi: SourcesApi; onIngested?: () => void }) {
@@ -191,6 +192,7 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
         <section className="settings-lock"><div><h3>보관함 잠금</h3><p>다시 열 때 비밀번호를 입력해야 합니다.</p></div><button className="secondary" onClick={() => void lock()} disabled={busy}>지금 잠그기</button></section>
       </div>}
       {tab === "sources" && <SourcesView api={sourcesApi} onIngested={onIngested} />}
+      {tab === "sharing" && <SharingSettings />}
       {tab === "transfers" && <section className="settings-transfer-section"><div className="settings-block-title"><h3>기기 밖으로 전달된 기록</h3><p>AI 요청에 사용된 모델과 전송 내용을 확인합니다.</p></div>
         {loading ? <p className="settings-empty">전송 기록을 불러오고 있습니다.</p> : transfers.length === 0 ? <div className="settings-empty"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M7 3h10v5l3 4v9H4v-9l3-4Z"/><path d="M4 14h5l1 3h4l1-3h5M7 8h10"/></svg><h4>아직 전송된 기록이 없어요</h4><p>클라우드 AI에 요청을 보내면 여기에 기록됩니다.</p></div> : <ul className="settings-transfer-list">{transfers.map((t, i) => <li key={`${t.at}-${i}`}><div className="settings-transfer-top"><strong>{t.purpose}</strong><time dateTime={t.at}>{new Date(t.at).toLocaleString("ko-KR")}</time></div><p className="settings-transfer-meta">{t.model} · {t.bytes_sent.toLocaleString("ko-KR")} bytes</p><p className="settings-transfer-preview">{t.masked_preview}</p></li>)}</ul>}
       </section>}

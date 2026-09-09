@@ -220,6 +220,8 @@ export type LlmProvider = "claude-cli" | "anthropic" | "openai";
 export interface AppConfig {
   transfer_policy: TransferPolicy;
   server_enabled: boolean;
+  /** Whether the sharing (MCP) servers are enabled (owner-loopback + shared). */
+  sharing_enabled: boolean;
   /** Backend selector: local Claude Code CLI, Anthropic HTTP, or OpenAI-compatible. */
   llm_provider: LlmProvider;
   /** Model id sent to the selected provider. */
@@ -272,4 +274,35 @@ export interface TransferRecord {
   model: string;
   masked_preview: string;
   bytes_sent: number;
+}
+
+// --- Sharing (MCP) ---------------------------------------------------------
+
+/** Runtime sharing status from `share_status`. */
+export interface ShareStatus {
+  /** Config flag: whether the MCP servers should run this session. */
+  enabled: boolean;
+  /** Owner-loopback listener port (step ⓐ), or null when not running. */
+  owner_port: number | null;
+  /** Bearer-only shared listener port (step ⓑ), or null when not running. */
+  shared_port: number | null;
+  /** Public tunnel URL fronting the shared listener, or null when no tunnel is up. */
+  tunnel_url: string | null;
+  /** Whether a cloudflared binary is runnable — distinguishes "tunnel off" from
+   * "can't tunnel". */
+  cloudflared_installed: boolean;
+}
+
+/** A freshly issued consumer token. `secret` is shown **once** — it is never
+ * recoverable, so the UI must surface it immediately. */
+export interface IssuedShareToken {
+  id: string;
+  secret: string;
+}
+
+/** A live token's public metadata (never the secret). */
+export interface ShareTokenInfo {
+  id: string;
+  granted: string[];
+  issued_at: IsoDateTime;
 }
