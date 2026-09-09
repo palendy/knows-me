@@ -67,22 +67,30 @@ impl AppState {
 
     /// Persist the given config (encrypted) and commit it in memory on success.
     /// Requires the app to be unlocked (the store needs the key).
+    ///
+    /// Mirrors the LLM selection to the process environment so the gateway's
+    /// `from_env` paths pick up the change on the next client build — see
+    /// [`AppConfig::apply_to_env`]. Only the persisted non-secret fields go to
+    /// the environment; the API key is the desktop shell's responsibility.
     pub async fn save_config(&self, next: AppConfig) -> Result<()> {
         let bytes = serde_json::to_vec(&next)
             .map_err(|e| crate::core::error::AppError::Serde(e.to_string()))?;
         self.store.put(APP_NS, CONFIG_KEY, &bytes).await?;
+        next.apply_to_env();
         *self.config.write().expect("config lock poisoned") = next;
         Ok(())
     }
 
     /// Load persisted config after unlock; falls back to the default silently if
-    /// none was stored yet.
+    /// none was stored yet. Either way the resulting LLM selection is applied to
+    /// the process environment so a saved provider/model wins over `.env`.
     pub async fn restore_config(&self) {
         if let Ok(Some(bytes)) = self.store.get(APP_NS, CONFIG_KEY).await {
             if let Ok(cfg) = serde_json::from_slice::<AppConfig>(&bytes) {
                 *self.config.write().expect("config lock poisoned") = cfg;
             }
         }
+        self.config().apply_to_env();
     }
 
     /// Convenience: current transfer policy.

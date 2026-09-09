@@ -53,6 +53,8 @@ async fn setup_password(
     // First-run leaves the vault unlocked (KeyManager::setup), so the app routes
     // straight into the unlocked shell — assemble the services now, exactly as
     // unlock does, or every tab would greet a new user with "locked".
+    let provider = state.config().llm_provider;
+    apply_api_key_to_env(state.inner(), &provider).await?;
     services.activate(state.inner()).await;
     Ok(())
 }
@@ -66,6 +68,11 @@ async fn unlock(
     commands::unlock(state.inner(), &password)
         .await
         .map_err(err)?;
+    // `commands::unlock` restored the config and mirrored its non-secret LLM
+    // selection to the environment; now push the stored API key too (the store
+    // is readable) before building the client that reads it.
+    let provider = state.config().llm_provider;
+    apply_api_key_to_env(state.inner(), &provider).await?;
     // Assemble the U3/U4 services now that the store is readable.
     services.activate(state.inner()).await;
     Ok(())
@@ -81,14 +88,127 @@ async fn lock(
     Ok(())
 }
 
+/// The config the settings screen reads. It carries the raw persisted fields
+/// (so the edit form shows what was actually saved) plus two derived, read-only
+/// signals: `llm_label` — the model *actually* in effect right now (provider +
+/// key + env), and `has_api_key` — whether a key is stored for the current HTTP
+/// provider, so the form can show "saved" without ever echoing the secret back.
+#[derive(serde::Serialize)]
+struct ConfigDto {
+    #[serde(flatten)]
+    config: AppConfig,
+    /// Human-readable description of the live backend, e.g.
+    /// "claude-sonnet-5 (로컬 Claude Code)".
+    llm_label: String,
+    /// Whether an API key is stored for the selected HTTP provider. Never the
+    /// key itself — secrets are write-only across the IPC boundary.
+    has_api_key: bool,
+}
+
+/// Encrypted-store location for the LLM API keys. Kept out of `AppConfig` (which
+/// is non-secret and JSON-serialized to the frontend) so a key never crosses the
+/// IPC boundary or lands in a config snapshot.
+const LLM_NS: &str = "llm";
+
+/// The store key holding the API secret for one HTTP provider.
+fn api_key_slot(provider: &str) -> Option<&'static str> {
+    match provider.trim().to_ascii_lowercase().as_str() {
+        "openai" => Some("openai_api_key"),
+        "anthropic" => Some("anthropic_api_key"),
+        // The CLI backend carries its own auth — no key to store.
+        _ => None,
+    }
+}
+
+/// Read the stored API key for `provider`, if any. Returns `None` for the CLI
+/// backend (no key slot) and when nothing is stored yet.
+async fn load_api_key(state: &AppState, provider: &str) -> Result<Option<String>, String> {
+    use knows_me_core::core::traits::EncryptedStore;
+    let Some(slot) = api_key_slot(provider) else {
+        return Ok(None);
+    };
+    let bytes = state.store().get(LLM_NS, slot).await.map_err(err)?;
+    Ok(bytes.map(|b| String::from_utf8_lossy(&b).into_owned()))
+}
+
+/// Push the stored API key for `provider` into the process environment (or clear
+/// it when none is stored) so the gateway's `from_env` client build sees it.
+/// Non-secret selection is applied separately by `AppConfig::apply_to_env`.
+async fn apply_api_key_to_env(state: &AppState, provider: &str) -> Result<(), String> {
+    let (anthropic, openai) = match provider.trim().to_ascii_lowercase().as_str() {
+        "openai" => (None, load_api_key(state, "openai").await?),
+        "anthropic" => (load_api_key(state, "anthropic").await?, None),
+        _ => (None, None),
+    };
+    set_or_clear_env("ANTHROPIC_API_KEY", anthropic.as_deref());
+    set_or_clear_env("OPENAI_API_KEY", openai.as_deref());
+    Ok(())
+}
+
+fn set_or_clear_env(var: &str, value: Option<&str>) {
+    match value.map(str::trim).filter(|v| !v.is_empty()) {
+        Some(v) => std::env::set_var(var, v),
+        None => std::env::remove_var(var),
+    }
+}
+
 #[tauri::command]
-fn get_config(state: tauri::State<'_, AppState>) -> AppConfig {
-    let mut config = state.config();
-    // The stored `llm_model` is a provider-agnostic default; surface the model
-    // actually in effect (provider + key + env) so the settings screen doesn't
-    // claim "claude-opus-5" while a cloud call really hits Gemini/OpenRouter.
-    config.llm_model = knows_me_core::llm::active_model_label();
-    config
+async fn get_config(state: tauri::State<'_, AppState>) -> CmdResult<ConfigDto> {
+    let config = state.config();
+    let has_api_key = load_api_key(state.inner(), &config.llm_provider)
+        .await?
+        .is_some_and(|k| !k.trim().is_empty());
+    Ok(ConfigDto {
+        llm_label: knows_me_core::llm::active_model_label(),
+        has_api_key,
+        config,
+    })
+}
+
+/// Persist the LLM selection and (optionally) its API key, then rebuild the
+/// live services so the change takes effect immediately.
+///
+/// `api_key` is write-only: `Some` replaces the stored secret, `None` leaves it
+/// untouched (so re-saving the form without retyping the key keeps it). The key
+/// goes to the encrypted store, never into `AppConfig`.
+#[tauri::command]
+async fn set_llm_config(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    provider: String,
+    model: String,
+    base_url: Option<String>,
+    api_key: Option<String>,
+) -> CmdResult<()> {
+    use knows_me_core::core::traits::EncryptedStore;
+
+    // 1. Store the key first (if one was supplied), so the env reflects it.
+    if let (Some(slot), Some(key)) = (api_key_slot(&provider), api_key.as_deref()) {
+        // A blank submission clears the stored key rather than saving "".
+        if key.trim().is_empty() {
+            state.store().delete(LLM_NS, slot).await.map_err(err)?;
+        } else {
+            state
+                .store()
+                .put(LLM_NS, slot, key.trim().as_bytes())
+                .await
+                .map_err(err)?;
+        }
+    }
+
+    // 2. Persist the non-secret selection (also mirrors it to the environment).
+    let mut cfg = state.config();
+    cfg.llm_provider = provider.clone();
+    cfg.llm_model = model;
+    cfg.llm_base_url = base_url.map(|u| u.trim().to_string()).filter(|u| !u.is_empty());
+    state.save_config(cfg).await.map_err(err)?;
+
+    // 3. Reflect the (possibly just-changed) key for the selected provider.
+    apply_api_key_to_env(state.inner(), &provider).await?;
+
+    // 4. Rebuild the services so the next cloud call uses the new client.
+    services.activate(state.inner()).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -394,6 +514,7 @@ fn main() {
             lock,
             get_config,
             set_transfer_policy,
+            set_llm_config,
             set_server_enabled,
             list_transfers,
             local_api_status,

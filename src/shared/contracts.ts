@@ -209,10 +209,38 @@ export interface AppStatus {
   unlocked: boolean;
 }
 
+/** Which LLM backend the shared gateway drives. */
+export type LlmProvider = "claude-cli" | "anthropic" | "openai";
+
 export interface AppConfig {
   transfer_policy: TransferPolicy;
   server_enabled: boolean;
+  /** Backend selector: local Claude Code CLI, Anthropic HTTP, or OpenAI-compatible. */
+  llm_provider: LlmProvider;
+  /** Model id sent to the selected provider. */
   llm_model: string;
+  /** Base URL override for the HTTP providers (null = provider default). */
+  llm_base_url: string | null;
+}
+
+/**
+ * What `get_config` returns: the persisted {@link AppConfig} fields (flattened)
+ * plus two read-only signals for the settings screen.
+ */
+export interface ConfigDto extends AppConfig {
+  /** The model actually in effect right now, e.g. "claude-sonnet-5 (로컬 Claude Code)". */
+  llm_label: string;
+  /** Whether an API key is stored for the selected HTTP provider (never the key itself). */
+  has_api_key: boolean;
+}
+
+/** The editable LLM settings the frontend sends to `set_llm_config`. */
+export interface LlmConfigInput {
+  provider: LlmProvider;
+  model: string;
+  base_url: string | null;
+  /** Write-only: omit (null) to keep the stored key, "" to clear it. */
+  api_key: string | null;
 }
 
 /** One recorded outbound cloud-LLM call (masked content only). */

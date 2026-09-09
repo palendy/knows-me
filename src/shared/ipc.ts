@@ -8,6 +8,8 @@
 import type {
   AppConfig,
   AppStatus,
+  ConfigDto,
+  LlmConfigInput,
   TransferPolicy,
   TransferRecord,
 } from "./contracts";
@@ -37,9 +39,12 @@ export const ipc = {
   setupPassword: (password: string) => call<void>("setup_password", { password }),
   unlock: (password: string) => call<void>("unlock", { password }),
   lock: () => call<void>("lock"),
-  getConfig: () => call<AppConfig>("get_config"),
+  getConfig: () => call<ConfigDto>("get_config"),
   setTransferPolicy: (policy: TransferPolicy) =>
     call<void>("set_transfer_policy", { policy }),
+  setLlmConfig: (input: LlmConfigInput) =>
+    call<void>("set_llm_config", { ...input }),
+  setServerEnabled: (on: boolean) => call<void>("set_server_enabled", { on }),
   listTransfers: () => call<TransferRecord[]>("list_transfers"),
 };
 
@@ -49,17 +54,40 @@ const LS = {
   initialized: "knowsme.mock.initialized",
   password: "knowsme.mock.password",
   config: "knowsme.mock.config",
+  // Not secure — the mock only needs to remember whether a key was "saved" so
+  // the standalone UI can show the same states as the real, encrypted store.
+  apiKeys: "knowsme.mock.apiKeys",
 };
 
 let mockUnlocked = false;
 
 function defaultConfig(): AppConfig {
-  return { transfer_policy: "MaskAndMinimize", server_enabled: false, llm_model: "claude-opus-5" };
+  return {
+    transfer_policy: "MaskAndMinimize",
+    server_enabled: false,
+    llm_provider: "claude-cli",
+    llm_model: "claude-sonnet-5",
+    llm_base_url: null,
+  };
 }
 
 function readConfig(): AppConfig {
   const raw = localStorage.getItem(LS.config);
-  return raw ? (JSON.parse(raw) as AppConfig) : defaultConfig();
+  // Merge over the default so a config saved before these fields existed
+  // (older mock storage) still returns a complete object.
+  return raw ? { ...defaultConfig(), ...(JSON.parse(raw) as AppConfig) } : defaultConfig();
+}
+
+/** The provider labels the real backend produces, mirrored for the mock. */
+function mockLabel(cfg: AppConfig): string {
+  switch (cfg.llm_provider) {
+    case "openai":
+      return `${cfg.llm_model} (${cfg.llm_base_url?.includes("openrouter") ? "OpenRouter" : "OpenAI"})`;
+    case "anthropic":
+      return `${cfg.llm_model} (Anthropic)`;
+    default:
+      return `${cfg.llm_model} (로컬 Claude Code)`;
+  }
 }
 
 async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -83,12 +111,44 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     case "lock":
       mockUnlocked = false;
       return undefined as T;
-    case "get_config":
-      return readConfig() as T;
+    case "get_config": {
+      const cfg = readConfig();
+      const keys = JSON.parse(localStorage.getItem(LS.apiKeys) ?? "{}");
+      return {
+        ...cfg,
+        llm_label: mockLabel(cfg),
+        has_api_key: Boolean(keys[cfg.llm_provider]),
+      } as T;
+    }
     case "set_transfer_policy": {
       if (!mockUnlocked) throw new Error("locked: unlock required");
       const cfg = readConfig();
       cfg.transfer_policy = args?.policy as TransferPolicy;
+      localStorage.setItem(LS.config, JSON.stringify(cfg));
+      return undefined as T;
+    }
+    case "set_llm_config": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const cfg = readConfig();
+      cfg.llm_provider = args?.provider as AppConfig["llm_provider"];
+      cfg.llm_model = String(args?.model ?? "");
+      const base = args?.base_url as string | null | undefined;
+      cfg.llm_base_url = base && base.trim() ? base.trim() : null;
+      localStorage.setItem(LS.config, JSON.stringify(cfg));
+      // Write-only key: only touch storage when a value was supplied.
+      const key = args?.api_key as string | null | undefined;
+      if (key !== null && key !== undefined) {
+        const keys = JSON.parse(localStorage.getItem(LS.apiKeys) ?? "{}");
+        if (key.trim()) keys[cfg.llm_provider] = true;
+        else delete keys[cfg.llm_provider];
+        localStorage.setItem(LS.apiKeys, JSON.stringify(keys));
+      }
+      return undefined as T;
+    }
+    case "set_server_enabled": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const cfg = readConfig();
+      cfg.server_enabled = Boolean(args?.on);
       localStorage.setItem(LS.config, JSON.stringify(cfg));
       return undefined as T;
     }

@@ -576,14 +576,35 @@ pub struct Credential(pub serde_json::Value);
 // ---------------------------------------------------------------------------
 
 /// Persisted, non-secret application configuration held in `AppState`.
+///
+/// The LLM fields mirror the environment variables the `llm` gateway reads
+/// (`LLM_PROVIDER`, `*_MODEL`, `*_BASE_URL`). They are applied to the process
+/// environment on unlock so the existing `from_env` selection path picks them
+/// up unchanged — see [`AppConfig::apply_to_env`]. The API key is a secret and
+/// is never stored here; it lives in the encrypted store under the `llm`
+/// namespace (owned by the desktop shell).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     /// What may be sent to the cloud LLM (default: mask & minimize).
     pub transfer_policy: TransferPolicy,
     /// Whether the local persona API server is enabled (U4 owns the server).
     pub server_enabled: bool,
+    /// Which LLM backend to drive: `claude-cli`, `anthropic`, or `openai`.
+    #[serde(default = "default_provider")]
+    pub llm_provider: String,
     /// Cloud LLM model id used by the shared gateway.
     pub llm_model: String,
+    /// Optional base URL override for the HTTP providers (e.g. an OpenAI-
+    /// compatible gateway such as OpenRouter). Ignored by the CLI backend.
+    #[serde(default)]
+    pub llm_base_url: Option<String>,
+}
+
+/// The backend the app drives when nothing has been configured yet. Matches the
+/// `llm` gateway's own default so an unconfigured install runs the local Claude
+/// Code the owner already has, with no API key.
+fn default_provider() -> String {
+    "claude-cli".to_string()
 }
 
 impl Default for AppConfig {
@@ -591,7 +612,56 @@ impl Default for AppConfig {
         Self {
             transfer_policy: TransferPolicy::default(),
             server_enabled: false,
-            llm_model: "claude-opus-5".to_string(),
+            llm_provider: default_provider(),
+            // The CLI backend's own default model. Kept in sync with
+            // `ClaudeCliConfig::default` so the settings screen and the client
+            // agree before the owner picks a model.
+            llm_model: "claude-sonnet-5".to_string(),
+            llm_base_url: None,
+        }
+    }
+}
+
+impl AppConfig {
+    /// Push the LLM selection into the process environment so the gateway's
+    /// `from_env` paths ([`crate::llm::build_client`], [`active_model_label`])
+    /// resolve to *this* config rather than whatever `.env` shipped.
+    ///
+    /// The API key is not handled here — the desktop shell sets
+    /// `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from the encrypted store before
+    /// calling this, and clearing them when absent is its job too. This only
+    /// owns the non-secret selection (provider, model, base URL) and mirrors it
+    /// to the variable each provider reads.
+    ///
+    /// [`active_model_label`]: crate::llm::active_model_label
+    pub fn apply_to_env(&self) {
+        let provider = self.llm_provider.trim();
+        std::env::set_var("LLM_PROVIDER", provider);
+
+        match provider.to_ascii_lowercase().as_str() {
+            "openai" => {
+                std::env::set_var("OPENAI_MODEL", &self.llm_model);
+                Self::set_or_clear("OPENAI_BASE_URL", self.llm_base_url.as_deref());
+            }
+            "claude-cli" | "claude" => {
+                std::env::set_var("CLAUDE_CLI_MODEL", &self.llm_model);
+            }
+            // Anthropic HTTP is the fallback provider in the gateway, so treat
+            // any other value the same way rather than dropping the model.
+            _ => {
+                std::env::set_var("ANTHROPIC_MODEL", &self.llm_model);
+                Self::set_or_clear("ANTHROPIC_BASE_URL", self.llm_base_url.as_deref());
+            }
+        }
+    }
+
+    /// Set `var` to `value`, or remove it entirely when `value` is `None`/blank,
+    /// so switching back to a provider's default base URL doesn't leave a stale
+    /// override behind in the process environment.
+    fn set_or_clear(var: &str, value: Option<&str>) {
+        match value.map(str::trim).filter(|v| !v.is_empty()) {
+            Some(v) => std::env::set_var(var, v),
+            None => std::env::remove_var(var),
         }
     }
 }
