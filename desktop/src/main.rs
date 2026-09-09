@@ -17,7 +17,7 @@
 
 mod services;
 
-use knows_me_core::core::commands::{self, AppStatus};
+use knows_me_core::core::commands::{self, AppStatus, SourceStatus};
 use knows_me_core::core::types::{
     AnswerInput, AnswerResult, AppConfig, ChatTurn, DashboardDto, Draft, DraftRequest, GraphDto,
     GraphFilter,
@@ -207,6 +207,40 @@ async fn queue_answer(
         .map_err(err)
 }
 
+// --- U2: source connection -----------------------------------------------------
+
+/// The connection status of every catalog source (credential fields + whether
+/// each is connected/ready). Requires an unlocked vault since it reads the
+/// encrypted credential store. Secret values are never returned.
+#[tauri::command]
+async fn list_sources(state: tauri::State<'_, AppState>) -> CmdResult<Vec<SourceStatus>> {
+    commands::list_sources(state.inner()).await.map_err(err)
+}
+
+/// Store the credential for a source (connect). `values` is the source-specific
+/// field map declared by its `FieldSpec`s.
+#[tauri::command]
+async fn connect_source(
+    state: tauri::State<'_, AppState>,
+    source: SourceKind,
+    values: serde_json::Value,
+) -> CmdResult<()> {
+    commands::connect_source(state.inner(), source, values)
+        .await
+        .map_err(err)
+}
+
+/// Remove a source's credential (disconnect). Idempotent.
+#[tauri::command]
+async fn disconnect_source(
+    state: tauri::State<'_, AppState>,
+    source: SourceKind,
+) -> CmdResult<()> {
+    commands::disconnect_source(state.inner(), source)
+        .await
+        .map_err(err)
+}
+
 // --- U2: collection -----------------------------------------------------------
 
 /// What one triggered sync produced. Combines the collection counts
@@ -277,6 +311,9 @@ fn main() {
             persona_draft,
             queue_list,
             queue_answer,
+            list_sources,
+            connect_source,
+            disconnect_source,
             trigger_ingest,
         ])
         .run(tauri::generate_context!())

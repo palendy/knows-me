@@ -9,8 +9,10 @@ pub mod file;
 pub mod gmail;
 pub mod notion;
 pub mod session;
+pub mod spec;
 
 pub use file::FileConnector;
 pub use gmail::GmailConnector;
 pub use notion::NotionConnector;
 pub use session::SessionConnector;
+pub use spec::{credential_satisfies, credential_spec, FieldSpec};

@@ -26,6 +26,10 @@ default = []
 # default so the core builds/tests fully offline; the canned client is used
 # otherwise. Turn on with `--features llm-http`.
 llm-http = ["dep:reqwest"]
+# Enables the real Notion connector (Notion HTTP API). Off by default so the
+# core builds/tests offline with the skeleton connector; turn on with
+# `--features notion-http`. Shares the `reqwest` dependency with `llm-http`.
+notion-http = ["dep:reqwest"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

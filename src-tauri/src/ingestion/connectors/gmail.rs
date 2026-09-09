@@ -62,6 +62,9 @@ mod tests {
         async fn load(&self, _s: SourceKind) -> Result<Option<Credential>> {
             Ok(None)
         }
+        async fn delete(&self, _s: SourceKind) -> Result<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]

@@ -11,6 +11,7 @@ use crate::core::app_state::AppState;
 use crate::core::error::Result;
 use crate::core::traits::{CredentialStore, KeyManager};
 use crate::core::types::{AppConfig, Credential, SourceKind, TransferPolicy, TransferRecord};
+use crate::ingestion::connectors::spec::{credential_satisfies, credential_spec, FieldSpec};
 
 /// Snapshot the onboarding UI uses to decide which screen to show.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -77,6 +78,75 @@ pub async fn store_credential(
 /// Load a stored credential (decrypted in memory only) (US-7.3).
 pub async fn load_credential(state: &AppState, source: SourceKind) -> Result<Option<Credential>> {
     state.store().load(source).await
+}
+
+/// Remove a stored credential — disconnect a source (US-7.3). Idempotent.
+pub async fn delete_credential(state: &AppState, source: SourceKind) -> Result<()> {
+    state.store().delete(source).await
+}
+
+// --- U2: source connection catalog ----------------------------------------
+
+/// One source's connection status for the sources screen. Secret values are
+/// never included — only whether the required fields are filled — so a stored
+/// token cannot leak back through this read (write-only credential handling).
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceStatus {
+    pub kind: SourceKind,
+    /// The credential fields this source declares (form template for the UI).
+    pub fields: Vec<FieldSpec>,
+    /// A credential is stored for this source.
+    pub connected: bool,
+    /// Every required field is satisfied → the source can be collected.
+    pub ready: bool,
+}
+
+/// Which sources the app can connect. The order is the display order.
+const CATALOG: [SourceKind; 4] = [
+    SourceKind::Session,
+    SourceKind::File,
+    SourceKind::Notion,
+    SourceKind::Gmail,
+];
+
+/// The connection status of every catalog source. Reads (not writes) the
+/// encrypted credential store, so it requires an unlocked vault.
+pub async fn list_sources(state: &AppState) -> Result<Vec<SourceStatus>> {
+    let store = state.store();
+    let mut out = Vec::with_capacity(CATALOG.len());
+    for kind in CATALOG {
+        let cred = store.load(kind).await?;
+        let fields = credential_spec(kind);
+        out.push(SourceStatus {
+            kind,
+            // Credential-less sources are never "connected" in the credential
+            // sense; their readiness comes from having no required fields.
+            connected: cred.is_some(),
+            ready: credential_satisfies(kind, cred.as_ref()),
+            fields,
+        });
+    }
+    Ok(out)
+}
+
+/// Store the credential for a source (connect). Rejects sources that declare no
+/// fields — Session/File are always ready and take no credentials.
+pub async fn connect_source(
+    state: &AppState,
+    source: SourceKind,
+    values: serde_json::Value,
+) -> Result<()> {
+    if credential_spec(source).is_empty() {
+        return Err(crate::core::error::AppError::InvalidInput(format!(
+            "{source:?} takes no credentials"
+        )));
+    }
+    state.store().store(source, Credential(values)).await
+}
+
+/// Remove a source's credential (disconnect). Idempotent.
+pub async fn disconnect_source(state: &AppState, source: SourceKind) -> Result<()> {
+    state.store().delete(source).await
 }
 
 /// The transfer-transparency log: what has been sent to the cloud LLM (NFR-2).
@@ -153,5 +223,79 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(loaded.0, cred.0);
+    }
+
+    #[tokio::test]
+    async fn list_sources_reflects_connection_state() {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path());
+        setup_password(&state, "pw-pw-pw").await.unwrap();
+
+        let before = list_sources(&state).await.unwrap();
+        let notion = before
+            .iter()
+            .find(|s| s.kind == SourceKind::Notion)
+            .unwrap();
+        assert!(!notion.connected);
+        assert!(!notion.ready);
+        assert!(!notion.fields.is_empty());
+        // Credential-less sources are ready without being "connected".
+        let session = before
+            .iter()
+            .find(|s| s.kind == SourceKind::Session)
+            .unwrap();
+        assert!(session.ready);
+        assert!(session.fields.is_empty());
+
+        connect_source(
+            &state,
+            SourceKind::Notion,
+            serde_json::json!({ "token": "secret_x" }),
+        )
+        .await
+        .unwrap();
+        let after = list_sources(&state).await.unwrap();
+        let notion = after.iter().find(|s| s.kind == SourceKind::Notion).unwrap();
+        assert!(notion.connected);
+        assert!(notion.ready);
+    }
+
+    #[tokio::test]
+    async fn connect_then_disconnect_source() {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path());
+        setup_password(&state, "pw-pw-pw").await.unwrap();
+
+        connect_source(
+            &state,
+            SourceKind::Gmail,
+            serde_json::json!({ "address": "me@gmail.com", "app_password": "pw" }),
+        )
+        .await
+        .unwrap();
+        assert!(load_credential(&state, SourceKind::Gmail)
+            .await
+            .unwrap()
+            .is_some());
+
+        disconnect_source(&state, SourceKind::Gmail).await.unwrap();
+        assert!(load_credential(&state, SourceKind::Gmail)
+            .await
+            .unwrap()
+            .is_none());
+        // Idempotent.
+        disconnect_source(&state, SourceKind::Gmail).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn connect_rejects_credential_less_source() {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path());
+        setup_password(&state, "pw-pw-pw").await.unwrap();
+        assert!(
+            connect_source(&state, SourceKind::Session, serde_json::json!({}))
+                .await
+                .is_err()
+        );
     }
 }

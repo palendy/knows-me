@@ -32,6 +32,9 @@ pub trait EncryptedStore: Send + Sync {
 pub trait CredentialStore: Send + Sync {
     async fn store(&self, source: SourceKind, cred: Credential) -> Result<()>;
     async fn load(&self, source: SourceKind) -> Result<Option<Credential>>;
+    /// Remove a stored credential (disconnect). Idempotent — deleting an absent
+    /// credential succeeds.
+    async fn delete(&self, source: SourceKind) -> Result<()>;
 }
 
 /// Password-based key lifecycle. The plaintext key is never persisted.
