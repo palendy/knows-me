@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>knows-me · 팀 지식 MCP 라이브 데모</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header class="head">
+        <div class="mark">K</div>
+        <div>
+          <h1>knows-me — 팀 지식에 물어보기</h1>
+          <p class="sub">
+            팀원이 <b>공개(부여)한 범주</b> 안에서만, 그 사람의 <b>실행 중인 앱</b>에
+            에이전트가 MCP로 질의해 답합니다. 권한 없는 주제는 존재조차 보이지 않습니다.
+          </p>
+        </div>
+      </header>
+
+      <section class="owner-bar">
+        <span class="label">누구에게 물어볼까요?</span>
+        <div id="owners" class="owners" role="tablist" aria-label="오너 선택"></div>
+      </section>
+
+      <section id="chat" class="chat" aria-live="polite"></section>
+
+      <section class="composer">
+        <div id="suggestions" class="suggestions"></div>
+        <form id="form" class="input-row" autocomplete="off">
+          <input
+            id="input"
+            type="text"
+            placeholder="예) 어떤 범주를 물어볼 수 있어? / 배포 규칙 있어?"
+            aria-label="질문 입력"
+          />
+          <button id="send" type="submit">보내기</button>
+        </form>
+        <p class="hint">권한 없는 주제를 물으면 “공개 범위에 없습니다”로 답합니다 — 접근제어 시연 포인트.</p>
+      </section>
+
+      <details class="connect">
+        <summary>고급 — 내 Claude Code에 직접 연결하기</summary>
+        <p class="connect-note">
+          아래 한 줄을 실행하면 당신의 에이전트가 이 팀원의 지식을 직접 질의합니다.
+          <b>토큰은 데모용이며 종료 후 폐기됩니다.</b>
+        </p>
+        <div id="connect-list" class="connect-list"></div>
+      </details>
+
+      <footer class="foot">read-only MCP · 토큰 스코프 접근제어 · 데이터는 오너 기기 밖으로 안 나갑니다</footer>
+    </main>
+    <script src="./app.js" type="module"></script>
+  </body>
+</html>

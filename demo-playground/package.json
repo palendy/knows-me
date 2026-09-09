@@ -1,0 +1,7 @@
+{
+  "name": "knows-me-demo-playground",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "knows-me 라이브 데모: 심사자가 팀원의 실행 중인 지식에 MCP로 질의해보는 페이지 (의존성 없음, OpenRouter는 raw fetch)"
+}
