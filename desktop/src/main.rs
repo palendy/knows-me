@@ -618,6 +618,7 @@ fn main() {
     let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // Per-user encrypted data lives under the OS app-data directory.
             let data_dir = app.path().app_data_dir().expect("resolve app data dir");

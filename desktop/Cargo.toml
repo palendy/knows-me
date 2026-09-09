@@ -28,6 +28,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 knows-me-core = { path = "../src-tauri" }
 tauri = { version = "2", features = [] }
+# Open external links (the connect dialogs' "how to get a token" links) in the
+# owner's default browser. A bare <a target="_blank"> does nothing inside the
+# Tauri webview; this plugin bridges to the OS opener.
+tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["sync"] }
 # Command return types that are shaped here rather than in the core (e.g. the
 # ingest summary that merges an IngestReport with a ProcessReport).

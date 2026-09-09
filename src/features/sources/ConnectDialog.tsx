@@ -7,6 +7,7 @@
 // vault handling.
 
 import { useState } from "react";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
 import { messageOf } from "../u4-shared/view-state";
 
@@ -151,6 +152,28 @@ export function ConnectDialog({
           입력한 자격증명은 이 기기에 암호화되어 저장됩니다.
         </p>
 
+        {/* Secrets are write-only: once stored the backend never echoes them
+            back, so an already-connected source shows an empty form. Say so
+            explicitly, or it reads as "my token wasn't saved". */}
+        {source.connected && (
+          <div
+            style={{
+              background: "#eff6ff",
+              border: "1px solid #bfdbfe",
+              borderRadius: 8,
+              padding: "10px 12px",
+              margin: "12px 0",
+              fontSize: 12.5,
+              color: "#1e40af",
+              lineHeight: 1.6,
+            }}
+            role="status"
+          >
+            이미 연결되어 있습니다. 토큰은 안전하게 저장되어 있어 다시 표시되지
+            않습니다. 교체하려면 새 토큰을 입력해 다시 연결하세요.
+          </div>
+        )}
+
         {GUIDES[source.kind] && (
           <div
             style={{
@@ -172,13 +195,20 @@ export function ConnectDialog({
             {GUIDES[source.kind]!.link && (
               <a
                 href={GUIDES[source.kind]!.link!.href}
-                target="_blank"
+                // A bare target="_blank" does nothing in the Tauri webview —
+                // route the click through the OS opener so it lands in the
+                // owner's default browser.
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openUrl(GUIDES[source.kind]!.link!.href);
+                }}
                 rel="noreferrer noopener"
                 style={{
                   display: "inline-block",
                   marginTop: 8,
                   color: "#1463ff",
                   fontWeight: 600,
+                  cursor: "pointer",
                 }}
               >
                 {GUIDES[source.kind]!.link!.text} ↗
@@ -198,7 +228,11 @@ export function ConnectDialog({
             </span>
             <input
               type={f.secret ? "password" : "text"}
-              placeholder={f.placeholder}
+              placeholder={
+                f.secret && source.connected
+                  ? "••••••••  (교체하려면 새 토큰 입력)"
+                  : f.placeholder
+              }
               value={values[f.key] ?? ""}
               autoComplete={f.secret ? "new-password" : "off"}
               onChange={(e) =>
