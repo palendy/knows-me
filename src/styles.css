@@ -33,7 +33,10 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .workspace-label { margin: 46px 13px 13px; color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: space-between; }
 .workspace-label span { font-size: 8px; letter-spacing: 1.3px; }
 .tabs { display: flex; flex-direction: column; gap: 5px; }
-.tabs button[role='tab'] { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: transparent; color: #6c7269; font-weight: 500; text-align: left; transition: background-color .15s ease, color .15s ease; }
+.tabs button[role='tab'] { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: transparent; color: #6c7269; font-weight: 500; text-align: left; line-height: 1; transition: background-color .15s ease, color .15s ease; }
+/* Fixed label box so the icon/label baseline doesn't shift when the web font
+   (Pretendard) swaps in after first paint. */
+.tabs button[role='tab'] > span { display: inline-flex; align-items: center; line-height: 1; }
 .tabs button[role='tab']:hover { filter: none; }
 .tabs button[role='tab']:not([aria-selected='true']):hover { background: #e8ebe3; color: #3c4239; }
 .tabs button[role='tab'][aria-selected='true'] { background: #e0e7dc; color: #284734; font-weight: 650; }
