@@ -11,7 +11,9 @@ use crate::core::app_state::AppState;
 use crate::core::error::Result;
 use crate::core::traits::{CredentialStore, KeyManager};
 use crate::core::types::{AppConfig, Credential, SourceKind, TransferPolicy, TransferRecord};
-use crate::ingestion::connectors::spec::{credential_satisfies, credential_spec, FieldSpec};
+use crate::ingestion::connectors::spec::{
+    credential_satisfies, credential_spec, verify_credentials, FieldSpec,
+};
 
 /// Snapshot the onboarding UI uses to decide which screen to show.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,17 +133,23 @@ pub async fn list_sources(state: &AppState) -> Result<Vec<SourceStatus>> {
 
 /// Store the credential for a source (connect). Rejects sources that declare no
 /// fields — Session/File are always ready and take no credentials.
+///
+/// Before persisting, the credential is validated (required fields, plus a live
+/// handshake where the connector supports it) so a bad token is rejected up
+/// front instead of only surfacing on the first sync.
 pub async fn connect_source(
     state: &AppState,
     source: SourceKind,
     values: serde_json::Value,
-) -> Result<()> {
+) -> Result<String> {
     if credential_spec(source).is_empty() {
         return Err(crate::core::error::AppError::InvalidInput(format!(
             "{source:?} takes no credentials"
         )));
     }
-    state.store().store(source, Credential(values)).await
+    let note = verify_credentials(source, &values).await?;
+    state.store().store(source, Credential(values)).await?;
+    Ok(note)
 }
 
 /// Remove a source's credential (disconnect). Idempotent.

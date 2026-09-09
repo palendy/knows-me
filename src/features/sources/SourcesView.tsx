@@ -1,18 +1,22 @@
 // US-1.x — source collection.
 //
-// One screen to see which sources are connected, connect/disconnect the ones
-// that need credentials, and trigger a sync. The catalog (which sources exist,
-// what credential fields each needs) comes from the backend `list_sources`
-// command — this view only maps each kind to a human label/description and
-// renders the connection state. The sync counts are deliberately specific
-// ("12 collected, 5 facts, 4 questions") because "done" tells the owner nothing
-// about whether their data actually made it in.
+// A card catalog (modeled on alpha-agent-v3's skill grid) showing which sources
+// are connected, letting the owner connect/disconnect the credential-backed
+// ones, and triggering a sync. The catalog (which sources exist, what fields
+// each needs) comes from the backend `list_sources` command; this view maps
+// each kind to a label/icon and renders connection state.
+//
+// Display note: the backend's single `Session` source (Claude + Codex session
+// logs) is shown as *two* cards — Claude and Codex — so each agent reads as its
+// own connector. Both trigger the same `Session` sync since the backend does
+// not split them.
 
 import { useCallback, useEffect, useState } from "react";
 import type { SourceKind, SourceStatus } from "../../shared/contracts";
 import type { IngestSummary, SourcesApi } from "./api";
 import { messageOf } from "../u4-shared/view-state";
 import { ConnectDialog } from "./ConnectDialog";
+import "./sources.css";
 
 interface Props {
   api: SourcesApi;
@@ -20,42 +24,101 @@ interface Props {
   onIngested?: () => void;
 }
 
-/** Human-facing label + description per source kind (the backend spec carries
- * only the credential fields, not display copy). */
-const META: Record<SourceKind, { label: string; detail: string }> = {
-  Session: {
-    label: "에이전트 세션",
-    detail: "~/.claude/projects, ~/.codex/sessions 의 대화 기록 — 자격증명 불필요",
+/** A card as shown to the owner. `sourceKind` is what the backend collects for
+ * (Claude/Codex both map to `Session`); the rest is display. `comingSoon` cards
+ * are planned connectors with no backend yet — icon only, controls disabled. */
+interface CardModel {
+  id: string;
+  /** Absent for coming-soon cards (no backend source). */
+  sourceKind?: SourceKind;
+  label: string;
+  detail: string;
+  icon: string;
+  comingSoon?: boolean;
+}
+
+/** How each backend source expands into display cards. Session → Claude+Codex.
+ * Coming-soon cards (Confluence/Jira/Knox Mail) are shown dimmed as a roadmap. */
+const CARDS: CardModel[] = [
+  {
+    id: "claude",
+    sourceKind: "Session",
+    label: "Claude",
+    detail: "~/.claude/projects 의 대화 기록 — 자격증명 불필요",
+    icon: "/source-icons/claude.svg",
   },
-  File: {
+  {
+    id: "codex",
+    sourceKind: "Session",
+    label: "Codex",
+    detail: "~/.codex/sessions 의 대화 기록 — 자격증명 불필요",
+    icon: "/source-icons/codex.svg",
+  },
+  {
+    id: "file",
+    sourceKind: "File",
     label: "파일",
     detail: "텍스트·마크다운 파일 (PDF/DOCX는 향후)",
+    icon: "/source-icons/file.svg",
   },
-  Notion: {
+  {
+    id: "notion",
+    sourceKind: "Notion",
     label: "Notion",
     detail: "Internal Integration Token으로 연결",
+    icon: "/source-icons/notion.svg",
   },
-  Gmail: {
+  {
+    id: "gmail",
+    sourceKind: "Gmail",
     label: "Gmail",
     detail: "Gmail 주소 + 앱 비밀번호로 연결",
+    icon: "/source-icons/gmail.svg",
   },
-};
+  {
+    id: "confluence",
+    label: "Confluence",
+    detail: "곧 지원 예정 — 스페이스·페이지 수집",
+    icon: "/source-icons/confluence.svg",
+    comingSoon: true,
+  },
+  {
+    id: "jira",
+    label: "Jira",
+    detail: "곧 지원 예정 — 이슈·코멘트 수집",
+    icon: "/source-icons/jira.svg",
+    comingSoon: true,
+  },
+  {
+    id: "knox-mail",
+    label: "Knox Mail",
+    detail: "곧 지원 예정 — 사내 메일 수집",
+    icon: "/source-icons/knox-mail.svg",
+    comingSoon: true,
+  },
+];
 
 type RunState =
   | { status: "idle" }
-  | { status: "running"; source: SourceKind | "all" }
-  | { status: "done"; source: SourceKind | "all"; summary: IngestSummary }
-  | { status: "error"; source: SourceKind | "all"; message: string };
+  | { status: "running"; card: string | "all" }
+  | { status: "done"; card: string | "all"; summary: IngestSummary }
+  | { status: "error"; card: string | "all"; message: string };
 
 export function SourcesView({ api, onIngested }: Props) {
-  const [sources, setSources] = useState<SourceStatus[] | null>(null);
+  // Backend status keyed by SourceKind, or null while loading.
+  const [status, setStatus] = useState<Record<string, SourceStatus> | null>(
+    null,
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [run, setRun] = useState<RunState>({ status: "idle" });
   const [connecting, setConnecting] = useState<SourceStatus | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      setSources(await api.listSources());
+      const list = await api.listSources();
+      const byKind: Record<string, SourceStatus> = {};
+      for (const s of list) byKind[s.kind] = s;
+      setStatus(byKind);
       setLoadError(null);
     } catch (e) {
       setLoadError(messageOf(e));
@@ -66,21 +129,21 @@ export function SourcesView({ api, onIngested }: Props) {
     void refresh();
   }, [refresh]);
 
-  async function sync(source?: SourceKind) {
-    const key = source ?? "all";
-    setRun({ status: "running", source: key });
+  async function sync(card?: CardModel) {
+    const key = card?.id ?? "all";
+    setRun({ status: "running", card: key });
     try {
-      const summary = await api.triggerIngest(source);
-      setRun({ status: "done", source: key, summary });
+      const summary = await api.triggerIngest(card?.sourceKind);
+      setRun({ status: "done", card: key, summary });
       onIngested?.();
     } catch (e) {
-      setRun({ status: "error", source: key, message: messageOf(e) });
+      setRun({ status: "error", card: key, message: messageOf(e) });
     }
   }
 
-  async function disconnect(source: SourceKind) {
+  async function disconnect(kind: SourceKind) {
     try {
-      await api.disconnectSource(source);
+      await api.disconnectSource(kind);
       await refresh();
     } catch (e) {
       setLoadError(messageOf(e));
@@ -93,8 +156,13 @@ export function SourcesView({ api, onIngested }: Props) {
     <section aria-label="소스">
       <header style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <h2 style={{ margin: 0 }}>소스 수집</h2>
-        <button type="button" onClick={() => void sync()} disabled={busy}>
-          {busy && run.source === "all" ? "수집 중…" : "전체 수집"}
+        <button
+          type="button"
+          className="source-btn-sm"
+          onClick={() => void sync()}
+          disabled={busy}
+        >
+          {busy && run.card === "all" ? "수집 중…" : "전체 수집"}
         </button>
       </header>
 
@@ -104,134 +172,207 @@ export function SourcesView({ api, onIngested }: Props) {
         </p>
       )}
 
-      {sources === null ? (
-        <p style={{ color: "#6b6b70" }}>불러오는 중…</p>
+      {/* Aggregate result for "전체 수집". Per-card runs render inside the card. */}
+      {run.status !== "idle" && run.card === "all" && (
+        <div style={{ marginTop: 12 }}>
+          <SyncResult run={run} cardId="all" />
+        </div>
+      )}
+
+      {status === null ? (
+        <p style={{ color: "#6b7280", marginTop: 16 }}>불러오는 중…</p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0, marginTop: 12 }}>
-          {sources.map((s) => {
-            const meta = META[s.kind];
-            const needsCredentials = s.fields.length > 0;
-            return (
-              <li
-                key={s.kind}
-                style={{
-                  border: "1px solid #e3e3e6",
-                  borderRadius: 10,
-                  padding: "12px 14px",
-                  marginBottom: 8,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 12,
-                }}
-              >
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600 }}>
-                    {meta.label}{" "}
-                    <span
-                      style={{
-                        fontSize: 11,
-                        padding: "2px 8px",
-                        borderRadius: 999,
-                        background: s.ready ? "#eaf7ee" : "#f1f1f3",
-                        color: s.ready ? "#1c7a3d" : "#5c5c62",
-                      }}
+        <div className="sources-grid">
+          {CARDS.map((card) => {
+            // Coming-soon cards have no backend source: icon only, dimmed,
+            // controls disabled.
+            if (card.comingSoon) {
+              return (
+                <div key={card.id} className="source-card is-dimmed">
+                  <div className="source-card__top">
+                    <div className="source-card__icon">
+                      <img src={card.icon} alt="" />
+                    </div>
+                    <div className="source-card__text">
+                      <h3 className="source-card__title">{card.label}</h3>
+                      <p className="source-card__detail">{card.detail}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="source-toggle"
+                      role="switch"
+                      aria-checked={false}
+                      aria-label={`${card.label} 연결`}
+                      disabled
                     >
-                      {s.ready
-                        ? needsCredentials
-                          ? "연결됨"
-                          : "사용 가능"
-                        : "연결 필요"}
+                      <span className="source-toggle__thumb" />
+                    </button>
+                  </div>
+                  <div className="source-card__bottom">
+                    <span className="source-badge source-badge--needed">
+                      준비 중
                     </span>
                   </div>
-                  <div style={{ color: "#6b6b70", fontSize: 13 }}>
-                    {meta.detail}
+                </div>
+              );
+            }
+
+            const s = card.sourceKind ? status[card.sourceKind] : undefined;
+            // A card whose backend source didn't load is skipped defensively.
+            if (!s) return null;
+            const needsCredentials = s.fields.length > 0;
+            const ready = s.ready;
+            return (
+              <div
+                key={card.id}
+                className={`source-card${ready ? "" : " is-dimmed"}`}
+              >
+                <div className="source-card__top">
+                  <div className="source-card__icon">
+                    <img src={card.icon} alt="" />
+                  </div>
+                  <div className="source-card__text">
+                    <h3 className="source-card__title">{card.label}</h3>
+                    <p className="source-card__detail">{card.detail}</p>
+                  </div>
+                  {needsCredentials && (
+                    <button
+                      type="button"
+                      className={`source-toggle${s.connected ? " is-on" : ""}`}
+                      role="switch"
+                      aria-checked={s.connected}
+                      aria-label={`${card.label} 연결`}
+                      onClick={() =>
+                        s.connected ? void disconnect(s.kind) : setConnecting(s)
+                      }
+                    >
+                      <span className="source-toggle__thumb" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="source-card__bottom">
+                  <span
+                    className={`source-badge ${
+                      ready ? "source-badge--ready" : "source-badge--needed"
+                    }`}
+                  >
+                    {ready
+                      ? needsCredentials
+                        ? "연결됨"
+                        : "사용 가능"
+                      : "연결 필요"}
+                  </span>
+
+                  <div className="source-card__actions">
+                    {needsCredentials && s.connected && (
+                      <button
+                        type="button"
+                        className="source-edit-btn"
+                        aria-label={`${card.label} 설정 수정`}
+                        title="설정 수정"
+                        onClick={() => setConnecting(s)}
+                      >
+                        {/* pencil */}
+                        <svg
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="source-btn-sm"
+                      onClick={() => void sync(card)}
+                      disabled={busy || !ready}
+                      title={ready ? undefined : "먼저 연결하세요"}
+                    >
+                      {busy && run.card === card.id ? "수집 중…" : "수집"}
+                    </button>
                   </div>
                 </div>
 
-                {needsCredentials &&
-                  (s.connected ? (
-                    <>
-                      <button type="button" onClick={() => setConnecting(s)}>
-                        재설정
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void disconnect(s.kind)}
-                      >
-                        연결 해제
-                      </button>
-                    </>
-                  ) : (
-                    <button type="button" onClick={() => setConnecting(s)}>
-                      연결
-                    </button>
-                  ))}
-
-                <button
-                  type="button"
-                  onClick={() => void sync(s.kind)}
-                  disabled={busy || !s.ready}
-                  title={s.ready ? undefined : "먼저 연결하세요"}
-                >
-                  {busy && run.source === s.kind ? "수집 중…" : "수집"}
-                </button>
-              </li>
+                <SyncResult run={run} cardId={card.id} />
+              </div>
             );
           })}
-        </ul>
+        </div>
       )}
 
       {connecting && (
         <ConnectDialog
           source={connecting}
-          label={META[connecting.kind].label}
+          label={
+            CARDS.find((c) => c.sourceKind === connecting.kind)?.label ??
+            connecting.kind
+          }
           onConnect={(source, values) => api.connectSource(source, values)}
           onClose={() => setConnecting(null)}
           onConnected={() => void refresh()}
         />
       )}
 
-      {run.status === "done" && (
-        <div role="status" style={{ marginTop: 12 }}>
-          <strong>수집 완료</strong>
-          <ul>
-            <li>
-              수집 {run.summary.collected}건 · 건너뜀 {run.summary.skipped}건 ·
-              오류 {run.summary.errors}건
-            </li>
-            <li>
-              확정 사실 {run.summary.facts_created}개 · 질문{" "}
-              {run.summary.queue_items_created}개 · 걸러냄{" "}
-              {run.summary.filtered}건
-            </li>
-          </ul>
-          {run.summary.remaining > 0 ? (
-            <p style={{ color: "#6b6b70", fontSize: 13 }}>
-              아직 <strong>{run.summary.remaining}건</strong>이 남아 있습니다. 한 번에
-              일부만 가져오므로, 같은 항목을 다시 가져오는 것이 아니라 과거
-              기록을 이어서 처리합니다. 계속하려면 다시 눌러 주세요.
-            </p>
-          ) : (
-            <p style={{ color: "#1c7a3d", fontSize: 13 }}>
-              이 소스는 모두 가져왔습니다.
-            </p>
-          )}
-          {run.summary.collected === 0 && run.summary.remaining === 0 && (
-            <p style={{ color: "#6b6b70", fontSize: 13 }}>
-              새로 수집된 항목이 없습니다. 이미 가져온 항목은 다시 저장하지 않습니다.
-            </p>
-          )}
-        </div>
-      )}
-
-      {run.status === "error" && (
-        <div role="alert" style={{ marginTop: 12 }}>
-          <p>{run.message}</p>
-          <button type="button" onClick={() => void sync()}>
-            다시 시도
-          </button>
-        </div>
-      )}
     </section>
   );
+}
+
+/** Inline sync feedback for one card (or the "전체 수집" summary when
+ * `cardId === "all"`). Distinguishes three outcomes so a run of all-zeros isn't
+ * ambiguous: an error (with its cause), items collected, or a clean "nothing
+ * new" — which confirms the connection works but had no fresh data. */
+function SyncResult({ run, cardId }: { run: RunState; cardId: string }) {
+  if (run.status === "running" && run.card === cardId) {
+    return <div className="source-result">수집 중…</div>;
+  }
+  if (run.status === "error" && run.card === cardId) {
+    return (
+      <div className="source-result source-result--error" role="alert">
+        수집 실패: {run.message}
+      </div>
+    );
+  }
+  if (run.status === "done" && run.card === cardId) {
+    const s = run.summary;
+    if (s.errors > 0) {
+      return (
+        <div className="source-result source-result--error" role="alert">
+          오류 {s.errors}건
+          {s.error_messages.length > 0 && (
+            <>
+              {" — "}
+              {s.error_messages.join("; ")}
+            </>
+          )}
+        </div>
+      );
+    }
+    if (s.collected > 0) {
+      return (
+        <div className="source-result source-result--ok" role="status">
+          {s.collected}건 수집 · 사실 {s.facts_created}개 · 질문{" "}
+          {s.queue_items_created}개
+          {s.remaining > 0 && (
+            <div style={{ marginTop: 4, color: "#475569" }}>
+              아직 {s.remaining}건 남음 — 다시 눌러 이어서 수집
+            </div>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="source-result source-result--muted" role="status">
+        연결됨 · 새로 가져올 항목이 없습니다
+      </div>
+    );
+  }
+  return null;
 }

@@ -65,7 +65,7 @@ export class MockSourcesApi implements SourcesApi {
   async connectSource(
     source: SourceKind,
     values: Record<string, string>,
-  ): Promise<void> {
+  ): Promise<string> {
     await new Promise((r) => setTimeout(r, 150));
     const spec = CATALOG.find((s) => s.kind === source);
     if (!spec || spec.fields.length === 0) {
@@ -78,6 +78,7 @@ export class MockSourcesApi implements SourcesApi {
       throw new Error(`필수 항목을 입력하세요: ${missing.join(", ")}`);
     }
     this.connected.add(source);
+    return "연결되었습니다.";
   }
 
   async disconnectSource(source: SourceKind): Promise<void> {
@@ -98,6 +99,7 @@ export class MockSourcesApi implements SourcesApi {
       skipped: 3,
       errors: 0,
       remaining: 41,
+      error_messages: [],
       facts_created: 5,
       queue_items_created: 4,
       filtered: 3,

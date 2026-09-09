@@ -224,7 +224,7 @@ async fn connect_source(
     state: tauri::State<'_, AppState>,
     source: SourceKind,
     values: serde_json::Value,
-) -> CmdResult<()> {
+) -> CmdResult<String> {
     commands::connect_source(state.inner(), source, values)
         .await
         .map_err(err)
@@ -253,6 +253,9 @@ struct IngestSummary {
     errors: usize,
     /// Items left for a later run, so the owner can tell progress from repetition.
     remaining: usize,
+    /// Why each error happened (e.g. "Notion: notion search 401: …"), so the UI
+    /// can distinguish a bad token from "nothing new to collect".
+    error_messages: Vec<String>,
     facts_created: usize,
     queue_items_created: usize,
     filtered: usize,
@@ -275,6 +278,7 @@ async fn trigger_ingest(
                 skipped: ingest.skipped,
                 errors: ingest.errors,
                 remaining: ingest.remaining,
+                error_messages: ingest.error_messages,
                 facts_created: processed.facts_created,
                 queue_items_created: processed.queue_items_created,
                 filtered: processed.filtered,
@@ -285,6 +289,15 @@ async fn trigger_ingest(
 }
 
 fn main() {
+    // Load a local `.env` (if present) before anything reads the environment,
+    // so the OpenRouter/Gemini key + model are picked up at startup without the
+    // user exporting env vars. Missing file is fine — the LLM gateway falls back
+    // to the offline canned client. Only compiled into `llm-http` builds.
+    #[cfg(feature = "llm-http")]
+    {
+        let _ = dotenvy::dotenv();
+    }
+
     tauri::Builder::default()
         .setup(|app| {
             // Per-user encrypted data lives under the OS app-data directory.

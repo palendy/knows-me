@@ -83,9 +83,11 @@ impl IngestionService {
         if let Err(e) = result {
             // BR-I4 / US-1.1 AC3: one source failing must not stop the others.
             // The count alone leaves the owner with "1 error" and no way to act
-            // on it, so the cause goes to the log even though it is contained.
+            // on it, so the cause goes to the log AND the report so the UI can
+            // surface *why* the source failed (bad token, network, …).
             eprintln!("[ingestion] {source:?} failed: {e}");
             report.errors += 1;
+            report.error_messages.push(format!("{source:?}: {e}"));
         }
         self.unlock(source);
     }
@@ -238,5 +240,9 @@ mod tests {
         assert_eq!(r.collected, 1);
         assert_eq!(r.errors, 1);
         assert_eq!(sink.items.lock().unwrap().len(), 1);
+        // The cause is reported so the UI can show *why* Notion failed.
+        assert_eq!(r.error_messages.len(), 1);
+        assert!(r.error_messages[0].contains("Notion"));
+        assert!(r.error_messages[0].contains("boom"));
     }
 }

@@ -13,8 +13,8 @@ export class TauriSourcesApi implements SourcesApi {
   connectSource(
     source: SourceKind,
     values: Record<string, string>,
-  ): Promise<void> {
-    return this.invoke<void>("connect_source", { source, values });
+  ): Promise<string> {
+    return this.invoke<string>("connect_source", { source, values });
   }
 
   disconnectSource(source: SourceKind): Promise<void> {

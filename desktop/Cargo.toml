@@ -18,7 +18,9 @@ path = "src/main.rs"
 # default so the app builds and runs fully offline (canned LLM, skeleton
 # connectors); turn on with `--features llm-http`. Notion HTTP rides along since
 # both need `reqwest` and the online build is the one that talks to services.
-llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http"]
+# `dep:dotenvy` loads a local `.env` at startup so the OpenRouter/Gemini key is
+# picked up without exporting env vars by hand.
+llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http", "dep:dotenvy"]
 # Enable only the real Notion connector (without the cloud LLM).
 notion-http = ["knows-me-core/notion-http"]
 
@@ -34,3 +36,6 @@ tokio = { version = "1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }
 # The connect_source command receives a source-specific field map as free JSON.
 serde_json = "1"
+# Loads a local `.env` on startup (llm-http builds) so the LLM key/model are
+# read without manually exporting env vars.
+dotenvy = { version = "0.15", optional = true }

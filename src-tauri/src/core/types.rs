@@ -188,7 +188,7 @@ pub struct RawItem {
 pub struct SourceConfig(pub serde_json::Value);
 
 /// Summary of an ingestion run.
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct IngestReport {
     pub collected: usize,
     pub skipped: usize,
@@ -200,6 +200,10 @@ pub struct IngestReport {
     /// ones unless the remaining count is shown.
     #[serde(default)]
     pub remaining: usize,
+    /// Human-readable cause for each contained error (P5), so the UI can show
+    /// *why* a source failed rather than a bare "1 error" count. One entry per
+    /// counted error, newest last.
+    pub error_messages: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
