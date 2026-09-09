@@ -9,13 +9,96 @@
 //! Kana, Han) → 2-grams, giving practical Korean substring search without a
 //! morphological analyzer.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 
 use crate::core::types::{
-    Fact, FactFilter, FactId, FactSummary, GraphDto, GraphEdge, GraphFilter, GraphNode, Scope,
+    Fact, FactFilter, FactId, FactKind, FactSummary, GraphDto, GraphEdge, GraphFilter, GraphNode,
+    Scope, TopicPage, Visibility,
 };
+
+/// Assemble topic pages from the indexed facts.
+///
+/// Ranking is repetition first, then recency: a subject mentioned once is not
+/// an interest, and a subject last touched in March is not a current one.
+/// Friction counts are carried separately so a caller can ask for what is
+/// unresolved rather than what is merely frequent.
+pub fn topic_pages(
+    facts: &[FactSummary],
+    seen_at: &HashMap<FactId, Option<DateTime<Utc>>>,
+) -> Vec<TopicPage> {
+    // Each item is classified alone, so the model cannot see what it called the
+    // same subject last time: `ai-dlc` and `aidlc` arrive as two topics and each
+    // looks like a one-off. Grouping on the separator-free form merges them, and
+    // the most common surface spelling names the page.
+    let mut groups: BTreeMap<String, (BTreeMap<String, usize>, Vec<&FactSummary>)> =
+        BTreeMap::new();
+    for f in facts {
+        for t in &f.topics {
+            let key: String = t.chars().filter(|c| c.is_alphanumeric()).collect();
+            if key.is_empty() {
+                continue;
+            }
+            let entry = groups.entry(key).or_default();
+            *entry.0.entry(t.clone()).or_insert(0) += 1;
+            entry.1.push(f);
+        }
+    }
+
+    let by_topic: BTreeMap<String, Vec<&FactSummary>> = groups
+        .into_values()
+        .map(|(surfaces, mut members)| {
+            let name = surfaces
+                .iter()
+                .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+                .map(|(s, _)| s.clone())
+                .unwrap_or_default();
+            // One fact can reach a group through two spellings; count it once.
+            members.sort_by_key(|f| f.id.0);
+            members.dedup_by_key(|f| f.id);
+            (name, members)
+        })
+        .collect();
+
+    let mut pages: Vec<TopicPage> = by_topic
+        .into_iter()
+        .map(|(topic, members)| {
+            let times: Vec<DateTime<Utc>> = members
+                .iter()
+                .filter_map(|f| seen_at.get(&f.id).copied().flatten())
+                .collect();
+            let mut facts: Vec<FactSummary> = members.iter().map(|f| (*f).clone()).collect();
+            facts.sort_by(|a, b| {
+                seen_at
+                    .get(&b.id)
+                    .copied()
+                    .flatten()
+                    .cmp(&seen_at.get(&a.id).copied().flatten())
+                    .then_with(|| a.title.cmp(&b.title))
+            });
+            TopicPage {
+                topic,
+                mentions: members.len(),
+                concerns: members
+                    .iter()
+                    .filter(|f| f.kind == FactKind::Concern)
+                    .count(),
+                first_seen: times.iter().min().copied(),
+                last_seen: times.iter().max().copied(),
+                facts,
+            }
+        })
+        .collect();
+
+    pages.sort_by(|a, b| {
+        b.mentions
+            .cmp(&a.mentions)
+            .then_with(|| b.last_seen.cmp(&a.last_seen))
+            .then_with(|| a.topic.cmp(&b.topic))
+    });
+    pages
+}
 
 /// Lightweight per-fact metadata kept in RAM (no body).
 #[derive(Clone)]
@@ -25,6 +108,9 @@ struct MetaLite {
     confirmed: bool,
     confirmed_at: Option<DateTime<Utc>>,
     links: Vec<FactId>,
+    kind: FactKind,
+    topics: Vec<String>,
+    visibility: Visibility,
 }
 
 /// In-memory inverted index + metadata cache.
@@ -71,6 +157,9 @@ impl SearchIndex {
                 confirmed: fact.metadata.confirmed,
                 confirmed_at: fact.metadata.confirmed_at,
                 links: fact.links.clone(),
+                kind: fact.metadata.kind,
+                topics: fact.metadata.topics.clone(),
+                visibility: fact.metadata.visibility,
             },
         );
     }
@@ -121,6 +210,9 @@ impl SearchIndex {
                 id,
                 title: m.title.clone(),
                 scope: m.scope,
+                kind: m.kind,
+                topics: m.topics.clone(),
+                visibility: m.visibility,
                 confirmed: m.confirmed,
             })
             .collect()
@@ -156,6 +248,14 @@ impl SearchIndex {
         GraphDto { nodes, edges }
     }
 
+    /// Every fact's confirmation time, for aggregations that rank by recency.
+    pub fn confirmed_at_map(&self) -> HashMap<FactId, Option<DateTime<Utc>>> {
+        self.meta
+            .iter()
+            .map(|(id, m)| (*id, m.confirmed_at))
+            .collect()
+    }
+
     /// The `n` most recently confirmed facts (for the dashboard).
     pub fn recent(&self, n: usize) -> Vec<FactSummary> {
         let mut v: Vec<(&FactId, &MetaLite)> = self.meta.iter().collect();
@@ -166,6 +266,9 @@ impl SearchIndex {
                 id: *id,
                 title: m.title.clone(),
                 scope: m.scope,
+                kind: m.kind,
+                topics: m.topics.clone(),
+                visibility: m.visibility,
                 confirmed: m.confirmed,
             })
             .collect()
@@ -224,4 +327,93 @@ pub fn tokenize(text: &str) -> HashSet<String> {
     flush_latin(&mut latin, &mut out);
     flush_cjk(&mut cjk, &mut out);
     out
+}
+
+#[cfg(test)]
+mod topic_tests {
+    use super::*;
+    use crate::core::types::{FactKind, Scope};
+    use chrono::TimeZone;
+
+    fn summary(n: u8, kind: FactKind, topics: &[&str]) -> FactSummary {
+        FactSummary {
+            id: FactId(uuid::Uuid::from_u128(n as u128)),
+            title: format!("사실 {n}"),
+            scope: Scope::Company,
+            kind,
+            topics: topics.iter().map(|t| t.to_string()).collect(),
+            confirmed: true,
+            visibility: Default::default(),
+        }
+    }
+
+    fn at(facts: &[FactSummary]) -> HashMap<FactId, Option<DateTime<Utc>>> {
+        facts
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                (
+                    f.id,
+                    Some(
+                        Utc.timestamp_opt(1_700_000_000 + i as i64 * 86_400, 0)
+                            .unwrap(),
+                    ),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn spelling_variants_of_a_subject_become_one_page() {
+        // Each note is classified alone, so the same subject arrives spelled
+        // differently; left apart, every one looks like a one-off.
+        let facts = vec![
+            summary(1, FactKind::Practice, &["ai-dlc"]),
+            summary(2, FactKind::Practice, &["aidlc"]),
+            summary(3, FactKind::Project, &["ai-dlc"]),
+        ];
+        let pages = topic_pages(&facts, &at(&facts));
+
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].mentions, 3);
+        assert_eq!(
+            pages[0].topic, "ai-dlc",
+            "the common spelling names the page"
+        );
+    }
+
+    #[test]
+    fn friction_is_counted_separately_from_mentions() {
+        let facts = vec![
+            summary(1, FactKind::Concern, &["deployment"]),
+            summary(2, FactKind::Practice, &["deployment"]),
+        ];
+        let pages = topic_pages(&facts, &at(&facts));
+
+        assert_eq!(pages[0].mentions, 2);
+        assert_eq!(pages[0].concerns, 1);
+    }
+
+    #[test]
+    fn pages_are_ranked_by_repetition_then_recency() {
+        let facts = vec![
+            summary(1, FactKind::Note, &["rare"]),
+            summary(2, FactKind::Note, &["common"]),
+            summary(3, FactKind::Note, &["common"]),
+        ];
+        let pages = topic_pages(&facts, &at(&facts));
+
+        assert_eq!(
+            pages[0].topic, "common",
+            "a subject mentioned once is not an interest"
+        );
+    }
+
+    #[test]
+    fn one_fact_reaching_a_group_twice_is_counted_once() {
+        let facts = vec![summary(1, FactKind::Note, &["ai-dlc", "aidlc"])];
+        let pages = topic_pages(&facts, &at(&facts));
+
+        assert_eq!(pages[0].mentions, 1);
+    }
 }

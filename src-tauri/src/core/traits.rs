@@ -74,6 +74,13 @@ pub trait Connector: Send + Sync {
     fn id(&self) -> SourceKind;
     /// Incremental sync from the given cursor; returns new items + next cursor.
     async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)>;
+
+    /// How many items this source still has beyond what `sync` just returned.
+    ///
+    /// Defaults to zero for sources that collect everything in one pass.
+    async fn remaining(&self, _cursor: Option<Cursor>) -> Result<usize> {
+        Ok(0)
+    }
     /// Whether this source supports manual upload.
     fn supports_manual(&self) -> bool;
 }
@@ -106,6 +113,12 @@ pub trait KnowledgeApi: Send + Sync {
     async fn search(&self, query: String, filter: FactFilter) -> Result<Vec<FactSummary>>;
     async fn graph(&self, filter: GraphFilter) -> Result<GraphDto>;
     async fn dashboard(&self) -> Result<DashboardDto>;
+    /// Subjects assembled across observations, most significant first.
+    ///
+    /// A knowledge base that can only return individual observations can say
+    /// what happened but not what matters; significance lives in repetition and
+    /// recency, which only exist across items.
+    async fn topics(&self, filter: FactFilter) -> Result<Vec<TopicPage>>;
 }
 
 /// The interview queue (confirm/deepen items) and answer intake.

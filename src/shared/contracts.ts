@@ -30,6 +30,10 @@ export interface FactMetadata {
   confirmed: boolean;
   scope: Scope;
   confirmed_at: IsoDateTime | null;
+  /** Normalized topic tags; absent on facts stored before topics existed. */
+  topics?: string[];
+  kind?: FactKind;
+  visibility?: Visibility;
 }
 
 export interface Fact {
@@ -54,10 +58,19 @@ export interface FactCandidate {
   suggested_scope: Scope;
 }
 
+/** What kind of thing a stored item is. */
+export type FactKind = "Note" | "Practice" | "Preference" | "Project" | "Concern";
+
+/** Whether a page may leave the owner. Separate axis from `Scope`. */
+export type Visibility = "Private" | "Shared";
+
 export interface FactSummary {
   id: FactId;
   title: string;
   scope: Scope;
+  kind: FactKind;
+  topics: string[];
+  visibility: Visibility;
   confirmed: boolean;
 }
 

@@ -23,7 +23,7 @@ use crate::core::error::{AppError, Result};
 use crate::core::traits::{EncryptedStore, KnowledgeApi};
 use crate::core::types::{
     DashboardDto, Fact, FactChange, FactFilter, FactId, FactSummary, GraphDto, GraphFilter,
-    QueueItem,
+    QueueItem, TopicPage,
 };
 use crate::knowledge::fact_store::FactStore;
 use crate::knowledge::history::HistoryTracker;
@@ -168,6 +168,16 @@ impl KnowledgeApi for KnowledgeService {
         Ok(idx.graph(&filter))
     }
 
+    async fn topics(&self, filter: FactFilter) -> Result<Vec<TopicPage>> {
+        self.ensure_index().await?;
+        let idx = self.index.lock().expect("index mutex poisoned");
+        let facts = idx.search("", &filter);
+        Ok(crate::knowledge::search_index::topic_pages(
+            &facts,
+            &idx.confirmed_at_map(),
+        ))
+    }
+
     async fn dashboard(&self) -> Result<DashboardDto> {
         self.ensure_index().await?;
         // Count only non-expired queue items, consistent with InterviewService::list.
@@ -213,6 +223,8 @@ mod tests {
                 confirmed: true,
                 scope,
                 confirmed_at: Some(Utc::now()),
+                topics: vec![],
+                kind: Default::default(),
                 visibility: Default::default(),
                 category: None,
             },

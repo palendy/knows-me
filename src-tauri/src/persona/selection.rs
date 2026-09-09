@@ -48,6 +48,9 @@ pub fn select_highlights(facts: &[Fact], limit: usize) -> Vec<FactSummary> {
             id: f.id,
             title: f.title.clone(),
             scope: f.metadata.scope,
+            kind: f.metadata.kind,
+            topics: f.metadata.topics.clone(),
+            visibility: f.metadata.visibility,
             confirmed: f.metadata.confirmed,
         })
         .collect();

@@ -392,10 +392,43 @@ impl SessionConnector {
     }
 }
 
+impl SessionConnector {
+    /// Files still outside the two watermarks, i.e. what a later run would take.
+    fn pending(&self, cursor: Option<Cursor>) -> Result<usize> {
+        let (seen_newest, seen_oldest) = Self::parse_cursor(cursor);
+        let mut files = Vec::new();
+        for root in &self.roots {
+            if root.exists() {
+                Self::scan_dir(root, &mut files);
+            }
+        }
+        let mut count = 0usize;
+        for path in files {
+            let Ok(meta) = fs::metadata(&path) else {
+                continue;
+            };
+            let modified: DateTime<Utc> = meta
+                .modified()
+                .map(DateTime::<Utc>::from)
+                .unwrap_or_else(|_| Utc::now());
+            let fresh = seen_newest.is_none_or(|w| modified > w);
+            let backfill = seen_oldest.is_some_and(|w| modified < w);
+            if fresh || backfill {
+                count += 1;
+            }
+        }
+        Ok(count)
+    }
+}
+
 #[async_trait]
 impl Connector for SessionConnector {
     fn id(&self) -> SourceKind {
         SourceKind::Session
+    }
+
+    async fn remaining(&self, cursor: Option<Cursor>) -> Result<usize> {
+        self.pending(cursor)
     }
 
     async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
@@ -563,6 +596,22 @@ mod selection_tests {
             mtime_of(&files[0]),
             "frontier moves to the oldest"
         );
+    }
+
+    #[tokio::test]
+    async fn the_backlog_left_after_a_run_is_reported() {
+        // Pressing collect on a long history keeps returning new items, which
+        // is correct but reads as re-collection unless the remainder is shown.
+        let dir = tempfile::tempdir().unwrap();
+        let files = transcripts(dir.path(), 5);
+        let c = SessionConnector::new(vec![dir.path().to_path_buf()]);
+
+        let cursor =
+            SessionConnector::render_cursor(Some(mtime_of(&files[4])), Some(mtime_of(&files[3])));
+        assert_eq!(c.remaining(Some(cursor)).await.unwrap(), 3);
+
+        let (_, drained) = c.sync(None).await.unwrap();
+        assert_eq!(c.remaining(Some(drained)).await.unwrap(), 0);
     }
 
     #[tokio::test]

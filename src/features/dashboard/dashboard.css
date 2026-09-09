@@ -25,6 +25,17 @@
 .context-scope { display: inline-flex; align-items: center; width: fit-content; font-size: 10px; padding: 3px 6px; border-radius: 4px; line-height: 1.4; color: #7b7d73; background: #f0f0e9; white-space: nowrap; }
 .context-scope-company { color: #617469; background: #edf1e9; }
 .context-scope-personal { color: #967854; background: #f5eee3; }
+
+/* Kind and visibility ride the same chip shape as scope; only friction and
+   sharing carry color, because those are the two things worth spotting while
+   scanning — everything else stays quiet. */
+.context-kind { display: inline-flex; align-items: center; width: fit-content; font-size: 10px; padding: 3px 6px; border-radius: 4px; line-height: 1.4; color: #7b7d73; background: #f0f0e9; white-space: nowrap; }
+.context-kind-concern { color: #9c453c; background: #f8eae8; }
+.context-visibility { font-size: 10px; color: #8a8c82; white-space: nowrap; }
+.context-visibility-shared { color: #4a6b8a; font-weight: 600; }
+.context-topics { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; margin: 8px 0 0; padding: 0; }
+.context-topics li { font-size: 10px; padding: 2px 6px; border-radius: 3px; color: #6a7382; background: #eef1f5; }
+.context-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .context-card h4 { font-size: 14px; font-weight: 550; line-height: 1.7; letter-spacing: -.025em; margin: 18px 0 20px; overflow-wrap: anywhere; }
 .context-confirmed { margin-top: auto; font-size: 10px; color: #929789; }
 .context-confirmed span { margin-right: 3px; color: #788b6b; }

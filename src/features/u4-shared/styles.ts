@@ -25,3 +25,52 @@ export const badge = (scope: string): React.CSSProperties => ({
 export const scopeLabel = (scope: string): string =>
   scope === "Company" ? "업무" : scope === "Personal" ? "개인" : "미분류";
 
+
+/** Korean label for a fact kind. */
+export const kindLabel = (kind: string): string =>
+  kind === "Concern"
+    ? "걸림"
+    : kind === "Practice"
+      ? "방식"
+      : kind === "Preference"
+        ? "선호"
+        : kind === "Project"
+          ? "진행 중"
+          : "기록";
+
+/**
+ * Friction is the one kind worth spending color on — it is what the owner is
+ * looking for when they scan the list. The rest stay neutral so it stands out.
+ */
+export const kindBadge = (kind: string): React.CSSProperties => ({
+  fontSize: 11,
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: kind === "Concern" ? "#fdeceb" : "#f1f1f3",
+  color: kind === "Concern" ? "#a8322a" : "#5c5c62",
+});
+
+/** Topic chip. */
+export const topicChip: React.CSSProperties = {
+  fontSize: 11,
+  padding: "2px 7px",
+  borderRadius: 4,
+  background: "#eef2f7",
+  color: "#41566b",
+};
+
+/** Korean label for a visibility tag. */
+export const visibilityLabel = (v: string): string =>
+  v === "Shared" ? "공개" : "비공개";
+
+/**
+ * Sharing is the exceptional state, so it is the one that carries color —
+ * scanning the list should make "what have I exposed" answerable at a glance.
+ */
+export const visibilityBadge = (v: string): React.CSSProperties => ({
+  fontSize: 11,
+  padding: "2px 8px",
+  borderRadius: 999,
+  background: v === "Shared" ? "#e8f0fe" : "#f1f1f3",
+  color: v === "Shared" ? "#1a56b8" : "#5c5c62",
+});

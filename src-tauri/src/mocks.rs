@@ -20,6 +20,9 @@ fn summary_of(f: &Fact) -> FactSummary {
         id: f.id,
         title: f.title.clone(),
         scope: f.metadata.scope,
+        kind: f.metadata.kind,
+        topics: f.metadata.topics.clone(),
+        visibility: f.metadata.visibility,
         confirmed: f.metadata.confirmed,
     }
 }
@@ -35,7 +38,9 @@ fn fact_from_candidate(c: FactCandidate) -> Fact {
             confirmed: true,
             scope: c.suggested_scope,
             confirmed_at: Some(Utc::now()),
-            visibility: Default::default(),
+            topics: c.topics,
+            kind: c.kind,
+            visibility: c.visibility,
             category: None,
         },
     }
@@ -134,6 +139,18 @@ impl KnowledgeApi for InMemoryKnowledge {
             }
         }
         Ok(GraphDto { nodes, edges })
+    }
+
+    async fn topics(&self, _filter: FactFilter) -> Result<Vec<TopicPage>> {
+        let facts = self.facts.lock().unwrap();
+        let summaries: Vec<FactSummary> = facts.values().map(summary_of).collect();
+        let seen_at = facts
+            .values()
+            .map(|f| (f.id, f.metadata.confirmed_at))
+            .collect();
+        Ok(crate::knowledge::search_index::topic_pages(
+            &summaries, &seen_at,
+        ))
     }
 
     async fn dashboard(&self) -> Result<DashboardDto> {
@@ -336,6 +353,8 @@ mod tests {
                 confirmed: true,
                 scope: Scope::Personal,
                 confirmed_at: Some(Utc::now()),
+                topics: vec![],
+                kind: Default::default(),
                 visibility: Default::default(),
                 category: None,
             },
@@ -362,6 +381,8 @@ mod tests {
                 confirmed: true,
                 scope: Scope::Personal,
                 confirmed_at: Some(Utc::now()),
+                topics: vec![],
+                kind: Default::default(),
                 visibility: Default::default(),
                 category: None,
             },
@@ -390,6 +411,9 @@ mod tests {
                         collected_at: Utc::now(),
                     },
                     suggested_scope: Scope::Company,
+                    topics: vec![],
+                    kind: Default::default(),
+                    visibility: Default::default(),
                 },
             },
             priority: 5,

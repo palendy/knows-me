@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { MiniHomeDto } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import { StateShell } from "../u4-shared/StateShell";
-import { scopeLabel } from "../u4-shared/styles";
+import { kindLabel, scopeLabel, visibilityLabel } from "../u4-shared/styles";
 import { load, loading, type ViewState } from "../u4-shared/view-state";
 import "../dashboard/dashboard.css";
 
@@ -27,9 +27,23 @@ export function MiniHomeView({ api, limit = 9 }: Props) {
           <ul className="context-grid">
             {d.highlights.map((f, index) => (
               <li key={f.id} className="context-card">
-                <div className="context-card-top"><span className={`context-scope context-scope-${f.scope.toLowerCase()}`}>{scopeLabel(f.scope)}</span><span className="context-card-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span></div>
+                <div className="context-card-top">
+                  <span className={`context-kind context-kind-${f.kind.toLowerCase()}`}>{kindLabel(f.kind)}</span>
+                  <span className={`context-scope context-scope-${f.scope.toLowerCase()}`}>{scopeLabel(f.scope)}</span>
+                  <span className="context-card-index" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                </div>
                 <h4>{f.title}</h4>
-                <div className="context-confirmed"><span aria-hidden="true">✓</span> 확인한 사실</div>
+                {f.topics.length > 0 && (
+                  <ul className="context-topics" aria-label="주제">
+                    {f.topics.map((t) => (
+                      <li key={t}>{t}</li>
+                    ))}
+                  </ul>
+                )}
+                <div className="context-card-foot">
+                  <span className="context-confirmed"><span aria-hidden="true">✓</span> 확인한 사실</span>
+                  <span className={`context-visibility context-visibility-${f.visibility.toLowerCase()}`}>{visibilityLabel(f.visibility)}</span>
+                </div>
               </li>
             ))}
           </ul>

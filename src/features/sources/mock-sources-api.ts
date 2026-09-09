@@ -12,6 +12,7 @@ export class MockSourcesApi implements SourcesApi {
       collected: 12,
       skipped: 3,
       errors: 0,
+      remaining: 41,
       facts_created: 5,
       queue_items_created: 4,
       filtered: 3,

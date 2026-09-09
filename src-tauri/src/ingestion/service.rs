@@ -117,6 +117,7 @@ impl IngestionService {
         }
         // Advance cursor only after a successful sync (BR-I3).
         self.cursors.save_cursor(source, &next_cursor).await?;
+        report.remaining += connector.remaining(Some(next_cursor)).await.unwrap_or(0);
         Ok(())
     }
 }

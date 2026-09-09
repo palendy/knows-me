@@ -15,6 +15,7 @@
 //!   `Masker::mask` call in [`PersonaService`] (NFR-2, BR-P2).
 
 pub mod context;
+pub mod intent;
 pub mod local_api;
 pub mod query;
 pub mod selection;
@@ -27,6 +28,7 @@ pub mod testgen;
 use crate::core::types::{FactId, Scope};
 
 pub use context::{render_prompt, select_context};
+pub use intent::Intent;
 pub use local_api::{LocalApiHandle, LocalApiServer, DEFAULT_PORT};
 pub use query::QueryService;
 pub use selection::select_highlights;

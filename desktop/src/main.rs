@@ -217,6 +217,8 @@ struct IngestSummary {
     collected: usize,
     skipped: usize,
     errors: usize,
+    /// Items left for a later run, so the owner can tell progress from repetition.
+    remaining: usize,
     facts_created: usize,
     queue_items_created: usize,
     filtered: usize,
@@ -238,6 +240,7 @@ async fn trigger_ingest(
                 collected: ingest.collected,
                 skipped: ingest.skipped,
                 errors: ingest.errors,
+                remaining: ingest.remaining,
                 facts_created: processed.facts_created,
                 queue_items_created: processed.queue_items_created,
                 filtered: processed.filtered,

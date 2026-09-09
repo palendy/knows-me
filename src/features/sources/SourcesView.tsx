@@ -139,10 +139,20 @@ export function SourcesView({ api, onIngested }: Props) {
               {run.summary.filtered}건
             </li>
           </ul>
-          {run.summary.collected === 0 && (
+          {run.summary.remaining > 0 ? (
             <p style={{ color: "#6b6b70", fontSize: 13 }}>
-              새로 수집된 항목이 없습니다. 이미 수집된 항목은 중복 저장하지
-              않습니다.
+              아직 <strong>{run.summary.remaining}건</strong>이 남아 있습니다. 한 번에
+              일부만 가져오므로, 같은 항목을 다시 가져오는 것이 아니라 과거
+              기록을 이어서 처리합니다. 계속하려면 다시 눌러 주세요.
+            </p>
+          ) : (
+            <p style={{ color: "#1c7a3d", fontSize: 13 }}>
+              이 소스는 모두 가져왔습니다.
+            </p>
+          )}
+          {run.summary.collected === 0 && run.summary.remaining === 0 && (
+            <p style={{ color: "#6b6b70", fontSize: 13 }}>
+              새로 수집된 항목이 없습니다. 이미 가져온 항목은 다시 저장하지 않습니다.
             </p>
           )}
         </div>

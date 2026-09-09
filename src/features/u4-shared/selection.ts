@@ -48,6 +48,9 @@ export function selectHighlights(
     id: f.id,
     title: f.title,
     scope: f.metadata.scope,
+    kind: f.metadata.kind ?? "Note",
+    topics: f.metadata.topics ?? [],
+    visibility: f.metadata.visibility ?? "Private",
     confirmed: f.metadata.confirmed,
   }));
 }

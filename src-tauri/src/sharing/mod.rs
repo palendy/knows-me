@@ -154,6 +154,9 @@ impl SharingApi for MockSharing {
                 id: f.id,
                 title: f.title.clone(),
                 scope: f.metadata.scope,
+                kind: f.metadata.kind,
+                topics: f.metadata.topics.clone(),
+                visibility: f.metadata.visibility,
                 confirmed: f.metadata.confirmed,
             })
             .collect())
@@ -200,6 +203,8 @@ mod tests {
                 confirmed_at: Some(Utc::now()),
                 visibility,
                 category: category.map(cat),
+                topics: vec![],
+                kind: Default::default(),
             },
         }
     }

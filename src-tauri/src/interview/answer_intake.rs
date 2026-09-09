@@ -45,7 +45,9 @@ pub fn fact_from_candidate(c: FactCandidate) -> Fact {
             confirmed: true,
             scope: c.suggested_scope,
             confirmed_at: Some(Utc::now()),
-            visibility: Default::default(),
+            topics: c.topics,
+            kind: c.kind,
+            visibility: c.visibility,
             category: None,
         },
     }
@@ -71,7 +73,9 @@ pub fn fact_from_deepen(question: &str, answer: &str) -> Fact {
             confirmed: true,
             scope: Scope::Unknown,
             confirmed_at: Some(Utc::now()),
-            visibility: Default::default(),
+            topics: vec![],
+            kind: crate::core::types::FactKind::Practice,
+            visibility: crate::core::types::Visibility::Private,
             category: None,
         },
     }

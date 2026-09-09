@@ -19,8 +19,10 @@ use crate::core::types::{
 };
 
 use super::context::{render_prompt, retrieval_query, select_context, title_relevance};
+use super::intent::{self, Intent};
 use super::{
-    ContextSelection, PersonaContext, DEFAULT_FETCH_CAP, MAX_PROMPT_CHARS, NO_CONTEXT_REPLY,
+    ContextEntry, ContextSelection, PersonaContext, DEFAULT_FETCH_CAP, MAX_PROMPT_CHARS,
+    NO_CONTEXT_REPLY,
 };
 
 /// Persona avatar backed by confirmed knowledge plus U1's masked LLM gateway.
@@ -112,6 +114,66 @@ impl PersonaService {
         ))
     }
 
+    /// Grounding for a question about the owner rather than about a subject.
+    ///
+    /// Retrieves over topic pages instead of individual facts: "무엇을 걱정하나"
+    /// has no keyword to match, and answering it from term-matched facts is what
+    /// made the persona read like a log. Each entry carries the aggregate — how
+    /// often a subject recurs, when it was last touched — because that is the
+    /// answer, not any single observation.
+    async fn build_topic_context(&self, want: Intent) -> Result<PersonaContext> {
+        let filter = FactFilter {
+            scope: self.selection.scope,
+            category: None,
+        };
+        let mut pages = self.knowledge.topics(filter).await?;
+
+        match want {
+            // Only subjects that actually carry friction.
+            Intent::Concerns => pages.retain(|p| p.concerns > 0),
+            // Recurrence is what makes something an interest; a single mention
+            // is just a thing that happened once.
+            Intent::Interests => pages.retain(|p| p.mentions > 1),
+            Intent::Recent => {}
+        }
+
+        if matches!(want, Intent::Recent) {
+            pages.sort_by_key(|p| std::cmp::Reverse(p.last_seen));
+        }
+        pages.truncate(self.selection.max_facts);
+
+        let total_confirmed = pages.iter().map(|p| p.mentions).sum();
+        let entries = pages
+            .into_iter()
+            .filter_map(|p| {
+                let lead = p.facts.first()?;
+                let recency = p
+                    .last_seen
+                    .map(|d| d.format("%Y-%m-%d").to_string())
+                    .unwrap_or_else(|| "미상".into());
+                let titles: Vec<&str> = p.facts.iter().take(4).map(|f| f.title.as_str()).collect();
+                Some(ContextEntry {
+                    id: lead.id,
+                    title: format!("[주제] {}", p.topic),
+                    body: format!(
+                        "{}번 언급 · 그중 걸림 {}건 · 최근 {}\n관련: {}",
+                        p.mentions,
+                        p.concerns,
+                        recency,
+                        titles.join(" / ")
+                    ),
+                    scope: lead.scope,
+                    relevance: p.mentions as u32,
+                })
+            })
+            .collect::<Vec<_>>();
+
+        Ok(PersonaContext {
+            entries,
+            total_confirmed,
+        })
+    }
+
     /// The one place where anything leaves the device.
     ///
     /// Returns the answer plus the facts it was grounded in, so the caller can
@@ -134,8 +196,15 @@ impl PersonaService {
         // A follow-up ("그거 더 자세히") names nothing on its own, so retrieval
         // runs over the whole thread. Without this the persona keeps answering
         // the pronoun instead of the subject.
-        let retrieval_query = retrieval_query(user_input, history);
-        let ctx = self.build_context(&retrieval_query).await?;
+        // A question about the owner needs a different kind of grounding than a
+        // question about a subject; drafting is always the latter.
+        let ctx = match kind.is_none().then(|| intent::detect(user_input)).flatten() {
+            Some(want) => self.build_topic_context(want).await?,
+            None => {
+                let query = retrieval_query(user_input, history);
+                self.build_context(&query).await?
+            }
+        };
         // BR-P4: no grounding means no cloud call at all.
         if ctx.is_empty() {
             return Ok((NO_CONTEXT_REPLY.to_string(), vec![]));
@@ -185,7 +254,7 @@ impl PersonaApi for PersonaService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::types::{ChatRole, MaskedText};
+    use crate::core::types::{ChatRole, FactKind, MaskedText};
     use crate::mocks::{CannedLlm, InMemoryKnowledge, NoopMasker};
     use crate::persona::testgen::fact;
     use std::sync::Mutex;
@@ -373,6 +442,63 @@ mod tests {
                 .unwrap_err(),
             AppError::InvalidInput(_)
         ));
+    }
+
+    /// Two facts about deployment, one of them friction, plus an unrelated one.
+    async fn knowledge_with_topics() -> Arc<InMemoryKnowledge> {
+        let kn = Arc::new(InMemoryKnowledge::default());
+        for (title, topic, kind) in [
+            ("배포가 자꾸 실패한다", "deployment", FactKind::Concern),
+            ("배포 절차", "deployment", FactKind::Practice),
+            ("커피 취향", "coffee", FactKind::Preference),
+        ] {
+            let mut f = fact(title, "본문", true);
+            f.metadata.topics = vec![topic.to_string()];
+            f.metadata.kind = kind;
+            kn.upsert(f).await.unwrap();
+        }
+        kn
+    }
+
+    #[tokio::test]
+    async fn a_question_about_worries_is_grounded_in_subjects_not_single_events() {
+        let llm = Arc::new(SpyLlm::default());
+        let svc = PersonaService::new(
+            knowledge_with_topics().await,
+            Arc::new(NoopMasker),
+            llm.clone(),
+        );
+
+        svc.chat("내가 요즘 뭘 걱정하고 있지?".into(), vec![])
+            .await
+            .unwrap();
+
+        let calls = llm.calls.lock().unwrap();
+        let (_, document) = &calls[0];
+        // The subject with friction, carrying its aggregate.
+        assert!(document.contains("[주제] deployment"), "got: {document}");
+        assert!(
+            document.contains("2번 언급"),
+            "aggregate must reach the model"
+        );
+        // A subject with no friction is not an answer to "what worries me".
+        assert!(!document.contains("coffee"), "got: {document}");
+    }
+
+    #[tokio::test]
+    async fn a_question_naming_a_subject_still_uses_keyword_retrieval() {
+        let llm = Arc::new(SpyLlm::default());
+        let svc = PersonaService::new(
+            knowledge_with_topics().await,
+            Arc::new(NoopMasker),
+            llm.clone(),
+        );
+
+        svc.chat("배포 절차 알려줘".into(), vec![]).await.unwrap();
+
+        let calls = llm.calls.lock().unwrap();
+        let (_, document) = &calls[0];
+        assert!(!document.contains("[주제]"), "got: {document}");
     }
 
     #[tokio::test]

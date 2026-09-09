@@ -62,6 +62,27 @@ pub enum SourceKind {
     File,
 }
 
+/// What kind of thing a stored item is.
+///
+/// Without this every item reads the same way, and "what am I worried about"
+/// has no answer distinguishable from "what did I do" — which is the difference
+/// between a knowledge base and an activity log.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FactKind {
+    /// Unclassified.
+    #[default]
+    Note,
+    /// How the owner works — a procedure, rule, or convention they follow.
+    Practice,
+    /// What the owner prefers, likes, or insists on.
+    Preference,
+    /// Something the owner is building or running.
+    Project,
+    /// Friction: something unresolved, repeatedly returned to, or expressed as
+    /// frustration. This is what "걱정" retrieves.
+    Concern,
+}
+
 /// Company vs personal classification for a fact.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Scope {
@@ -172,6 +193,13 @@ pub struct IngestReport {
     pub collected: usize,
     pub skipped: usize,
     pub errors: usize,
+    /// Items left for a later run.
+    ///
+    /// A run is capped, so pressing collect on a long history keeps returning
+    /// new items — correct, but indistinguishable from re-collecting the same
+    /// ones unless the remaining count is shown.
+    #[serde(default)]
+    pub remaining: usize,
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +267,13 @@ pub struct FactMetadata {
     /// A fact must carry a category to be reachable once `visibility == Shared`.
     #[serde(default)]
     pub category: Option<Category>,
+    /// Subject tags, used to group observations into topic pages. A precursor
+    /// to `category`: topics are what the classifier proposes, a category is
+    /// what the owner grants on.
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub kind: FactKind,
 }
 
 /// A confirmed unit of context. Persisted as one document (wiki page).
@@ -268,6 +303,17 @@ pub struct FactCandidate {
     pub body: String,
     pub provenance: Provenance,
     pub suggested_scope: Scope,
+    /// Normalized topic tags from classification.
+    ///
+    /// These are what let separate observations be recognized as being about
+    /// the same thing — a knowledge base without them is a list of unrelated
+    /// session summaries, which is what it reads like.
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub kind: FactKind,
+    #[serde(default)]
+    pub visibility: Visibility,
 }
 
 /// Lightweight fact projection for lists/search results.
@@ -276,7 +322,23 @@ pub struct FactSummary {
     pub id: FactId,
     pub title: String,
     pub scope: Scope,
+    #[serde(default)]
+    pub kind: FactKind,
+    #[serde(default)]
+    pub topics: Vec<String>,
+    #[serde(default)]
+    pub visibility: Visibility,
     pub confirmed: bool,
+}
+
+/// Normalize a topic tag so the same subject always compares equal.
+///
+/// Delegates to [`Category::parse`] rather than restating its rules: topics are
+/// what the classifier proposes and categories are what the owner grants on, so
+/// the two must normalize identically or a topic could not be promoted to a
+/// category without silently changing which facts it covers.
+pub fn normalize_topic(raw: &str) -> Option<String> {
+    Category::parse(raw).ok().map(|c| c.as_str().to_string())
 }
 
 /// Filter for fact search.
@@ -376,6 +438,26 @@ pub struct GraphEdge {
 pub struct GraphDto {
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
+}
+
+/// A subject, assembled from every observation that mentions it.
+///
+/// Computed on read rather than stored: derived state that is persisted has to
+/// be kept in sync, and a stale topic page is worse than none. At personal
+/// scale the aggregation is cheap enough to redo per request.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TopicPage {
+    pub topic: String,
+    /// How many observations mention it — repetition is what makes a subject
+    /// matter, and a single mention is not an interest.
+    pub mentions: usize,
+    /// Observations classified as friction. This is what "무엇을 걱정하나"
+    /// actually retrieves.
+    pub concerns: usize,
+    pub first_seen: Option<DateTime<Utc>>,
+    pub last_seen: Option<DateTime<Utc>>,
+    /// The facts behind it, newest first.
+    pub facts: Vec<FactSummary>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

@@ -7,6 +7,8 @@ export interface IngestSummary {
   collected: number;
   skipped: number;
   errors: number;
+  /** Items left for a later run. Zero means the source is fully collected. */
+  remaining: number;
   facts_created: number;
   queue_items_created: number;
   filtered: number;
