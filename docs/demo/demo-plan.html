@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>html{color-scheme:light dark}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Knows Me 데모 각본</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ground:#FAF8F3; --surface:#FFFFFF; --surface2:#F3F0E8; --sunk:#EDE9DF;
+    --ink:#1E231F; --ink2:#4C544C; --muted:#878D84;
+    --rule:#E3DFD3; --rule-strong:#CFCABB;
+    --accent:#365D4B; --accent-soft:#E5EDE8; --accent-ink:#28463A;
+    --lav:#6E5FA3; --lav-soft:#ECE9F6;
+    --flag:#A8672E; --flag-soft:#F6EADF;
+    --sans:'IBM Plex Sans KR',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo',sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#141714; --surface:#1C201C; --surface2:#232823; --sunk:#191D19;
+      --ink:#ECEFE8; --ink2:#B6BDB3; --muted:#828A80;
+      --rule:#2E342E; --rule-strong:#3C443C;
+      --accent:#93C2A8; --accent-soft:#1D2A23; --accent-ink:#B4D8C3;
+      --lav:#AA9CDA; --lav-soft:#221F33;
+      --flag:#D69A62; --flag-soft:#2B2118;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#141714; --surface:#1C201C; --surface2:#232823; --sunk:#191D19;
+    --ink:#ECEFE8; --ink2:#B6BDB3; --muted:#828A80;
+    --rule:#2E342E; --rule-strong:#3C443C;
+    --accent:#93C2A8; --accent-soft:#1D2A23; --accent-ink:#B4D8C3;
+    --lav:#AA9CDA; --lav-soft:#221F33;
+    --flag:#D69A62; --flag-soft:#2B2118;
+  }
+
+  body{background:var(--ground);color:var(--ink);font-family:var(--sans);
+       font-weight:400;line-height:1.72;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:940px;margin:0 auto;padding:0 28px 120px;}
+  .col{max-width:660px;}
+  p{margin:0 0 1.05em;color:var(--ink2);}
+  strong{color:var(--ink);font-weight:600;}
+  code{font-family:var(--mono);font-size:.88em;background:var(--sunk);
+       padding:.12em .38em;border-radius:4px;color:var(--accent-ink);}
+  a{color:var(--accent-ink);}
+
+  /* ---------- masthead ---------- */
+  header.mast{padding:76px 0 44px;border-bottom:1px solid var(--rule);margin-bottom:56px;}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--muted);margin:0 0 20px;}
+  h1{font-size:clamp(34px,5.2vw,50px);line-height:1.16;font-weight:600;
+     letter-spacing:-.022em;margin:0 0 20px;text-wrap:balance;max-width:16ch;}
+  .standfirst{font-size:18.5px;line-height:1.62;color:var(--ink2);max-width:38ch;margin:0;}
+  .mast-meta{display:flex;flex-wrap:wrap;gap:0 40px;margin-top:36px;
+             font-family:var(--mono);font-size:12.5px;color:var(--muted);}
+  .mast-meta b{display:block;color:var(--ink);font-weight:500;font-size:15px;
+               margin-top:3px;font-family:var(--sans);}
+
+  /* ---------- structure ---------- */
+  section{margin:0 0 72px;}
+  .act{display:flex;align-items:baseline;gap:14px;margin:0 0 8px;}
+  .act-no{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);
+          letter-spacing:.08em;padding-top:3px;}
+  h2{font-size:27px;font-weight:600;letter-spacing:-.016em;margin:0;text-wrap:balance;}
+  .act-sub{font-size:15px;color:var(--muted);margin:0 0 26px 0;}
+  h3{font-size:17.5px;font-weight:600;margin:38px 0 12px;letter-spacing:-.008em;}
+  h4{font-size:14px;font-weight:600;margin:26px 0 8px;color:var(--ink);}
+
+  .lede{font-size:17.5px;line-height:1.68;color:var(--ink);}
+
+  /* ---------- principle cards ---------- */
+  .principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+              gap:1px;background:var(--rule);border:1px solid var(--rule);
+              border-radius:10px;overflow:hidden;margin:30px 0 8px;}
+  .principle{background:var(--surface);padding:22px 20px 24px;}
+  .principle .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;
+                text-transform:uppercase;color:var(--accent);margin-bottom:10px;}
+  .principle .t{font-weight:600;font-size:15.5px;margin-bottom:7px;line-height:1.45;}
+  .principle .d{font-size:13.5px;color:var(--muted);line-height:1.6;}
+
+  /* ---------- figure ---------- */
+  figure{margin:34px 0;}
+  figure svg{display:block;width:100%;height:auto;color:var(--ink2);}
+  figcaption{font-size:13px;color:var(--muted);margin-top:12px;line-height:1.6;
+             padding-left:14px;border-left:2px solid var(--rule-strong);}
+
+  /* ---------- shot slot ---------- */
+  .shot{border:1px dashed var(--rule-strong);border-radius:10px;background:var(--sunk);
+        padding:18px 20px;margin:22px 0;display:grid;
+        grid-template-columns:auto 1fr;gap:4px 16px;align-items:start;}
+  .shot .id{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);
+            background:var(--accent-soft);padding:3px 8px;border-radius:5px;grid-row:span 2;}
+  .shot .what{font-weight:600;font-size:14.5px;}
+  .shot .spec{font-size:13px;color:var(--muted);line-height:1.62;}
+  .shot img{grid-column:1/-1;width:100%;border-radius:7px;border:1px solid var(--rule);margin-top:6px;}
+
+  /* ---------- beat list ---------- */
+  ol.beats{list-style:none;padding:0;margin:18px 0;counter-reset:b;}
+  ol.beats>li{counter-increment:b;position:relative;padding:0 0 0 34px;margin-bottom:15px;
+              font-size:15px;color:var(--ink2);line-height:1.66;}
+  ol.beats>li::before{content:counter(b);position:absolute;left:0;top:1px;
+      font-family:var(--mono);font-size:11px;font-weight:600;color:var(--muted);
+      width:21px;height:21px;border:1px solid var(--rule-strong);border-radius:50%;
+      display:grid;place-items:center;}
+  ol.beats>li b{color:var(--ink);}
+
+  /* ---------- table ---------- */
+  .scroll{overflow-x:auto;margin:26px 0;border:1px solid var(--rule);border-radius:10px;}
+  table{border-collapse:collapse;width:100%;min-width:720px;font-size:13.5px;background:var(--surface);}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top;}
+  thead th{background:var(--surface2);font-size:11px;font-family:var(--mono);
+           letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;
+           position:sticky;top:0;}
+  tbody tr:last-child td{border-bottom:none;}
+  td.tc{font-family:var(--mono);font-size:12.5px;color:var(--muted);white-space:nowrap;
+        font-variant-numeric:tabular-nums;}
+  td.slot{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);white-space:nowrap;}
+  td.say{color:var(--ink2);}
+  tr.act-row td{background:var(--accent-soft);font-weight:600;color:var(--accent-ink);
+                font-size:12.5px;letter-spacing:.02em;}
+
+  /* ---------- callout ---------- */
+  .flag{border-left:3px solid var(--flag);background:var(--flag-soft);
+        padding:18px 22px;border-radius:0 8px 8px 0;margin:28px 0;}
+  .flag .h{font-weight:600;font-size:14.5px;margin-bottom:7px;color:var(--ink);}
+  .flag p{font-size:14px;margin:0;color:var(--ink2);}
+  .flag p+p{margin-top:.7em;}
+
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.72;background:var(--surface2);
+      border:1px solid var(--rule);border-radius:9px;padding:16px 18px;overflow-x:auto;
+      color:var(--ink2);margin:18px 0;}
+  pre b{color:var(--accent-ink);font-weight:600;}
+  pre .c{color:var(--muted);}
+
+  ul.plain{list-style:none;padding:0;margin:16px 0;}
+  ul.plain li{position:relative;padding-left:18px;margin-bottom:9px;font-size:14.5px;
+              color:var(--ink2);line-height:1.66;}
+  ul.plain li::before{content:"";position:absolute;left:2px;top:11px;width:5px;height:5px;
+                      border-radius:50%;background:var(--rule-strong);}
+  ul.plain li b{color:var(--ink);}
+
+  footer{border-top:1px solid var(--rule);padding-top:26px;margin-top:80px;
+         font-size:13px;color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<header class="mast">
+  <p class="eyebrow">데모 각본 · v1</p>
+  <h1>Knows Me 데모 각본</h1>
+  <p class="standfirst">촬영 전에 합의해야 할 것 — 무엇을 주장하고, 어떤 순서로 보여주고, 각 컷에 무엇이 담겨야 하는가.</p>
+  <div class="mast-meta">
+    <div>목표 러닝타임<b>2분 35초</b></div>
+    <div>미디어 슬롯<b>20 / 20</b></div>
+    <div>제작<b>Remotion</b></div>
+    <div>작성<b>2026-09-09 · U4</b></div>
+  </div>
+</header>
+
+<section>
+  <div class="act"><span class="act-no">00</span><h2>무엇을 주장하는가</h2></div>
+  <p class="act-sub">데모 전체가 이 한 문장을 증명하는 데 쓰인다.</p>
+  <div class="col">
+    <p class="lede"><strong>나는 매일 엄청난 맥락을 AI에 입력한다. 내가 무엇을 걱정하는지, 왜 그 방식으로 일하는지. 그런데 세션이 끝나면 전부 사라진다.</strong></p>
+    <p>다음 대화에서 나는 처음부터 다시 설명한다. 새로 합류한 동료도 나에게 직접 물어보는 것 말고는 방법이 없다. 기록은 분명히 남아 있는데 — 클로드 세션 수백 개, 노션 문서, 메일 — 아무도 그걸 읽지 않는다.</p>
+    <p>Knows Me는 그 흩어진 기록에서 <strong>나에 대해 지속적으로 참인 것</strong>만 뽑아 하나의 금고에 모은다. 그리고 그 금고가 나 대신 답한다. 나에게도, 내가 허락한 동료의 에이전트에게도.</p>
+  </div>
+
+  <div class="principles">
+    <div class="principle">
+      <div class="k">원칙 01</div>
+      <div class="t">데이터는 기기 밖으로 나가지 않는다</div>
+      <div class="d">금고는 로컬 암호화 파일. 모델에 보내는 것은 마스킹된 텍스트뿐이고, 무엇이 나갔는지는 전송 기록 탭에 전부 남는다.</div>
+    </div>
+    <div class="principle">
+      <div class="k">원칙 02</div>
+      <div class="t">기본 비공개</div>
+      <div class="d">공유되는 것은 내가 명시적으로 승인하고 범주를 부여한 것뿐. 나머지는 동료 에이전트에게 <em>존재조차</em> 보이지 않는다.</div>
+    </div>
+    <div class="principle">
+      <div class="k">원칙 03</div>
+      <div class="t">추측은 사실이 아니다</div>
+      <div class="d">모델이 확신하지 못한 것은 저장되지 않고 질문이 된다. 내가 답해야만 사실이 된다. 대기열이 그 유일한 통로다.</div>
+    </div>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 860 300" role="img" aria-label="소스에서 모은 원문이 마스킹 게이트웨이를 거쳐 모델로 가고, 확신하는 것은 사실로 저장되고 불확실한 것은 인터뷰 대기열로 가서 내가 답해야 사실이 된다. 사실은 나의 화면과, 토큰 범위 안에서 동료 에이전트에게 제공된다." xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="currentColor"/>
+        </marker>
+        <marker id="arg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+      <g font-family="IBM Plex Sans KR, sans-serif" font-size="12" fill="currentColor">
+
+        <!-- sources -->
+        <g stroke="currentColor" stroke-width="1" fill="none" opacity=".55">
+          <rect x="8" y="34" width="104" height="30" rx="6"/>
+          <rect x="8" y="76" width="104" height="30" rx="6"/>
+          <rect x="8" y="118" width="104" height="30" rx="6"/>
+        </g>
+        <text x="60" y="53" text-anchor="middle">Claude 세션</text>
+        <text x="60" y="95" text-anchor="middle">Notion</text>
+        <text x="60" y="137" text-anchor="middle">Gmail</text>
+
+        <path d="M112,49 L152,49 L152,91 L168,91" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+        <path d="M112,91 L168,91" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+        <path d="M112,133 L152,133 L152,91 L168,91" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+
+        <!-- gateway -->
+        <rect x="170" y="63" width="96" height="56" rx="7" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+        <text x="218" y="86" text-anchor="middle" fill="var(--accent)" font-weight="600">마스킹</text>
+        <text x="218" y="103" text-anchor="middle" fill="var(--accent)" font-weight="600">게이트웨이</text>
+
+        <path d="M266,91 L318,91" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+        <text x="292" y="82" text-anchor="middle" font-size="10.5" opacity=".7">가려진 텍스트만</text>
+
+        <!-- model -->
+        <rect x="320" y="63" width="104" height="56" rx="7" fill="none" stroke="currentColor" stroke-width="1"/>
+        <text x="372" y="86" text-anchor="middle">추출</text>
+        <text x="372" y="103" text-anchor="middle" font-size="10.5" opacity=".7">요약 + 분류</text>
+
+        <!-- split -->
+        <path d="M424,80 L470,80 L470,44 L516,44" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#arg)"/>
+        <text x="470" y="34" text-anchor="middle" font-size="10.5" fill="var(--accent)">확신함</text>
+        <path d="M424,102 L470,102 L470,164 L516,164" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar)"/>
+        <text x="474" y="132" font-size="10.5" opacity=".75">불확실</text>
+
+        <!-- queue -->
+        <rect x="518" y="142" width="112" height="44" rx="7" fill="none" stroke="currentColor" stroke-width="1"/>
+        <text x="574" y="161" text-anchor="middle">인터뷰 대기열</text>
+        <text x="574" y="177" text-anchor="middle" font-size="10.5" opacity=".7">내가 답해야 함</text>
+        <path d="M574,142 L574,74 L630,74" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar)" stroke-dasharray="3 3"/>
+        <text x="588" y="108" font-size="10.5" opacity=".75">답변</text>
+
+        <!-- facts -->
+        <rect x="518" y="24" width="112" height="40" rx="7" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+        <text x="574" y="49" text-anchor="middle" fill="var(--accent-ink)" font-weight="600">확정 사실</text>
+
+        <path d="M630,44 L672,44 L672,74" stroke="var(--accent)" stroke-width="1.4" fill="none"/>
+        <path d="M672,74 L716,74" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#arg)"/>
+        <path d="M672,74 L672,178 L716,178" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#arg)"/>
+
+        <!-- consumers -->
+        <rect x="718" y="52" width="132" height="44" rx="7" fill="none" stroke="currentColor" stroke-width="1"/>
+        <text x="784" y="71" text-anchor="middle">나</text>
+        <text x="784" y="87" text-anchor="middle" font-size="10.5" opacity=".7">대시보드·그래프·챗</text>
+
+        <rect x="718" y="156" width="132" height="44" rx="7" fill="none" stroke="currentColor" stroke-width="1"/>
+        <text x="784" y="175" text-anchor="middle">동료의 에이전트</text>
+        <text x="784" y="191" text-anchor="middle" font-size="10.5" opacity=".7">MCP · 범주 안에서만</text>
+
+        <!-- boundary -->
+        <line x1="8" y1="238" x2="852" y2="238" stroke="var(--rule-strong)" stroke-width="1" stroke-dasharray="4 4"/>
+        <text x="8" y="258" font-size="10.5" opacity=".8">이 선 위쪽은 전부 내 기기 안. 선을 넘는 것은 마스킹된 텍스트(모델)와, 내가 범주를 부여한 공유 페이지(동료)뿐이다.</text>
+      </g>
+    </svg>
+    <figcaption>데모의 뼈대. 컷 순서가 이 그림의 왼쪽에서 오른쪽으로 간다 — 수집 → 추출 → 대기열 → 내 화면 → 동료.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">01</span><h2>수집 — 흩어진 기록을 끌어온다</h2></div>
+  <p class="act-sub">0:12 – 0:55 · 미디어 6컷</p>
+  <div class="col">
+    <p>보여줄 것은 "연동했다"가 아니라 <strong>이미 쌓여 있던 것이 갑자기 읽힌다</strong>는 감각이다. 클로드 세션은 이미 수백 개가 디스크에 있다. 아무도 안 읽었을 뿐.</p>
+  </div>
+
+  <ol class="beats">
+    <li><b>원본을 먼저 보여준다.</b> 터미널의 세션 트랜스크립트 한 조각. 사람이 읽기엔 너무 길고, 버리기엔 아까운 것.</li>
+    <li><b>연결 소스 카탈로그.</b> Claude · Codex · Notion · Gmail이 활성, Confluence · Jira · Knox Mail은 예정. 클로드는 <em>토큰이 필요 없다</em> — 이미 내 기기에 있으니까. 이 대비가 컷의 요점이다.</li>
+    <li><b>범위를 고른다.</b> 프로젝트 목록에서 넣을 것만. 아무것도 안 고르면 전부.</li>
+    <li><b>「끝까지 수집」.</b> 진행 토스트가 도는 동안 대시보드 숫자가 오른다.</li>
+    <li><b>Notion · Gmail 연결.</b> 토큰 한 줄. 다이얼로그 안에 발급 방법이 같이 있다는 점.</li>
+    <li><b>전송 기록.</b> 무엇이 어떤 모델로 나갔는지 전부 남아 있다. 원칙 01을 말로 하지 않고 화면으로 증명하는 컷.</li>
+  </ol>
+
+  <div class="shot"><span class="id">M02</span><span class="what">클로드 세션 원본</span>
+    <span class="spec">터미널 또는 트랜스크립트 파일. 한국어 발화가 보이는 구간으로. 개인정보 없는 프로젝트에서 고를 것.</span></div>
+  <div class="shot"><span class="id">M01</span><span class="what">대시보드 히어로 · 오프닝/클로징</span><span class="spec">오프닝과 마지막 컷에 같은 프레임을 쓴다. 블러 → 선명으로 여는 것을 권함.</span><img src="screenshots/M01-dashboard-hero.jpg" alt="M01 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M03</span><span class="what">설정 › 연결 소스</span>
+    <span class="spec">카드 카탈로그 전체. Claude 카드에 토글이 없다는 점이 보이도록 스크롤 위치를 잡을 것.</span><img src="screenshots/M03-sources.jpg" alt="M03 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M04</span><span class="what">수집 범위 다이얼로그</span>
+    <span class="spec">프로젝트 목록 + 세션 개수. 체크가 일부만 되어 있는 상태.</span></div>
+  <div class="shot"><span class="id">M05</span><span class="what">「끝까지 수집」 진행</span>
+    <span class="spec">토스트에 <code>수집 중… N/M</code>이 떠 있는 순간. 뒤에 대시보드 숫자가 같이 보이면 최고.</span></div>
+  <div class="shot"><span class="id">M06</span><span class="what">Notion 연결 다이얼로그</span>
+    <span class="spec">「연결 방법」 안내가 펼쳐진 상태. 토큰 칸은 비워둘 것.</span></div>
+  <div class="shot"><span class="id">M07</span><span class="what">Gmail 연결 다이얼로그</span>
+    <span class="spec">주소는 <code>me@example.com</code> 같은 예시로 바꾸거나 가릴 것. 앱 비밀번호 칸은 반드시 비어 있어야 함.</span></div>
+  <div class="shot"><span class="id">M08b</span><span class="what">설정 › 일반 — 마스킹 정책 + 모델</span><span class="spec">계획에 없던 컷인데 원칙 01을 가장 잘 보여준다. 「개인정보를 가리고 전송(권장)」이 선택돼 있고, 쓰는 모델이 <code>claude-opus-5 (로컬 Claude Code)</code>라는 게 한 화면에 있다.</span><img src="screenshots/M08b-privacy-model.jpg" alt="M08b — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M08</span><span class="what">설정 › 전송 기록</span>
+    <span class="spec">항목이 여러 줄 쌓인 상태. 마스킹된 미리보기가 보이는 행이 하나는 있어야 함.</span></div>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">02</span><h2>대기열 — 추측이 사실이 되는 유일한 통로</h2></div>
+  <p class="act-sub">0:55 – 1:15 · 미디어 3컷</p>
+  <div class="col">
+    <p>여기가 이 제품이 다른 "요약 도구"와 갈라지는 지점이다. 모델이 확신하지 못한 것은 <strong>조용히 저장되지 않는다</strong>. 질문으로 남고, 내가 답해야 사실이 된다.</p>
+    <p>데모에서는 한 질문을 실제로 답해서, 대기 숫자가 줄고 확정 숫자가 느는 것을 같은 화면에서 보여준다. 말로 설명할 필요가 없어진다.</p>
+  </div>
+
+  <div class="shot"><span class="id">M13</span><span class="what">대기열 목록</span>
+    <span class="spec">확인·심화 질문이 섞여 있는 상태. 10개 안팎.</span><img src="screenshots/M13-queue.jpg" alt="M13 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M14</span><span class="what">질문 하나 펼침</span>
+    <span class="spec">후보 제목 + 본문 + 출처가 보이는 상태. "이게 맞아?"라고 묻고 있다는 게 읽혀야 함.</span></div>
+  <div class="shot"><span class="id">M15</span><span class="what">답변 직후</span>
+    <span class="spec">답하고 목록에서 사라지는 순간, 또는 대시보드로 돌아와 <code>대기 중인 질문</code>이 1 줄고 <code>최근 확정 사실</code>이 1 는 상태. 전후 두 장으로 찍어두면 편집이 쉬움.</span></div>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">03</span><h2>내 뷰 — 모인 것이 실제로 쓸모 있다</h2></div>
+  <p class="act-sub">1:15 – 1:50 · 미디어 5컷</p>
+  <div class="col">
+    <p>세 화면이 각각 다른 질문에 답한다. 순서를 이렇게 두는 이유가 있다 — <strong>얼마나 모였나 → 어떻게 얽혀 있나 → 그래서 뭘 해주나.</strong> 마지막 컷이 가장 세다.</p>
+  </div>
+
+  <h3>대시보드 — 얼마나 모였나</h3>
+  <p class="col">숫자 세 장(수집 현황 · 대기 중인 질문 · 최근 확정 사실)과 핵심 기록 카드. 카드마다 유형(개념·방식·진행 중), 범위(개인·업무), 공개 여부가 칩으로 붙어 있다. <strong>공개/비공개 칩이 보이는 게 중요하다</strong> — 03막의 MCP 장면이 여기에 걸린다.</p>
+
+  <h3>그래프 — 어떻게 얽혀 있나</h3>
+  <p class="col">토픽 허브로 묶인 관계도. 노드를 하나 클릭해 관련 기록이 딸려 나오는 것까지 보여준다. 정적인 목록이 아니라 <em>연결된 것</em>이라는 인상이 이 컷의 목적.</p>
+
+  <h3>나와 대화 — 그래서 뭘 해주나</h3>
+  <p class="col">질문은 <strong>「내가 요즘 제일 걱정하는 게 뭘까?」</strong>로 간다. 이건 검색으로 답할 수 없는 질문이다. 키워드가 아니라 마찰이 반복된 정도로 토픽을 골라야 답이 나온다. 답변에 근거 기록이 같이 붙는 것까지 한 컷에 담을 것.</p>
+
+  <div class="shot"><span class="id">M09</span><span class="what">대시보드 상단</span>
+    <span class="spec">숫자 세 장. 히어로 일러스트가 같이 보이는 스크롤 위치.</span><img src="screenshots/M09-dashboard-counts.jpg" alt="M09 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M09b</span><span class="what">대시보드 — 최근 확정된 사실</span><span class="spec">내가 답해서 확정된 것들. 02막(대기열)의 결과가 여기 쌓인다는 연결을 만들면 좋다.</span><img src="screenshots/M09b-recent-facts.jpg" alt="M09b — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M10</span><span class="what">핵심 기록 카드</span>
+    <span class="spec">3×2 이상 보이도록. 공개/비공개 칩이 섞여 있는 구간으로.</span><img src="screenshots/M10-highlights.jpg" alt="M10 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M11</span><span class="what">지식 그래프 — 전체</span>
+    <span class="spec">허브가 여러 개 보이는 배치. 노드가 뭉쳐 있지 않게 한 번 정렬 후.</span><img src="screenshots/M11-graph.jpg" alt="M11 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M12</span><span class="what">지식 그래프 — 노드 선택</span>
+    <span class="spec">오른쪽 패널에 선택한 노드의 관계가 펼쳐진 상태.</span><img src="screenshots/M12-graph-node.jpg" alt="M12 — 실제 앱 화면" loading="lazy"></div>
+  <div class="shot"><span class="id">M16</span><span class="what">나와 대화 — 첫 화면</span>
+    <span class="spec">예시 질문 세 개가 보이는 빈 상태.</span></div>
+  <div class="shot"><span class="id">M17</span><span class="what">나와 대화 — 답변</span>
+    <span class="spec">「내가 요즘 제일 걱정하는 게 뭘까?」의 답변 + 근거 기록. 답이 짧고 구체적인 회차를 골라 찍을 것.</span><img src="screenshots/M17-persona-answer.jpg" alt="M17 — 실제 앱 화면" loading="lazy"></div>
+  <p class="col" style="font-size:13.5px;color:var(--muted)">M16·M17은 6컷이 아니라 7컷이 되므로, M16을 M17의 앞 0.6초 트랜지션으로 흡수해 슬롯 하나로 묶는다.</p>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">04</span><h2>MCP — 내가 없어도 내 지식이 답한다</h2></div>
+  <p class="act-sub">1:50 – 2:25 · 미디어 3컷</p>
+  <div class="col">
+    <p>여기까지는 "나를 위한 도구"였다. 이 막에서 <strong>소비자가 바뀐다.</strong> 동료가 나에게 묻는 대신, 동료의 에이전트가 내 지식에 직접 질의한다.</p>
+    <p>컷은 <em>동료의 터미널</em>에서 찍는다. 내 앱은 화면에 없어야 한다 — 그게 요점이니까.</p>
+  </div>
+
+  <pre><span class="c"># 내가 준 URL + 토큰 한 줄. 이걸로 끝.</span>
+claude mcp add --transport http <b>jibin-knows-me</b> \
+  https://&lt;tunnel&gt;/mcp \
+  --header "Authorization: Bearer &lt;내가-발급한-토큰&gt;"</pre>
+
+  <pre>동료: <b>"지빈이 맡은 결제 서비스 로컬에서 어떻게 띄워?"</b>
+에이전트: <span class="c">(jibin-knows-me · search_knowledge)</span>
+   → run.sh로 띄우고, .env는 1Password의 payment-dev 항목을 씁니다.
+
+동료: <b>"지빈 연봉 협상 메모 있어?"</b>
+에이전트: → 그런 지식에 접근 권한이 없습니다. <span class="c">(forbidden)</span></pre>
+
+  <p class="col">마지막 줄이 이 막의 클라이맥스다. <strong>거절이 기능이다.</strong> 그리고 정확히는 "거절"보다 강하다 — 부여받지 않은 범주는 존재 자체가 보이지 않는다.</p>
+
+  <figure>
+    <svg viewBox="0 0 860 232" role="img" aria-label="동료의 요청은 토큰을 들고 오고, 서버가 토큰에 적힌 범주와 공유 표시를 모두 만족하는 페이지만 돌려준다. 부여받지 않은 범주와 비공개 페이지는 목록에도 나타나지 않으며, 요청 인자로는 범위를 넓힐 수 없다." xmlns="http://www.w3.org/2000/svg">
+      <g font-family="IBM Plex Sans KR, sans-serif" font-size="12" fill="currentColor">
+        <rect x="8" y="80" width="132" height="52" rx="7" fill="none" stroke="currentColor" stroke-width="1"/>
+        <text x="74" y="101" text-anchor="middle">동료의 에이전트</text>
+        <text x="74" y="118" text-anchor="middle" font-size="10.5" opacity=".7">토큰 지참</text>
+
+        <path d="M140,106 L206,106" stroke="currentColor" stroke-width="1.2" fill="none" marker-end="url(#ar2)"/>
+        <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="currentColor"/></marker>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="var(--accent)"/></marker></defs>
+
+        <rect x="208" y="62" width="176" height="88" rx="8" fill="none" stroke="var(--accent)" stroke-width="1.6"/>
+        <text x="296" y="86" text-anchor="middle" fill="var(--accent)" font-weight="600">인가는 서버가 강제</text>
+        <text x="296" y="107" text-anchor="middle" font-size="10.5" opacity=".85">범주 ∩ 공유 표시</text>
+        <text x="296" y="125" text-anchor="middle" font-size="10.5" opacity=".85">둘 다 만족해야 통과</text>
+        <text x="296" y="142" text-anchor="middle" font-size="10" opacity=".6">요청 인자로는 못 넓힘</text>
+
+        <path d="M384,88 L440,88 L440,44 L494,44" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#ar3)"/>
+        <path d="M384,124 L440,124 L440,168 L494,168" stroke="currentColor" stroke-width="1.2" fill="none" stroke-dasharray="4 3" opacity=".5"/>
+        <line x1="470" y1="156" x2="494" y2="180" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+        <line x1="494" y1="156" x2="470" y2="180" stroke="currentColor" stroke-width="1.2" opacity=".5"/>
+
+        <rect x="510" y="22" width="200" height="44" rx="7" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.4"/>
+        <text x="610" y="41" text-anchor="middle" fill="var(--accent-ink)" font-weight="600">deploy · workstyle</text>
+        <text x="610" y="57" text-anchor="middle" font-size="10.5" fill="var(--accent-ink)" opacity=".8">부여된 범주 · 공유 표시됨</text>
+
+        <rect x="510" y="146" width="200" height="44" rx="7" fill="none" stroke="currentColor" stroke-width="1" stroke-dasharray="4 3" opacity=".5"/>
+        <text x="610" y="165" text-anchor="middle" opacity=".55">연봉 · 개인 메모 · 미분류</text>
+        <text x="610" y="181" text-anchor="middle" font-size="10.5" opacity=".45">목록에도 나오지 않음</text>
+
+        <text x="724" y="46" font-size="11" fill="var(--accent)">보인다</text>
+        <text x="724" y="170" font-size="11" opacity=".5">존재조차 안 보인다</text>
+      </g>
+    </svg>
+    <figcaption>범주를 부여했다고 그 범주의 비공개 페이지까지 열리지는 않는다. 둘은 AND다 — 하나만 검사하면 버그.</figcaption>
+  </figure>
+
+  <div class="shot"><span class="id">M18</span><span class="what">동료 터미널 — 등록</span>
+    <span class="spec"><code>claude mcp add</code> 한 줄과 성공 출력. 토큰은 <code>&lt;token&gt;</code>으로 가릴 것.</span></div>
+  <div class="shot"><span class="id">M19</span><span class="what">동료 터미널 — 질의</span>
+    <span class="spec">질문 → MCP 툴 호출이 보이는 줄 → 답변. 툴 이름(<code>search_knowledge</code>)이 화면에 보여야 "내 금고를 읽었다"가 성립.</span></div>
+  <div class="shot"><span class="id">M20</span><span class="what">동료 터미널 — 거절</span>
+    <span class="spec">권한 없는 범주 질문 → 접근 불가 응답. 마지막 컷이므로 3초 정도 물릴 것.</span></div>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">05</span><h2>스토리보드</h2></div>
+  <p class="act-sub">미디어 20컷 · 총 2분 35초</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>타임</th><th>슬롯</th><th>화면</th><th>내레이션 / 자막</th></tr></thead>
+    <tbody>
+      <tr class="act-row"><td colspan="4">00 — 문제 · 0:00–0:12</td></tr>
+      <tr><td class="tc">0:00</td><td class="slot">M01</td><td>대시보드 히어로 (블러 → 선명)</td><td class="say">나는 매일 AI에 내 맥락을 쏟아붓는다.</td></tr>
+      <tr><td class="tc">0:06</td><td class="slot">M02</td><td>세션 트랜스크립트 스크롤</td><td class="say">그리고 세션이 끝나면 전부 사라진다.</td></tr>
+
+      <tr class="act-row"><td colspan="4">01 — 수집 · 0:12–0:55</td></tr>
+      <tr><td class="tc">0:12</td><td class="slot">M03</td><td>연결 소스 카탈로그</td><td class="say">기록은 이미 있다. 아무도 안 읽었을 뿐.</td></tr>
+      <tr><td class="tc">0:20</td><td class="slot">M04</td><td>수집 범위 다이얼로그</td><td class="say">어디까지 읽을지는 내가 정한다.</td></tr>
+      <tr><td class="tc">0:28</td><td class="slot">M05</td><td>끝까지 수집 · 진행 토스트</td><td class="say">431개 세션, 한 번에.</td></tr>
+      <tr><td class="tc">0:36</td><td class="slot">M06</td><td>Notion 연결</td><td class="say">노션은 토큰 한 줄.</td></tr>
+      <tr><td class="tc">0:42</td><td class="slot">M07</td><td>Gmail 연결</td><td class="say">메일도.</td></tr>
+      <tr><td class="tc">0:48</td><td class="slot">M08</td><td>전송 기록</td><td class="say">기기 밖으로 나간 것은 전부 여기 남는다.</td></tr>
+
+      <tr class="act-row"><td colspan="4">02 — 대기열 · 0:55–1:15</td></tr>
+      <tr><td class="tc">0:55</td><td class="slot">M13</td><td>대기열 목록</td><td class="say">확실하지 않은 것은 저장하지 않는다.</td></tr>
+      <tr><td class="tc">1:02</td><td class="slot">M14</td><td>질문 펼침</td><td class="say">대신 나에게 묻는다.</td></tr>
+      <tr><td class="tc">1:08</td><td class="slot">M15</td><td>답변 → 숫자 변화</td><td class="say">내가 답해야 사실이 된다.</td></tr>
+
+      <tr class="act-row"><td colspan="4">03 — 내 뷰 · 1:15–1:50</td></tr>
+      <tr><td class="tc">1:15</td><td class="slot">M09</td><td>대시보드 숫자 세 장</td><td class="say">111개의 기록.</td></tr>
+      <tr><td class="tc">1:21</td><td class="slot">M10</td><td>핵심 기록 카드</td><td class="say">활동 로그가 아니라, 나에 대해 참인 것.</td></tr>
+      <tr><td class="tc">1:28</td><td class="slot">M11</td><td>지식 그래프</td><td class="say">그리고 그것들은 서로 얽혀 있다.</td></tr>
+      <tr><td class="tc">1:34</td><td class="slot">M12</td><td>그래프 노드 선택</td><td class="say">—</td></tr>
+      <tr><td class="tc">1:40</td><td class="slot">M17</td><td>나와 대화 · 답변 (M16에서 전환)</td><td class="say">"내가 요즘 제일 걱정하는 게 뭘까?"</td></tr>
+
+      <tr class="act-row"><td colspan="4">04 — MCP · 1:50–2:25</td></tr>
+      <tr><td class="tc">1:50</td><td class="slot">M18</td><td>동료 터미널 · 등록</td><td class="say">여기까지는 나를 위한 도구였다.</td></tr>
+      <tr><td class="tc">1:58</td><td class="slot">M19</td><td>동료 터미널 · 질의</td><td class="say">이제 동료가 나에게 묻지 않는다. 그의 에이전트가 내 지식에 직접 묻는다.</td></tr>
+      <tr><td class="tc">2:12</td><td class="slot">M20</td><td>동료 터미널 · 거절</td><td class="say">내가 주지 않은 것은 보이지 않는다.</td></tr>
+
+      <tr class="act-row"><td colspan="4">마무리 · 2:25–2:35</td></tr>
+      <tr><td class="tc">2:25</td><td class="slot">M01<span style="opacity:.5">↺</span></td><td>대시보드로 복귀 · 워드마크</td><td class="say">Knows Me — 작은 흔적이 모여, 나를 이해하는 여정.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="col" style="font-size:13.5px;color:var(--muted)">M01은 오프닝과 클로징에 재사용하므로 실제 캡처는 19장이면 된다.</p>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">06</span><h2>촬영 전에 해야 할 것</h2></div>
+  <p class="act-sub">지금 화면을 그대로 찍으면 안 되는 이유가 하나 있다.</p>
+
+  <div class="flag">
+    <div class="h">먼저 재수집해야 한다</div>
+    <p>지금 볼트의 111개 사실은 <strong>중복 제거 수정 이전</strong>에 모은 것이다. 대시보드 핵심 기록에 <code>7일 표본으로는 파라미터를 건드리지 않는다</code>가 05·06·07 세 장에 그대로 겹쳐 있고, 데모에서 이건 바로 눈에 띈다.</p>
+    <p>수정은 들어갔지만 <strong>이미 저장된 사실을 소급해서 합쳐주지는 않는다</strong>. 촬영용으로는 빈 볼트에서 다시 모으는 편이 낫다. 겸사겸사 모델도 이제 Opus 5로 제대로 붙는다.</p>
+  </div>
+
+  <h3>체크리스트</h3>
+  <ul class="plain">
+    <li><b>재수집</b> — knows-me 자기 디렉터리는 빼고. 97세션 기준 30~50분.</li>
+    <li><b>대기열을 비우지 말 것</b> — 02막에서 답할 질문이 최소 하나는 남아 있어야 한다.</li>
+    <li><b>공개/비공개가 섞이게</b> — 04막의 거절 장면이 성립하려면 비공개 기록이 실제로 있어야 한다.</li>
+    <li><b>동료 계정 하나 준비</b> — 04막은 남의 터미널에서 찍어야 설득력이 있다. 토큰 발급도 미리.</li>
+    <li><b>개인정보 훑기</b> — Gmail 주소, 실명, 사내 프로젝트명. 캡처 후 한 번 더 볼 것.</li>
+    <li><b>창 크기 고정</b> — 캡처 사이에 창 크기가 바뀌면 Remotion에서 컷이 튄다.</li>
+  </ul>
+
+  <h3>캡처 방법</h3>
+  <p class="col">아래를 실행하면 순서대로 안내하고, 창을 클릭할 때마다 한 장씩 저장한다. 건너뛰려면 <code>s</code>.</p>
+  <pre>scratchpad/capture-shots.sh</pre>
+  <p class="col" style="font-size:13.5px;color:var(--muted)">이 문서를 만드는 쪽 셸에는 macOS 화면 기록 권한이 없어서 캡처가 거부된다(<code>could not create image from window</code>). 화면을 읽는 것은 되지만 파일로 남기지는 못한다. 그래서 이 한 단계만 직접 실행이 필요하다.</p>
+</section>
+
+<section>
+  <div class="act"><span class="act-no">07</span><h2>촬영 현황</h2></div>
+  <p class="act-sub">확보 11컷 / 남은 8컷</p>
+  <div class="col">
+    <p>아래 컷은 실제 앱에서 리티나 해상도(1920×1640)로 찍어 이 문서에 넣었다. 남은 것은 다이얼로그를 열어야 하거나 동료 터미널이 필요한 컷이다.</p>
+  </div>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>슬롯</th><th>화면</th><th>상태</th></tr></thead>
+    <tbody>
+      <tr><td class="slot">M01</td><td>대시보드 히어로</td><td>확보</td></tr>
+      <tr><td class="slot">M03</td><td>연결 소스 카탈로그</td><td>확보</td></tr>
+      <tr><td class="slot">M08b</td><td>설정 · 마스킹 정책 + 모델</td><td>확보 (계획에 없던 컷)</td></tr>
+      <tr><td class="slot">M09</td><td>대시보드 숫자 세 장</td><td>확보</td></tr>
+      <tr><td class="slot">M09b</td><td>최근 확정된 사실</td><td>확보 (계획에 없던 컷)</td></tr>
+      <tr><td class="slot">M10</td><td>핵심 기록 카드</td><td>확보 — <b>단, 05·06·07이 중복</b></td></tr>
+      <tr><td class="slot">M11</td><td>지식 그래프</td><td>확보 · 사실 111 · 주제 33 · 연결 296</td></tr>
+      <tr><td class="slot">M12</td><td>그래프 노드 선택</td><td><b>미확보</b> — 선택 상태를 못 만듦</td></tr>
+      <tr><td class="slot">M13·M14</td><td>인터뷰 대기열 · 펼친 질문</td><td>확보 (한 컷에 둘 다 나옴)</td></tr>
+      <tr><td class="slot">M17</td><td>나와 대화 · 답변</td><td>확보 — <b>내용이 매우 좋음</b></td></tr>
+      <tr><td class="slot">M02</td><td>세션 트랜스크립트 원본</td><td>남음 — 터미널에서</td></tr>
+      <tr><td class="slot">M04</td><td>수집 범위 다이얼로그</td><td>남음</td></tr>
+      <tr><td class="slot">M05</td><td>끝까지 수집 진행</td><td>남음 — 재수집할 때 같이</td></tr>
+      <tr><td class="slot">M06·M07</td><td>Notion · Gmail 연결</td><td>남음</td></tr>
+      <tr><td class="slot">M08</td><td>전송 기록</td><td>남음</td></tr>
+      <tr><td class="slot">M18·M19·M20</td><td>동료 터미널 3컷</td><td>남음 — 동료 계정 필요</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="flag">
+    <div class="h">M17이 이 데모의 최고 컷이다</div>
+    <p>「내가 요즘 제일 고민인게 뭘까」에 대한 답이 <strong>일반론이 아니라 숫자와 함께</strong> 나왔다 — "로컬 실행 환경 16번 중 12번이 걸림", "Tauri 10번 중 8번", "언급은 제일 많은데(36번) 걸림도 16건이야". 그리고 <em>안 걱정하는 것들</em>을 대비로 붙여서 걱정의 윤곽을 그린다.</p>
+    <p>이건 검색으로 못 만드는 답이다. 데모에서 이 컷에 가장 긴 시간을 주는 것을 권한다 — 앞의 모든 컷이 이걸 위한 준비다.</p>
+  </div>
+</section>
+
+<footer>
+  Knows Me · 데모 각본 v1 · 2026-09-09 · U4(인터페이스·페르소나) 작성 ·
+  근거: <code>docs/team-sharing.md</code>, <code>docs/mcp-contract.md</code>, <code>docs/collecting.md</code>
+</footer>
+
+</div>
+
+</body>
+</html>
