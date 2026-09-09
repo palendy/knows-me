@@ -32,6 +32,54 @@ impl KnowledgeSharing {
         Self { knowledge }
     }
 
+    /// (`mcp-contract.md` §3.2) Search within the token's scope, returning the
+    /// **full** visible facts (not the lossy [`FactSummary`] the frozen trait
+    /// projects), in stable (title, then id) order, capped at `limit`. Uses U3's
+    /// index for match quality, then the single [`Token::can_access`] predicate to
+    /// narrow scope — the token is the only thing that narrows, never a tool
+    /// argument (§3.2).
+    ///
+    /// Returning full facts (rather than re-fetching each hit downstream) means
+    /// each returned hit is read from the store once. Out-of-scope and
+    /// raced-deletion candidates are skipped *while collecting*, so a full page of
+    /// `limit` results comes back whenever that many are genuinely accessible —
+    /// an earlier hit vanishing does not shorten the page. [`SharingApi::search_knowledge`]
+    /// is a thin projection of this.
+    pub async fn search_visible(
+        &self,
+        token: &Token,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Fact>, AccessError> {
+        let mut hits = self
+            .knowledge
+            .search(query.to_string(), FactFilter::default())
+            .await
+            .map_err(to_access_error)?;
+        // The index yields hits in HashSet order (non-deterministic); impose a
+        // stable (title, id) order before capping so a truncated subset is
+        // deterministic and human-legible. (Relevance ranking is future work.)
+        hits.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
+        let mut out = Vec::new();
+        for h in hits {
+            if out.len() >= limit {
+                break;
+            }
+            // The index summary lacks visibility/category, so load each candidate to
+            // decide access. Out of scope or a raced deletion ⇒ skip and keep going
+            // (backfilling the page); any other store error fails loud.
+            match self.knowledge.get(h.id).await {
+                Ok(f) if token.can_access(f.metadata.visibility, f.metadata.category.as_ref()) => {
+                    out.push(f)
+                }
+                Ok(_) => {}
+                Err(AppError::NotFound(_)) => {}
+                Err(e) => return Err(to_access_error(e)),
+            }
+        }
+        Ok(out)
+    }
+
     /// (`mcp-contract.md` §3.1) The token-visible categories, each with the count
     /// of pages the token can read. `page_count` is derived from the same
     /// [`accessible`] predicate as every other read, so a `Private`/ungranted page
@@ -132,38 +180,23 @@ impl SharingApi for KnowledgeSharing {
         query: &str,
         limit: usize,
     ) -> Result<Vec<FactSummary>, AccessError> {
-        // Reuse U3's index for match quality (tokenized, Korean-aware). No
-        // category/scope narrowing here — the tool takes no such argument (§3.2);
-        // the token is the only thing that narrows scope.
-        let mut hits = self
-            .knowledge
-            .search(query.to_string(), FactFilter::default())
-            .await
-            .map_err(to_access_error)?;
-        // The index yields hits in HashSet order (non-deterministic), so when
-        // matches exceed `limit` the truncated subset would vary run to run. Impose
-        // a stable order (title, then id) before truncating — deterministic and
-        // human-legible. Relevance ranking is future work (the index scores no
-        // match), and would live here once it exists.
-        hits.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
-        // Filter to what the token may see, THEN take `limit`, so a consumer never
-        // gets fewer results just because out-of-scope hits sorted first. The index
-        // summary lacks visibility/category, so reload each hit to decide access.
-        let mut out = Vec::new();
-        for h in hits {
-            if out.len() >= limit {
-                break;
-            }
-            match self.knowledge.get(h.id).await {
-                Ok(f) if token.can_access(f.metadata.visibility, f.metadata.category.as_ref()) => {
-                    out.push(h)
-                }
-                Ok(_) => {}                      // indexed, but out of this token's scope
-                Err(AppError::NotFound(_)) => {} // raced deletion between index and store
-                Err(e) => return Err(to_access_error(e)),
-            }
-        }
-        Ok(out)
+        // A thin projection of `search_visible`: same index, same single access
+        // point (§3.2), returning the frozen surface's lossy summaries. One search
+        // implementation, so ordering/scope semantics can't drift between the two.
+        Ok(self
+            .search_visible(token, query, limit)
+            .await?
+            .into_iter()
+            .map(|f| FactSummary {
+                id: f.id,
+                title: f.title,
+                scope: f.metadata.scope,
+                kind: f.metadata.kind,
+                topics: f.metadata.topics,
+                visibility: f.metadata.visibility,
+                confirmed: f.metadata.confirmed,
+            })
+            .collect())
     }
 
     async fn get_page(&self, token: &Token, id: FactId) -> Result<Fact, AccessError> {
@@ -375,6 +408,32 @@ mod tests {
             .map(|f| f.title)
             .collect();
         assert_eq!(titles, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn search_visible_backfills_past_inaccessible_hits() {
+        // Inaccessible facts sort *between* accessible ones; a limit-2 search must
+        // still return 2 accessible facts, not stop short after skipping one.
+        let svc = Arc::new(KnowledgeService::new(Arc::new(InMemoryStore::default())));
+        for f in [
+            fact("1 body", Visibility::Private, Some("deploy")),
+            fact("2 body", Visibility::Shared, Some("deploy")),
+            fact("3 body", Visibility::Private, Some("deploy")),
+            fact("4 body", Visibility::Shared, Some("deploy")),
+        ] {
+            svc.upsert(f).await.unwrap();
+        }
+        let s = KnowledgeSharing::new(svc);
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        let titles: Vec<String> = s
+            .search_visible(&t, "body", 2)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.title)
+            .collect();
+        // "1 body"/"3 body" are Private (skipped); the two Shared ones backfill.
+        assert_eq!(titles, vec!["2 body".to_string(), "4 body".to_string()]);
     }
 
     #[tokio::test]

@@ -42,6 +42,7 @@ use uuid::Uuid;
 
 use crate::core::error::{AppError, Result};
 use crate::core::types::{Category, Fact, FactId, FactMetadata, SourceKind};
+use crate::persona::local_api::is_loopback_host;
 use crate::sharing::envelope::{envelope, sanitize_field, NOT_INSTRUCTIONS};
 use crate::sharing::{AccessError, KnowledgeSharing, SharingApi, Token};
 
@@ -254,8 +255,10 @@ async fn handle_search(
         .get("query")
         .and_then(Value::as_str)
         .ok_or_else(|| ToolError::InvalidInput("query".to_string()))?;
-    let qlen = query.chars().count();
-    if qlen == 0 || qlen > MAX_QUERY_CHARS {
+    // Reject empty *or whitespace-only* queries: the index treats a trim-empty
+    // query as "return everything", which would dump the whole token-scoped corpus
+    // instead of matching (§3.2 — query is required, 1..=500 chars).
+    if query.trim().is_empty() || query.chars().count() > MAX_QUERY_CHARS {
         return Err(ToolError::InvalidInput("query".to_string()));
     }
     let limit = match args.get("limit") {
@@ -269,22 +272,13 @@ async fn handle_search(
         }
     };
 
-    // Ask for one more than requested so truncation can be detected within the
-    // frozen surface: if the (limit+1)-th exists, the result set was cut.
-    let hits = sharing.search_knowledge(token, query, limit + 1).await?;
-    let truncated = hits.len() > limit;
-
-    // Hydrate each hit to the full fact through the single authorization point;
-    // `FactSummary` lacks category/body/updated_at. A hit that vanished between
-    // search and fetch (raced deletion) is simply dropped.
-    let mut results = Vec::new();
-    for h in hits.into_iter().take(limit) {
-        match sharing.get_page(token, h.id).await {
-            Ok(fact) => results.push(search_hit(fact)),
-            Err(AccessError::NotFound) => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
+    // Ask for one more than requested so truncation is detectable; `search_visible`
+    // returns full facts (no per-hit re-fetch) and backfills past out-of-scope /
+    // raced-deletion candidates, so the page is short only when fewer than `limit`
+    // facts are genuinely accessible.
+    let facts = sharing.search_visible(token, query, limit + 1).await?;
+    let truncated = facts.len() > limit;
+    let results = facts.into_iter().take(limit).map(search_hit).collect();
     Ok(to_value(SearchOut { results, truncated }))
 }
 
@@ -593,6 +587,20 @@ struct McpState {
 }
 
 async fn mcp_post(State(state): State<McpState>, headers: HeaderMap, body: Bytes) -> Response {
+    // Reject non-loopback `Host` headers, mirroring the persona server's BR-A2
+    // guard. Binding `127.0.0.1` is not enough on its own: a browser page can
+    // DNS-rebind its domain to loopback and POST here. This endpoint is
+    // unauthenticated in owner mode and serves every `Private` fact, so the Host
+    // check is load-bearing, not decorative. (Bearer auth in step ⓑ is an
+    // additional layer, not a replacement.)
+    let host_ok = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(is_loopback_host);
+    if !host_ok {
+        return (StatusCode::FORBIDDEN, "로컬 전용 엔드포인트입니다.").into_response();
+    }
+
     // Identity is fixed here, once, before anything is dispatched — the auth seam.
     let token = match resolve_identity(&headers) {
         Ok(t) => t,
@@ -960,9 +968,13 @@ mod tests {
     // ---- HTTP smoke test (ⓐ owner self-reference over the wire) -----------
 
     fn post_mcp(port: u16, body: &str) -> (u16, String) {
+        post_mcp_host(port, "127.0.0.1", body)
+    }
+
+    fn post_mcp_host(port: u16, host: &str, body: &str) -> (u16, String) {
         let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect");
         let req = format!(
-            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\n\
+            "POST /mcp HTTP/1.1\r\nHost: {host}\r\nContent-Type: application/json\r\n\
              Accept: application/json, text/event-stream\r\nContent-Length: {}\r\n\
              Connection: close\r\n\r\n{body}",
             body.len()
@@ -1013,6 +1025,33 @@ mod tests {
         // The tool result embeds the enveloped body (JSON-escaped inside the text).
         assert!(page_body.contains("knows-me:content"));
         assert!(page_body.contains("\"isError\""));
+
+        h.stop().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn non_loopback_host_is_rejected() {
+        // DNS-rebinding defense: a request whose Host is not loopback must be
+        // refused before any tool runs, even though the socket is on 127.0.0.1.
+        let (s, ids) = seeded().await;
+        let mut h = McpServer::start(s, 0).await.unwrap();
+        let port = h.port();
+
+        let (status, body) = tokio::task::spawn_blocking(move || {
+            let call = format!(
+                r#"{{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{{"name":"get_page","arguments":{{"id":"{}"}}}}}}"#,
+                ids[0].0
+            );
+            post_mcp_host(port, "evil.example.com", &call)
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(status, 403, "non-loopback Host must be refused");
+        assert!(
+            !body.contains("knows-me:content"),
+            "no data may leak on a refused request"
+        );
 
         h.stop().await;
     }
