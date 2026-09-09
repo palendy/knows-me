@@ -118,6 +118,10 @@ async function callOwnerMcp(owner, name, args) {
   }
   if (resp.status === 401) return { text: '오류: 인증 실패(토큰이 무효/폐기됨).', isError: true };
   if (resp.status === 503) return { text: '오류: 팀원의 지식 저장소가 잠겨 있거나 연결할 수 없습니다.', isError: true };
+  // 그 외 non-2xx(예: cloudflared 1033/530 = origin 도달 불가) → 오프라인으로 명확히.
+  if (!resp.ok) {
+    return { text: `오류: 팀원의 앱에 연결할 수 없습니다(오프라인이거나 터널이 내려갔을 수 있음, HTTP ${resp.status}).`, isError: true };
+  }
   const data = await resp.json().catch(() => null);
   const result = data?.result;
   if (!result) return { text: `오류: ${data?.error?.message || '알 수 없는 응답'}`, isError: true };
