@@ -52,10 +52,10 @@ struct TokenRecord {
     /// Categories this token may read. Combined with `visibility == Shared` by
     /// [`Token::can_access`] — this set alone never widens the owner's exposure.
     granted: BTreeSet<Category>,
-    /// When the token was minted. Retained for the owner's audit/UI (step 5) and
-    /// as the basis for a future TTL; tokens are otherwise valid until explicitly
-    /// revoked (the deliberate model — a leaked secret is handled by [revoking],
-    /// not by expiry). [Deserialize]-only for now.
+    /// When the token was minted. Surfaced to the owner's audit/UI via
+    /// [`TokenStore::list`] and kept as the basis for a future TTL; tokens are
+    /// otherwise valid until explicitly revoked (the deliberate model — a leaked
+    /// secret is handled by [revoking], not by expiry).
     ///
     /// [revoking]: TokenStore::revoke
     issued_at: DateTime<Utc>,
@@ -69,6 +69,15 @@ struct TokenRecord {
 pub struct IssuedToken {
     pub id: String,
     pub secret: String,
+}
+
+/// A live token's public metadata, for the owner's sharing UI. Never carries the
+/// secret (only its hash is stored, and even that stays inside the store).
+pub struct TokenInfo {
+    pub id: String,
+    /// The granted categories, in stable sorted order.
+    pub granted: Vec<Category>,
+    pub issued_at: DateTime<Utc>,
 }
 
 /// Mints, validates, and revokes consumer tokens on top of an [`EncryptedStore`].
@@ -156,6 +165,41 @@ impl TokenStore {
             }
         }
         Ok(revoked_any)
+    }
+
+    /// List every live (non-revoked) token's public metadata, newest first, for
+    /// the owner's sharing UI. The secret is never stored, so it is never
+    /// returned. Like [`revoke`], a record that cannot be read or parsed is
+    /// skipped (it cannot authenticate either, so it is not a live token); a
+    /// locked vault propagates.
+    ///
+    /// [`revoke`]: Self::revoke
+    pub async fn list(&self) -> Result<Vec<TokenInfo>> {
+        let keys = self.store.list(NS).await?;
+        let mut out = Vec::new();
+        for key in keys {
+            let record: TokenRecord = match self.store.get(NS, &key).await {
+                Ok(Some(bytes)) => match serde_json::from_slice(&bytes) {
+                    Ok(r) => r,
+                    Err(_) => continue,
+                },
+                Ok(None) => continue,
+                Err(AppError::Locked) => return Err(AppError::Locked),
+                Err(_) => continue,
+            };
+            if record.revoked {
+                continue;
+            }
+            out.push(TokenInfo {
+                id: record.id,
+                // BTreeSet iterates sorted; collect into the stable-ordered Vec.
+                granted: record.granted.into_iter().collect(),
+                issued_at: record.issued_at,
+            });
+        }
+        // Newest first, then id, so the UI order is stable across calls.
+        out.sort_by(|a, b| b.issued_at.cmp(&a.issued_at).then_with(|| a.id.cmp(&b.id)));
+        Ok(out)
     }
 }
 
@@ -259,6 +303,41 @@ mod tests {
             "alice is revoked despite the corrupt neighbor record"
         );
         assert!(ts.resolve(&issued.secret).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn list_returns_live_tokens_newest_first_without_revoked() {
+        let ts = store();
+        ts.issue("alice", [cat("deploy")]).await.unwrap();
+        ts.issue("bob", [cat("payment"), cat("deploy")])
+            .await
+            .unwrap();
+        ts.revoke("bob").await.unwrap();
+
+        let listed = ts.list().await.unwrap();
+        assert_eq!(listed.len(), 1, "the revoked token must be excluded");
+        assert_eq!(listed[0].id, "alice");
+        assert_eq!(
+            listed[0]
+                .granted
+                .iter()
+                .map(|c| c.as_str())
+                .collect::<Vec<_>>(),
+            vec!["deploy"],
+            "granted categories are surfaced (never the secret)"
+        );
+    }
+
+    #[tokio::test]
+    async fn list_skips_corrupt_records() {
+        let backing = Arc::new(InMemoryStore::default());
+        let ts = TokenStore::new(backing.clone());
+        ts.issue("alice", [cat("deploy")]).await.unwrap();
+        backing.put(NS, "corrupt-key", b"not json").await.unwrap();
+
+        let listed = ts.list().await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, "alice");
     }
 
     #[tokio::test]

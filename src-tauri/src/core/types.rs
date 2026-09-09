@@ -605,6 +605,11 @@ pub struct AppConfig {
     pub transfer_policy: TransferPolicy,
     /// Whether the local persona API server is enabled (U4 owns the server).
     pub server_enabled: bool,
+    /// Whether the sharing (MCP) servers are enabled: the owner-loopback listener
+    /// (step ⓐ) and the Bearer-only shared listener a tunnel fronts (step ⓑ). Off
+    /// by default — sharing is opt-in.
+    #[serde(default)]
+    pub sharing_enabled: bool,
     /// Which LLM backend to drive: `claude-cli`, `anthropic`, or `openai`.
     #[serde(default = "default_provider")]
     pub llm_provider: String,
@@ -634,6 +639,7 @@ impl Default for AppConfig {
         Self {
             transfer_policy: TransferPolicy::default(),
             server_enabled: false,
+            sharing_enabled: false,
             llm_provider: default_provider(),
             // The CLI backend's own default model. Kept in sync with
             // `ClaudeCliConfig::default` so the settings screen and the client

@@ -10,7 +10,10 @@ import type {
   AppStatus,
   ClaudeInstall,
   ConfigDto,
+  IssuedShareToken,
   LlmConfigInput,
+  ShareStatus,
+  ShareTokenInfo,
   TransferPolicy,
   TransferRecord,
 } from "./contracts";
@@ -49,6 +52,16 @@ export const ipc = {
     call<ClaudeInstall[]>("discover_claude_installs"),
   setServerEnabled: (on: boolean) => call<void>("set_server_enabled", { on }),
   listTransfers: () => call<TransferRecord[]>("list_transfers"),
+  // Sharing (MCP): servers, tunnel, consumer tokens.
+  shareStatus: () => call<ShareStatus>("share_status"),
+  setSharingEnabled: (on: boolean) => call<void>("set_sharing_enabled", { on }),
+  listShareCategories: () => call<string[]>("list_share_categories"),
+  issueShareToken: (id: string, categories: string[]) =>
+    call<IssuedShareToken>("issue_share_token", { id, categories }),
+  revokeShareToken: (id: string) => call<boolean>("revoke_share_token", { id }),
+  listShareTokens: () => call<ShareTokenInfo[]>("list_share_tokens"),
+  startShareTunnel: () => call<string>("start_share_tunnel"),
+  stopShareTunnel: () => call<void>("stop_share_tunnel"),
 };
 
 // --- Browser mock ----------------------------------------------------------
@@ -60,6 +73,9 @@ const LS = {
   // Not secure — the mock only needs to remember whether a key was "saved" so
   // the standalone UI can show the same states as the real, encrypted store.
   apiKeys: "knowsme.mock.apiKeys",
+  // Sharing mock state for standalone UI dev.
+  shareTokens: "knowsme.mock.shareTokens",
+  tunnelUrl: "knowsme.mock.tunnelUrl",
 };
 
 let mockUnlocked = false;
@@ -68,6 +84,7 @@ function defaultConfig(): AppConfig {
   return {
     transfer_policy: "MaskAndMinimize",
     server_enabled: false,
+    sharing_enabled: false,
     llm_provider: "claude-cli",
     llm_model: "claude-sonnet-5",
     llm_base_url: null,
@@ -164,6 +181,64 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
         { id: "native", label: "로컬", binary: "claude", model: "claude-sonnet-5" },
         { id: "wsl:Ubuntu", label: "WSL · Ubuntu", binary: "wsl -d Ubuntu claude", model: "opus" },
       ] as T;
+    case "share_status": {
+      const cfg = readConfig();
+      const tunnel = localStorage.getItem(LS.tunnelUrl);
+      return {
+        enabled: cfg.sharing_enabled,
+        owner_port: cfg.sharing_enabled ? 8766 : null,
+        shared_port: cfg.sharing_enabled ? 8767 : null,
+        tunnel_url: cfg.sharing_enabled ? tunnel : null,
+        cloudflared_installed: true,
+      } as T;
+    }
+    case "set_sharing_enabled": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const cfg = readConfig();
+      cfg.sharing_enabled = Boolean(args?.on);
+      localStorage.setItem(LS.config, JSON.stringify(cfg));
+      if (!cfg.sharing_enabled) localStorage.removeItem(LS.tunnelUrl);
+      return undefined as T;
+    }
+    case "list_share_categories":
+      return ["deploy", "payment", "workstyle"] as T;
+    case "issue_share_token": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const id = String(args?.id ?? "");
+      const categories = (args?.categories as string[]) ?? [];
+      const secret = `mock-${Math.random().toString(36).slice(2)}${Math.random()
+        .toString(36)
+        .slice(2)}`;
+      const tokens = JSON.parse(
+        localStorage.getItem(LS.shareTokens) ?? "[]",
+      ) as ShareTokenInfo[];
+      tokens.push({ id, granted: categories, issued_at: new Date().toISOString() });
+      localStorage.setItem(LS.shareTokens, JSON.stringify(tokens));
+      return { id, secret } as T;
+    }
+    case "revoke_share_token": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const id = String(args?.id ?? "");
+      const tokens = JSON.parse(
+        localStorage.getItem(LS.shareTokens) ?? "[]",
+      ) as ShareTokenInfo[];
+      const kept = tokens.filter((t) => t.id !== id);
+      localStorage.setItem(LS.shareTokens, JSON.stringify(kept));
+      return (kept.length !== tokens.length) as T;
+    }
+    case "list_share_tokens":
+      return JSON.parse(
+        localStorage.getItem(LS.shareTokens) ?? "[]",
+      ) as T;
+    case "start_share_tunnel": {
+      if (!mockUnlocked) throw new Error("locked: unlock required");
+      const url = "https://mock-tunnel.trycloudflare.com";
+      localStorage.setItem(LS.tunnelUrl, url);
+      return url as T;
+    }
+    case "stop_share_tunnel":
+      localStorage.removeItem(LS.tunnelUrl);
+      return undefined as T;
     case "list_transfers":
       return [] as T;
     default:

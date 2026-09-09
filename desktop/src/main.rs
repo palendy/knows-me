@@ -19,9 +19,9 @@ mod services;
 
 use knows_me_core::core::commands::{self, AppStatus, SourceStatus};
 use knows_me_core::core::types::{
-    AnswerInput, AnswerResult, AppConfig, ChatTurn, DashboardDto, Draft, DraftRequest, GraphDto,
-    GraphFilter, MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort, SourceConfig,
-    SourceKind, TransferPolicy, TransferRecord,
+    AnswerInput, AnswerResult, AppConfig, Category, ChatTurn, DashboardDto, Draft, DraftRequest,
+    GraphDto, GraphFilter, MiniHomeDto, PersonaReply, QueueItem, QueueItemId, QueueSort,
+    SourceConfig, SourceKind, TransferPolicy, TransferRecord,
 };
 use knows_me_core::AppState;
 use services::Services;
@@ -205,7 +205,9 @@ async fn set_llm_config(
     cfg.llm_base_url = base_url
         .map(|u| u.trim().to_string())
         .filter(|u| !u.is_empty());
-    cfg.llm_binary = binary.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
+    cfg.llm_binary = binary
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty());
     state.save_config(cfg).await.map_err(err)?;
 
     // 3. Reflect the (possibly just-changed) key for the selected provider.
@@ -259,6 +261,133 @@ async fn discover_claude_installs() -> CmdResult<Vec<knows_me_core::llm::ClaudeI
             .await
             .unwrap_or_default(),
     )
+}
+
+// --- Sharing (MCP): servers, tunnel, consumer tokens -----------------------
+
+/// Runtime sharing status the settings screen reads. Config-level (`enabled`)
+/// plus the live server/tunnel state, and whether cloudflared is installed so
+/// the UI can tell "tunnel off" from "can't tunnel".
+#[derive(serde::Serialize)]
+struct ShareStatusDto {
+    enabled: bool,
+    owner_port: Option<u16>,
+    shared_port: Option<u16>,
+    tunnel_url: Option<String>,
+    cloudflared_installed: bool,
+}
+
+/// A freshly issued consumer token. `secret` is shown to the owner **once** —
+/// it is never recoverable, so the UI must surface it immediately.
+#[derive(serde::Serialize)]
+struct IssuedTokenDto {
+    id: String,
+    secret: String,
+}
+
+/// A live token's public metadata for the tokens list. Never the secret.
+#[derive(serde::Serialize)]
+struct ShareTokenDto {
+    id: String,
+    granted: Vec<String>,
+    issued_at: String,
+}
+
+#[tauri::command]
+async fn set_sharing_enabled(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+    on: bool,
+) -> CmdResult<()> {
+    commands::set_sharing_enabled(state.inner(), on)
+        .await
+        .map_err(err)?;
+    services.set_sharing_enabled(on).await;
+    Ok(())
+}
+
+/// cloudflared install status, probed once per session and cached. The probe
+/// spawns a `cloudflared --version` child, and the sharing UI polls `share_status`
+/// on mount and after every mutation — install status doesn't change within a
+/// session, so forking a process per poll is wasteful. (Trade-off: installing
+/// cloudflared while the app runs isn't reflected until the next launch.)
+static CLOUDFLARED_INSTALLED: tokio::sync::OnceCell<bool> = tokio::sync::OnceCell::const_new();
+
+#[tauri::command]
+async fn share_status(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+) -> CmdResult<ShareStatusDto> {
+    let (owner_port, shared_port) = services.mcp_ports().await;
+    let cloudflared_installed = *CLOUDFLARED_INSTALLED
+        .get_or_init(knows_me_core::sharing::tunnel::cloudflared_available)
+        .await;
+    Ok(ShareStatusDto {
+        enabled: state.config().sharing_enabled,
+        owner_port,
+        shared_port,
+        tunnel_url: services.tunnel_url().await,
+        cloudflared_installed,
+    })
+}
+
+/// The owner's category vocabulary — the grant choices the issuance form offers.
+#[tauri::command]
+async fn list_share_categories(services: tauri::State<'_, Services>) -> CmdResult<Vec<String>> {
+    services.owner_categories().await.map_err(err)
+}
+
+/// Issue a consumer token for `id`, granting the given (normalized) categories.
+/// Returns the one-time secret.
+#[tauri::command]
+async fn issue_share_token(
+    services: tauri::State<'_, Services>,
+    id: String,
+    categories: Vec<String>,
+) -> CmdResult<IssuedTokenDto> {
+    // Normalize/validate every category before minting — a bad one is a rejected
+    // request, not a token that grants nothing.
+    let cats = categories
+        .iter()
+        .map(|c| Category::parse(c))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(err)?;
+    let issued = services.issue_token(id, cats).await.map_err(err)?;
+    Ok(IssuedTokenDto {
+        id: issued.id,
+        secret: issued.secret,
+    })
+}
+
+/// Revoke every live token issued under `id`. Reports whether any changed.
+#[tauri::command]
+async fn revoke_share_token(services: tauri::State<'_, Services>, id: String) -> CmdResult<bool> {
+    services.revoke_token(&id).await.map_err(err)
+}
+
+#[tauri::command]
+async fn list_share_tokens(services: tauri::State<'_, Services>) -> CmdResult<Vec<ShareTokenDto>> {
+    let tokens = services.list_tokens().await.map_err(err)?;
+    Ok(tokens
+        .into_iter()
+        .map(|t| ShareTokenDto {
+            id: t.id,
+            granted: t.granted.iter().map(|c| c.as_str().to_string()).collect(),
+            issued_at: t.issued_at.to_rfc3339(),
+        })
+        .collect())
+}
+
+/// Start a cloudflared quick tunnel over the shared listener; returns its URL.
+#[tauri::command]
+async fn start_share_tunnel(services: tauri::State<'_, Services>) -> CmdResult<String> {
+    services.start_tunnel().await.map_err(err)
+}
+
+#[tauri::command]
+async fn stop_share_tunnel(services: tauri::State<'_, Services>) -> CmdResult<()> {
+    services.stop_tunnel().await;
+    Ok(())
 }
 
 // --- U4: read views + persona (locked → AppError::Locked) ------------------
@@ -639,6 +768,14 @@ fn main() {
             list_transfers,
             local_api_status,
             discover_claude_installs,
+            set_sharing_enabled,
+            share_status,
+            list_share_categories,
+            issue_share_token,
+            revoke_share_token,
+            list_share_tokens,
+            start_share_tunnel,
+            stop_share_tunnel,
             get_dashboard,
             get_minihome,
             get_graph,
