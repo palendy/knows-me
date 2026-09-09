@@ -16,6 +16,9 @@ use async_trait::async_trait;
 
 use crate::core::types::{Category, Fact, FactId, FactSummary, Visibility};
 
+mod knowledge;
+pub use knowledge::KnowledgeSharing;
+
 /// Contract error codes (`mcp-contract.md` §5). Which layer produces each:
 /// `NotFound` = tool domain (this trait) for absent *or* out-of-scope targets —
 /// existence is never leaked. `Unauthorized`/`Locked`/`Unavailable`/`InvalidInput`
