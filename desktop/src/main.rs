@@ -368,13 +368,15 @@ async fn trigger_ingest(
 
 fn main() {
     // Load a local `.env` (if present) before anything reads the environment,
-    // so the OpenRouter/Gemini key + model are picked up at startup without the
-    // user exporting env vars. Missing file is fine — the LLM gateway falls back
-    // to the offline canned client. Only compiled into `llm-http` builds.
-    #[cfg(feature = "llm-http")]
-    {
-        let _ = dotenvy::dotenv();
-    }
+    // so LLM settings are picked up at startup without the user exporting env
+    // vars. Missing file is fine — every setting here has a default.
+    //
+    // Unconditional, not gated on `llm-http`: the default backend is the local
+    // Claude CLI, which reads `CLAUDE_CLI_MODEL`/`CLAUDE_CLI_BINARY` from the
+    // environment and needs no HTTP feature at all. Behind the feature gate,
+    // a `.env` in the default build was read by nothing and the owner's chosen
+    // model was silently ignored.
+    let _ = dotenvy::dotenv();
 
     tauri::Builder::default()
         .setup(|app| {

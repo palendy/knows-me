@@ -51,6 +51,29 @@ const MAX_CHARS_PER_ITEM: usize = 24_000;
 const MAX_PROMPTS: usize = 12;
 const MAX_PROMPT_CHARS: usize = 400;
 
+/// First line of each prompt this app itself sends to the Claude CLI backend.
+///
+/// The CLI backend drives Claude Code, which records the request as a user turn
+/// in *its own* transcript — under the same directory this connector scans. So
+/// every extraction knows-me runs becomes owner speech for the next collection
+/// to extract from, and the knowledge base fills with facts about knows-me's
+/// prompts. Observed in a real run: a stored Concept titled "사실 노트 분류
+/// 스키마의 certainty 필드", and a queue item asking the owner to confirm a
+/// complaint the model made about the prompt it had been handed.
+///
+/// Matching on the prompts' own first lines rather than a hand-copied string
+/// keeps the filter correct when the prompts are reworded.
+fn own_prompt_openers() -> [&'static str; 2] {
+    [
+        first_line(crate::llm::prompts::SUMMARIZE_SYSTEM),
+        first_line(crate::llm::prompts::CLASSIFY_SYSTEM),
+    ]
+}
+
+fn first_line(s: &str) -> &str {
+    s.split('\n').next().unwrap_or(s).trim()
+}
+
 /// Record one of the owner's turns, trimmed and without the boilerplate that
 /// the harness injects into user-role messages.
 fn push_prompt(out: &mut Vec<String>, text: &str) {
@@ -62,6 +85,10 @@ fn push_prompt(out: &mut Vec<String>, text: &str) {
         || text.starts_with("<command-")
         || text.starts_with("Caveat:")
     {
+        return;
+    }
+    // Nor is this app talking to itself (see `own_prompt_openers`).
+    if own_prompt_openers().iter().any(|o| text.starts_with(o)) {
         return;
     }
     let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -770,6 +797,34 @@ mod digest_tests {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn the_apps_own_extraction_prompts_are_not_owner_speech() {
+        // The CLI backend's request is recorded as a user turn in Claude Code's
+        // transcript, in the very directory this connector scans. Left in, each
+        // extraction run teaches the next one about knows-me's own prompts.
+        let mut out = Vec::new();
+        for prompt in [
+            crate::llm::prompts::SUMMARIZE_SYSTEM,
+            crate::llm::prompts::CLASSIFY_SYSTEM,
+        ] {
+            // Exactly what `ClaudeCliLlm::run` writes to stdin.
+            push_prompt(&mut out, &format!("{prompt}\n\n어떤 세션 본문"));
+        }
+        assert!(
+            out.is_empty(),
+            "the app's own prompts must not be collected as the owner talking: {out:?}"
+        );
+    }
+
+    #[test]
+    fn a_real_turn_that_merely_mentions_extraction_is_kept() {
+        // The filter keys on the prompts' opening line, not on the topic —
+        // the owner discussing extraction is exactly the context worth having.
+        let mut out = Vec::new();
+        push_prompt(&mut out, "추출 품질이 별로야, 분류 스키마를 다시 보자");
+        assert_eq!(out.len(), 1);
+    }
 
     fn tmp_root() -> PathBuf {
         // Unique-per-test dir without Math.random: use process id + a counter file.

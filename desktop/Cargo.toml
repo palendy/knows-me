@@ -18,9 +18,7 @@ path = "src/main.rs"
 # default so the app builds and runs fully offline (canned LLM, skeleton
 # connectors); turn on with `--features llm-http`. Notion HTTP rides along since
 # both need `reqwest` and the online build is the one that talks to services.
-# `dep:dotenvy` loads a local `.env` at startup so the OpenRouter/Gemini key is
-# picked up without exporting env vars by hand.
-llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http", "dep:dotenvy"]
+llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http"]
 # Enable only the real Notion connector (without the cloud LLM).
 notion-http = ["knows-me-core/notion-http"]
 
@@ -37,6 +35,8 @@ serde = { version = "1", features = ["derive"] }
 # The connect_source command receives a source-specific field map as free JSON,
 # and the persona chat history is stored as JSON in the encrypted vault.
 serde_json = "1"
-# Loads a local `.env` on startup (llm-http builds) so the LLM key/model are
-# read without manually exporting env vars.
-dotenvy = { version = "0.15", optional = true }
+# Loads a local `.env` on startup so the LLM model/key are read without
+# manually exporting env vars. Not optional: the default (CLI) backend reads
+# the environment too, so gating this on `llm-http` made `.env` a no-op in the
+# build most owners actually run.
+dotenvy = "0.15"
