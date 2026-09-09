@@ -39,7 +39,6 @@ export function DashboardView({ api, onNavigate }: Props) {
       <header className="dashboard-heading">
         <div>
           <h2>대시보드</h2>
-          <p className="dashboard-intro">흩어진 기록이 모여, 나를 조금 더 선명하게.</p>
         </div>
         <button type="button" className="dashboard-refresh" onClick={refresh}>
           <span aria-hidden="true">↻</span> 새로고침
@@ -49,16 +48,16 @@ export function DashboardView({ api, onNavigate }: Props) {
         {(d) => (
           <>
             <div className="dashboard-stats">
-              <StatCard label="수집 현황" value={d.collected_count} detail="연결한 소스에서 모은 기록" />
-              <StatCard label="대기 중인 질문" value={d.pending_queue} detail="내 확인을 기다리는 이야기" />
-              <StatCard label="최근 확정 사실" value={d.recent_facts.length} detail="최근에 확인한 나의 맥락" />
+              <StatCard label="수집 현황" value={d.collected_count} detail="소스에서 모은 기록" />
+              <StatCard label="대기 중인 질문" value={d.pending_queue} detail="답하면 사실로 저장돼요" />
+              <StatCard label="최근 확정 사실" value={d.recent_facts.length} detail="내가 확인한 기록" />
             </div>
             <div className="dashboard-body">
               <div className="dashboard-main">
                 <MiniHomeView api={api} />
                 <section className="dashboard-recent" aria-label="최근 확정된 사실">
                   <div className="dashboard-section-heading">
-                    <div><h3>최근 확정된 사실</h3><p>직접 확인한 기록이 차곡차곡 쌓이고 있어요.</p></div>
+                    <div><h3>최근 확정된 사실</h3></div>
                     <a className="dashboard-text-link" href="#dashboard-graph">연결 살펴보기 <span aria-hidden="true">↓</span></a>
                   </div>
                   {d.recent_facts.length === 0 ? <p className="dashboard-empty">확정된 사실이 아직 없습니다.</p> : (
@@ -71,10 +70,8 @@ export function DashboardView({ api, onNavigate }: Props) {
                 </section>
               </div>
               <aside className="dashboard-aside" aria-label="다음 활동">
-                <section className="dashboard-composition" aria-label="최근 맥락의 구성">
-                  <span className="dashboard-aside-label">기록의 관점</span>
-                  <h3>최근 맥락의 구성</h3>
-                  <p>최근 확정 사실 {d.recent_facts.length}개 기준</p>
+                <section className="dashboard-composition" aria-label="기록 유형별 비율">
+                  <h3>기록 유형별 비율</h3>
                   <div className="dashboard-scope-bars">
                     {(["Company", "Personal", "Unknown"] as const).map((scope) => {
                       const count = d.recent_facts.filter((fact) => fact.scope === scope).length;
@@ -86,13 +83,11 @@ export function DashboardView({ api, onNavigate }: Props) {
                   </div>
                 </section>
                 <div className="dashboard-next">
-                  <span className="dashboard-aside-label">이어서 할 일</span>
                   <h3>{d.pending_queue > 0 ? "한 가지 더 알려주세요" : "나의 기록을 넓혀보세요"}</h3>
                   <p>{d.pending_queue > 0 ? `확인을 기다리는 질문 ${d.pending_queue}개가 있어요. 짧은 답변 하나로 나의 맥락이 더 정확해집니다.` : "새로운 소스를 연결하면 일상과 업무의 기록을 한곳에서 살펴볼 수 있어요."}</p>
                   {onNavigate && <button className="dashboard-primary" onClick={() => onNavigate(d.pending_queue > 0 ? "queue" : "settings")}>{d.pending_queue > 0 ? "질문 확인하기" : "소스 연결하기"}<span aria-hidden="true">→</span></button>}
                 </div>
                 <div className="dashboard-conversation">
-                  <span className="dashboard-aside-label">나와 대화</span>
                   <h3>기록에 말을 걸어보세요</h3>
                   <p>쌓인 맥락을 바탕으로 생각을 정리하고, 나다운 문장을 만들어보세요.</p>
                   {onNavigate && <button className="dashboard-text-link" onClick={() => onNavigate("persona")}>대화 시작하기 <span aria-hidden="true">→</span></button>}

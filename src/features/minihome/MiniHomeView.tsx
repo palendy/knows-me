@@ -17,9 +17,9 @@ export function MiniHomeView({ api, limit = 9 }: Props) {
   useEffect(refresh, [refresh]);
 
   return (
-    <section aria-label="나를 이루는 맥락" className="context-section">
+    <section aria-label="핵심 기록" className="context-section">
       <div className="dashboard-section-heading">
-        <div><h3>나를 이루는 맥락</h3><p>연결이 많은 기록부터, 지금의 나를 한눈에.</p></div>
+        <div><h3>핵심 기록</h3><p>연결이 많은 기록부터 보여줍니다.</p></div>
         {state.status === "ready" && <span className="context-count">{state.data.highlights.length}개의 기록</span>}
       </div>
       <StateShell state={state} emptyMessage="확정된 사실이 아직 없습니다. 인터뷰 Queue에서 질문에 답하면 이 화면이 채워집니다." onRetry={refresh}>
@@ -41,7 +41,6 @@ export function MiniHomeView({ api, limit = 9 }: Props) {
                   </ul>
                 )}
                 <div className="context-card-foot">
-                  <span className="context-confirmed"><span aria-hidden="true">✓</span> 확인한 사실</span>
                   <span className={`context-visibility context-visibility-${f.visibility.toLowerCase()}`}>{visibilityLabel(f.visibility)}</span>
                 </div>
               </li>

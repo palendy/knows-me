@@ -12,13 +12,13 @@ import type { DashboardDto } from "../../shared/contracts";
 describe("DashboardView", () => {
   it("includes representative context and the interactive knowledge graph", async () => {
     render(<DashboardView api={new MockApi()} />);
-    const context = await screen.findByRole("region", { name: "나를 이루는 맥락" });
+    const context = await screen.findByRole("region", { name: "핵심 기록" });
     expect(await within(context).findByText("배포 절차")).toBeInTheDocument();
     const graph = screen.getByRole("region", { name: "지식 그래프" });
     const node = await within(graph).findByRole("button", { name: "배포 절차" });
     await userEvent.click(node);
     expect(node).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText(/최근 확정 사실 \d+개 기준/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "기록 유형별 비율" })).toBeInTheDocument();
   });
 
   it("shows collection status, pending queue and recent facts (AC1)", async () => {

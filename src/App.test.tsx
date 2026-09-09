@@ -24,7 +24,7 @@ describe("UnlockedShell (app wiring)", () => {
     expect(within(tablist).queryByRole("tab", { name: "미니홈피" })).not.toBeInTheDocument();
     expect(within(tablist).queryByRole("tab", { name: "지식 그래프" })).not.toBeInTheDocument();
     expect(within(tablist).queryByRole("tab", { name: "소스" })).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "나를 이루는 맥락" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "핵심 기록" })).toBeInTheDocument();
     expect(await screen.findByRole("region", { name: "지식 그래프" })).toBeInTheDocument();
   });
 
