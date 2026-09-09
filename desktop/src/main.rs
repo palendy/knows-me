@@ -17,7 +17,7 @@
 
 mod services;
 
-use knows_me_core::core::commands::{self, AppStatus};
+use knows_me_core::core::commands::{self, AppStatus, SourceStatus};
 use knows_me_core::core::types::{
     AnswerInput, AnswerResult, AppConfig, ChatTurn, DashboardDto, Draft, DraftRequest, GraphDto,
     GraphFilter,
@@ -26,7 +26,7 @@ use knows_me_core::core::types::{
 };
 use knows_me_core::AppState;
 use services::Services;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 type CmdResult<T> = Result<T, String>;
 
@@ -207,6 +207,40 @@ async fn queue_answer(
         .map_err(err)
 }
 
+// --- U2: source connection -----------------------------------------------------
+
+/// The connection status of every catalog source (credential fields + whether
+/// each is connected/ready). Requires an unlocked vault since it reads the
+/// encrypted credential store. Secret values are never returned.
+#[tauri::command]
+async fn list_sources(state: tauri::State<'_, AppState>) -> CmdResult<Vec<SourceStatus>> {
+    commands::list_sources(state.inner()).await.map_err(err)
+}
+
+/// Store the credential for a source (connect). `values` is the source-specific
+/// field map declared by its `FieldSpec`s.
+#[tauri::command]
+async fn connect_source(
+    state: tauri::State<'_, AppState>,
+    source: SourceKind,
+    values: serde_json::Value,
+) -> CmdResult<String> {
+    commands::connect_source(state.inner(), source, values)
+        .await
+        .map_err(err)
+}
+
+/// Remove a source's credential (disconnect). Idempotent.
+#[tauri::command]
+async fn disconnect_source(
+    state: tauri::State<'_, AppState>,
+    source: SourceKind,
+) -> CmdResult<()> {
+    commands::disconnect_source(state.inner(), source)
+        .await
+        .map_err(err)
+}
+
 // --- U2: collection -----------------------------------------------------------
 
 /// What one triggered sync produced. Combines the collection counts
@@ -219,19 +253,53 @@ struct IngestSummary {
     errors: usize,
     /// Items left for a later run, so the owner can tell progress from repetition.
     remaining: usize,
+    /// Why each error happened (e.g. "Notion: notion search 401: …"), so the UI
+    /// can distinguish a bad token from "nothing new to collect".
+    error_messages: Vec<String>,
     facts_created: usize,
     queue_items_created: usize,
     filtered: usize,
 }
 
+/// One progress tick emitted to the frontend during a sync.
+#[derive(Clone, serde::Serialize)]
+struct IngestProgress {
+    source: SourceKind,
+    done: usize,
+    /// Best-known total; 0 means "unknown yet" (connector still discovering).
+    total: usize,
+}
+
+/// A [`ProgressReporter`] that forwards each tick to the webview as an
+/// `ingest://progress` event so the UI can drive a real progress bar.
+struct EmitProgress {
+    window: tauri::WebviewWindow,
+}
+
+impl knows_me_core::core::traits::ProgressReporter for EmitProgress {
+    fn progress(&self, source: SourceKind, done: usize, total: usize) {
+        // Emit failures (webview gone) are non-fatal — the sync still completes.
+        let _ = self.window.emit(
+            "ingest://progress",
+            IngestProgress {
+                source,
+                done,
+                total,
+            },
+        );
+    }
+}
+
 #[tauri::command]
 async fn trigger_ingest(
     services: tauri::State<'_, Services>,
+    window: tauri::WebviewWindow,
     source: Option<SourceKind>,
 ) -> CmdResult<IngestSummary> {
+    let reporter = EmitProgress { window };
     services
         .with(|s| async move {
-            let ingest = s.ingestion.trigger(source).await?;
+            let ingest = s.ingestion.trigger(source, &reporter).await?;
             // Ingestion feeds the sink synchronously, so by the time `trigger`
             // returns, processing for those items is done and the totals are
             // ready to collect.
@@ -241,6 +309,7 @@ async fn trigger_ingest(
                 skipped: ingest.skipped,
                 errors: ingest.errors,
                 remaining: ingest.remaining,
+                error_messages: ingest.error_messages,
                 facts_created: processed.facts_created,
                 queue_items_created: processed.queue_items_created,
                 filtered: processed.filtered,
@@ -251,6 +320,15 @@ async fn trigger_ingest(
 }
 
 fn main() {
+    // Load a local `.env` (if present) before anything reads the environment,
+    // so the OpenRouter/Gemini key + model are picked up at startup without the
+    // user exporting env vars. Missing file is fine — the LLM gateway falls back
+    // to the offline canned client. Only compiled into `llm-http` builds.
+    #[cfg(feature = "llm-http")]
+    {
+        let _ = dotenvy::dotenv();
+    }
+
     tauri::Builder::default()
         .setup(|app| {
             // Per-user encrypted data lives under the OS app-data directory.
@@ -277,6 +355,9 @@ fn main() {
             persona_draft,
             queue_list,
             queue_answer,
+            list_sources,
+            connect_source,
+            disconnect_source,
             trigger_ingest,
         ])
         .run(tauri::generate_context!())

@@ -166,6 +166,28 @@ export interface IngestReport {
   errors: number;
 }
 
+// --- U2: source connection ------------------------------------------------
+
+/** One credential field a source requires. Mirrors Rust `FieldSpec`. */
+export interface FieldSpec {
+  /** JSON key the value is stored under in the credential. */
+  key: string;
+  label: string;
+  placeholder: string;
+  /** Secret (token/password): password input; never echoed back once stored. */
+  secret: boolean;
+  required: boolean;
+}
+
+/** A source's connection status. Mirrors Rust `SourceStatus`. Secret values
+ * are never included — only whether the source is connected/ready. */
+export interface SourceStatus {
+  kind: SourceKind;
+  fields: FieldSpec[];
+  connected: boolean;
+  ready: boolean;
+}
+
 // --- U1: onboarding / security / config / transparency --------------------
 
 export interface Credential {

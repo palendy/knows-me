@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 
 use crate::core::error::Result;
-use crate::core::traits::Connector;
+use crate::core::traits::{Connector, ProgressReporter};
 use crate::core::types::{Cursor, RawItem, SourceKind};
 
 /// Recognized file categories (Q7=A / BR-F1).
@@ -127,7 +127,11 @@ impl Connector for FileConnector {
         SourceKind::File
     }
 
-    async fn sync(&self, _cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        _cursor: Option<Cursor>,
+        _progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         let paths: Vec<PathBuf> = std::mem::take(&mut *self.pending_paths.lock().unwrap());
         let mut items = Vec::new();
         let mut skips = Vec::new();
@@ -170,6 +174,7 @@ impl FileConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::traits::NoProgress;
     use std::io::Write;
 
     #[test]
@@ -195,7 +200,7 @@ mod tests {
 
         let conn = FileConnector::new();
         conn.ingest_paths([txt, bad]);
-        let (items, _) = conn.sync(None).await.unwrap();
+        let (items, _) = conn.sync(None, &NoProgress).await.unwrap();
 
         assert_eq!(items.len(), 1);
         assert!(items[0].text.as_deref().unwrap().contains("heading"));
@@ -216,7 +221,7 @@ mod tests {
 
         let conn = FileConnector::new();
         conn.ingest_paths([pdf]);
-        let (items, _) = conn.sync(None).await.unwrap();
+        let (items, _) = conn.sync(None, &NoProgress).await.unwrap();
         assert_eq!(items.len(), 0);
         assert!(conn.last_skips.lock().unwrap()[0]
             .reason

@@ -15,7 +15,7 @@
 use async_trait::async_trait;
 
 use crate::core::error::Result;
-use crate::core::traits::{Connector, CredentialStore};
+use crate::core::traits::{Connector, CredentialStore, ProgressReporter};
 use crate::core::types::{Cursor, RawItem, SourceKind};
 use std::sync::Arc;
 
@@ -37,7 +37,11 @@ impl Connector for GmailConnector {
         SourceKind::Gmail
     }
 
-    async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+    async fn sync(
+        &self,
+        cursor: Option<Cursor>,
+        _progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)> {
         // INTEGRATION-TODO(US-1.4): real Gmail API sync (see module docs).
         Ok((Vec::new(), cursor.unwrap_or_default()))
     }
@@ -50,6 +54,7 @@ impl Connector for GmailConnector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::traits::NoProgress;
     use crate::core::types::Credential;
 
     #[derive(Default)]
@@ -62,13 +67,16 @@ mod tests {
         async fn load(&self, _s: SourceKind) -> Result<Option<Credential>> {
             Ok(None)
         }
+        async fn delete(&self, _s: SourceKind) -> Result<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
     async fn skeleton_is_safe_noop() {
         let conn = GmailConnector::new(Arc::new(NoCreds));
         assert_eq!(conn.id(), SourceKind::Gmail);
-        let (items, _c) = conn.sync(None).await.unwrap();
+        let (items, _c) = conn.sync(None, &NoProgress).await.unwrap();
         assert_eq!(items.len(), 0);
     }
 }

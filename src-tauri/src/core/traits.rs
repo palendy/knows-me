@@ -32,6 +32,9 @@ pub trait EncryptedStore: Send + Sync {
 pub trait CredentialStore: Send + Sync {
     async fn store(&self, source: SourceKind, cred: Credential) -> Result<()>;
     async fn load(&self, source: SourceKind) -> Result<Option<Credential>>;
+    /// Remove a stored credential (disconnect). Idempotent — deleting an absent
+    /// credential succeeds.
+    async fn delete(&self, source: SourceKind) -> Result<()>;
 }
 
 /// Password-based key lifecycle. The plaintext key is never persisted.
@@ -67,13 +70,32 @@ pub trait LlmClient: Send + Sync {
 // U2 — Ingestion & Processing
 // ---------------------------------------------------------------------------
 
+/// Receives incremental progress during a sync so the UI can show a real
+/// (done/total) bar instead of an indeterminate spinner. `total` is 0 when the
+/// connector doesn't know the count yet.
+pub trait ProgressReporter: Send + Sync {
+    fn progress(&self, source: SourceKind, done: usize, total: usize);
+}
+
+/// A no-op reporter for callers/connectors that don't report progress.
+pub struct NoProgress;
+impl ProgressReporter for NoProgress {
+    fn progress(&self, _source: SourceKind, _done: usize, _total: usize) {}
+}
+
 /// A pluggable source connector. New sources are added by implementing this
 /// trait — no other layer changes.
 #[async_trait]
 pub trait Connector: Send + Sync {
     fn id(&self) -> SourceKind;
     /// Incremental sync from the given cursor; returns new items + next cursor.
-    async fn sync(&self, cursor: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)>;
+    /// `progress` is called as work advances (connectors that fetch item-by-item
+    /// report each step; others may ignore it).
+    async fn sync(
+        &self,
+        cursor: Option<Cursor>,
+        progress: &dyn ProgressReporter,
+    ) -> Result<(Vec<RawItem>, Cursor)>;
 
     /// How many items this source still has beyond what `sync` just returned.
     ///
@@ -89,8 +111,13 @@ pub trait Connector: Send + Sync {
 #[async_trait]
 pub trait IngestionApi: Send + Sync {
     async fn configure(&self, source: SourceKind, config: SourceConfig) -> Result<()>;
-    /// Run ingestion for one source (or all if `None`).
-    async fn trigger(&self, source: Option<SourceKind>) -> Result<IngestReport>;
+    /// Run ingestion for one source (or all if `None`), reporting progress as it
+    /// goes so the caller can drive a UI progress bar.
+    async fn trigger(
+        &self,
+        source: Option<SourceKind>,
+        progress: &dyn ProgressReporter,
+    ) -> Result<IngestReport>;
 }
 
 /// Masks, summarizes/classifies raw items into facts / queue items.

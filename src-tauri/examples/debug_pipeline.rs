@@ -29,7 +29,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(3);
 
     let connector = SessionConnector::from_config(None);
-    let (items, _next) = connector.sync(None::<Cursor>).await?;
+    let (items, _next) = connector
+        .sync(None::<Cursor>, &knows_me_core::core::traits::NoProgress)
+        .await?;
     println!("커넥터가 돌려준 항목: {}개\n", items.len());
 
     let masker = RegexMasker::new();

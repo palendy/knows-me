@@ -28,7 +28,9 @@ describe("settings", () => {
     render(<HomeView onLock={vi.fn()} initialTab="sources" sourcesApi={new MockSourcesApi()} />);
     expect(screen.getByRole("tab", { name: "연결 소스" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: "소스 수집" })).toBeInTheDocument();
-    expect(screen.getByText(/Notion/)).toBeInTheDocument();
+    // The source list loads asynchronously from the backend catalog, so wait
+    // for it to render rather than asserting synchronously.
+    expect(await screen.findByText(/Notion/)).toBeInTheDocument();
     expect(screen.getAllByText("연결 필요").length).toBeGreaterThan(0);
     await waitFor(() => expect(ipc.getConfig).toHaveBeenCalledOnce());
   });

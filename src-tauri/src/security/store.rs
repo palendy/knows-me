@@ -154,6 +154,10 @@ impl CredentialStore for FileEncryptedStore {
             None => Ok(None),
         }
     }
+
+    async fn delete(&self, source: SourceKind) -> Result<()> {
+        EncryptedStore::delete(self, CREDENTIALS_NS, source_key(source)).await
+    }
 }
 
 #[cfg(test)]
@@ -225,9 +229,10 @@ mod tests {
     async fn delete_removes() {
         let (_d, store) = unlocked_store();
         store.put("facts", "a", b"x").await.unwrap();
-        store.delete("facts", "a").await.unwrap();
+        EncryptedStore::delete(&store, "facts", "a").await.unwrap();
         assert!(store.get("facts", "a").await.unwrap().is_none());
-        store.delete("facts", "a").await.unwrap(); // idempotent
+        // idempotent
+        EncryptedStore::delete(&store, "facts", "a").await.unwrap();
     }
 
     #[tokio::test]
@@ -255,5 +260,22 @@ mod tests {
         let loaded = store.load(SourceKind::Notion).await.unwrap().unwrap();
         assert_eq!(loaded.0, cred.0);
         assert!(store.load(SourceKind::Gmail).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn credential_delete_disconnects() {
+        let (_d, store) = unlocked_store();
+        let cred = Credential(serde_json::json!({ "token": "abc123" }));
+        store.store(SourceKind::Notion, cred).await.unwrap();
+        assert!(store.load(SourceKind::Notion).await.unwrap().is_some());
+
+        CredentialStore::delete(&store, SourceKind::Notion)
+            .await
+            .unwrap();
+        assert!(store.load(SourceKind::Notion).await.unwrap().is_none());
+        // Idempotent: deleting an absent credential succeeds.
+        CredentialStore::delete(&store, SourceKind::Notion)
+            .await
+            .unwrap();
     }
 }

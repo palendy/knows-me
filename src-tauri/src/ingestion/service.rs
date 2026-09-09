@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use chrono::Utc;
 
 use crate::core::error::Result;
-use crate::core::traits::IngestionApi;
+use crate::core::traits::{IngestionApi, ProgressReporter};
 use crate::core::types::{IngestReport, RawItem, SourceConfig, SourceKind};
 use crate::ingestion::cursor_store::IngestionCursorStore;
 use crate::ingestion::registry::ConnectorRegistry;
@@ -72,31 +72,43 @@ impl IngestionService {
 
     /// Run ingestion for a single source. Errors are contained here (P5) and
     /// reported via the returned report; they do not propagate to other sources.
-    async fn run_one(&self, source: SourceKind, report: &mut IngestReport) {
+    async fn run_one(
+        &self,
+        source: SourceKind,
+        report: &mut IngestReport,
+        progress: &dyn ProgressReporter,
+    ) {
         // Single-flight: if a run is in progress, report it as skipped-in-progress.
         if !self.try_lock(source) {
             report.skipped += 1; // US-1.2 AC2: already running.
             return;
         }
 
-        let result = self.run_one_inner(source, report).await;
+        let result = self.run_one_inner(source, report, progress).await;
         if let Err(e) = result {
             // BR-I4 / US-1.1 AC3: one source failing must not stop the others.
             // The count alone leaves the owner with "1 error" and no way to act
-            // on it, so the cause goes to the log even though it is contained.
+            // on it, so the cause goes to the log AND the report so the UI can
+            // surface *why* the source failed (bad token, network, …).
             eprintln!("[ingestion] {source:?} failed: {e}");
             report.errors += 1;
+            report.error_messages.push(format!("{source:?}: {e}"));
         }
         self.unlock(source);
     }
 
-    async fn run_one_inner(&self, source: SourceKind, report: &mut IngestReport) -> Result<()> {
+    async fn run_one_inner(
+        &self,
+        source: SourceKind,
+        report: &mut IngestReport,
+        progress: &dyn ProgressReporter,
+    ) -> Result<()> {
         let Some(connector) = self.registry.get(source) else {
             return Ok(()); // not configured → nothing to do
         };
 
         let cursor = self.cursors.load_cursor(source).await?;
-        let (items, next_cursor) = connector.sync(cursor).await?;
+        let (items, next_cursor) = connector.sync(cursor, progress).await?;
 
         let mut fresh = Vec::new();
         for it in items {
@@ -131,14 +143,18 @@ impl IngestionApi for IngestionService {
         Ok(())
     }
 
-    async fn trigger(&self, source: Option<SourceKind>) -> Result<IngestReport> {
+    async fn trigger(
+        &self,
+        source: Option<SourceKind>,
+        progress: &dyn ProgressReporter,
+    ) -> Result<IngestReport> {
         let mut report = IngestReport::default();
         let targets = match source {
             Some(s) => vec![s],
             None => self.registry.sources(),
         };
         for src in targets {
-            self.run_one(src, &mut report).await;
+            self.run_one(src, &mut report, progress).await;
         }
         Ok(report)
     }
@@ -147,7 +163,7 @@ impl IngestionApi for IngestionService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::traits::Connector;
+    use crate::core::traits::{Connector, NoProgress};
     use crate::core::types::Cursor;
     use crate::mocks::InMemoryStore;
 
@@ -161,7 +177,11 @@ mod tests {
         fn id(&self) -> SourceKind {
             self.source
         }
-        async fn sync(&self, _c: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+        async fn sync(
+            &self,
+            _c: Option<Cursor>,
+            _p: &dyn ProgressReporter,
+        ) -> Result<(Vec<RawItem>, Cursor)> {
             Ok((self.items.clone(), Cursor("c".into())))
         }
         fn supports_manual(&self) -> bool {
@@ -195,12 +215,18 @@ mod tests {
     #[tokio::test]
     async fn collects_then_idempotent_on_rerun() {
         let (svc, sink) = service_with(vec![raw("a"), raw("b")]);
-        let r1 = svc.trigger(Some(SourceKind::Session)).await.unwrap();
+        let r1 = svc
+            .trigger(Some(SourceKind::Session), &NoProgress)
+            .await
+            .unwrap();
         assert_eq!(r1.collected, 2);
         assert_eq!(sink.items.lock().unwrap().len(), 2);
 
         // Re-run: same items → nothing new (BR-I5, PBT-03 idempotency).
-        let r2 = svc.trigger(Some(SourceKind::Session)).await.unwrap();
+        let r2 = svc
+            .trigger(Some(SourceKind::Session), &NoProgress)
+            .await
+            .unwrap();
         assert_eq!(r2.collected, 0);
         assert_eq!(r2.skipped, 2);
         assert_eq!(sink.items.lock().unwrap().len(), 2);
@@ -214,7 +240,11 @@ mod tests {
             fn id(&self) -> SourceKind {
                 SourceKind::Notion
             }
-            async fn sync(&self, _c: Option<Cursor>) -> Result<(Vec<RawItem>, Cursor)> {
+            async fn sync(
+                &self,
+                _c: Option<Cursor>,
+                _p: &dyn ProgressReporter,
+            ) -> Result<(Vec<RawItem>, Cursor)> {
                 Err(crate::core::error::AppError::External("boom".into()))
             }
             fn supports_manual(&self) -> bool {
@@ -233,10 +263,14 @@ mod tests {
         let sink = Arc::new(BufferSink::default());
         let svc = IngestionService::new(Arc::new(reg), cursors, sink.clone());
 
-        let r = svc.trigger(None).await.unwrap();
+        let r = svc.trigger(None, &NoProgress).await.unwrap();
         // Session still collected despite Notion erroring.
         assert_eq!(r.collected, 1);
         assert_eq!(r.errors, 1);
         assert_eq!(sink.items.lock().unwrap().len(), 1);
+        // The cause is reported so the UI can show *why* Notion failed.
+        assert_eq!(r.error_messages.len(), 1);
+        assert!(r.error_messages[0].contains("Notion"));
+        assert!(r.error_messages[0].contains("boom"));
     }
 }
