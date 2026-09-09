@@ -146,7 +146,14 @@ fn wsl_claude(distro: &str) -> Option<(String, Option<String>)> {
     }
     // Best-effort model read from the distro's own settings.json.
     let mut cat = Command::new("wsl.exe");
-    cat.args(["-d", distro, "--", "sh", "-lc", "cat ~/.claude/settings.json"]);
+    cat.args([
+        "-d",
+        distro,
+        "--",
+        "sh",
+        "-lc",
+        "cat ~/.claude/settings.json",
+    ]);
     no_window(&mut cat);
     let model = cat
         .output()
