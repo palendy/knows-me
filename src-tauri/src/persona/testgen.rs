@@ -45,6 +45,8 @@ pub fn fact_with_id(id: FactId, title: &str, body: &str, confirmed: bool, scope:
             confirmed,
             scope,
             confirmed_at: confirmed.then(Utc::now),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }
@@ -121,6 +123,8 @@ pub fn arb_fact() -> impl Strategy<Value = Fact> {
                     confirmed,
                     scope,
                     confirmed_at,
+                    visibility: Default::default(),
+                    category: None,
                 },
             })
         })

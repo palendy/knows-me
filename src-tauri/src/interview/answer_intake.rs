@@ -45,6 +45,8 @@ pub fn fact_from_candidate(c: FactCandidate) -> Fact {
             confirmed: true,
             scope: c.suggested_scope,
             confirmed_at: Some(Utc::now()),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }
@@ -69,6 +71,8 @@ pub fn fact_from_deepen(question: &str, answer: &str) -> Fact {
             confirmed: true,
             scope: Scope::Unknown,
             confirmed_at: Some(Utc::now()),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }

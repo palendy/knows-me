@@ -26,3 +26,6 @@ Thumbs.db
 
 # 로컬 데모 볼트 (headless example 산출물)
 .knowsme-demo/
+
+# 오너 개인 노트 (커밋 금지) — 나만 참조하는 자료(space-a 등)
+/jb-docs/

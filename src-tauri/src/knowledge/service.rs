@@ -213,6 +213,8 @@ mod tests {
                 confirmed: true,
                 scope,
                 confirmed_at: Some(Utc::now()),
+                visibility: Default::default(),
+                category: None,
             },
         }
     }
@@ -342,6 +344,7 @@ mod tests {
                 String::new(),
                 FactFilter {
                     scope: Some(Scope::Company),
+                    category: None,
                 },
             )
             .await
@@ -421,7 +424,7 @@ mod tests {
             let mut idx = SearchIndex::new();
             for f in &facts { idx.upsert(f); }
             let target = &facts[0];
-            let filter = FactFilter { scope: Some(target.metadata.scope) };
+            let filter = FactFilter { scope: Some(target.metadata.scope), category: None };
             let results = idx.search(&target.title, &filter);
             let qtoks = tokenize(&target.title);
             for r in &results {

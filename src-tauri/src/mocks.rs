@@ -35,6 +35,8 @@ fn fact_from_candidate(c: FactCandidate) -> Fact {
             confirmed: true,
             scope: c.suggested_scope,
             confirmed_at: Some(Utc::now()),
+            visibility: Default::default(),
+            category: None,
         },
     }
 }
@@ -334,6 +336,8 @@ mod tests {
                 confirmed: true,
                 scope: Scope::Personal,
                 confirmed_at: Some(Utc::now()),
+                visibility: Default::default(),
+                category: None,
             },
         };
         let id = kn.upsert(f).await.unwrap();
@@ -358,6 +362,8 @@ mod tests {
                 confirmed: true,
                 scope: Scope::Personal,
                 confirmed_at: Some(Utc::now()),
+                visibility: Default::default(),
+                category: None,
             },
         };
         kn.upsert(base.clone()).await.unwrap();

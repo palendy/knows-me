@@ -35,6 +35,11 @@ pub mod processing;
 // loopback-only local API server.
 pub mod persona;
 
+// Sharing contract (strengthened concept). Frozen interface — access model,
+// token/scope rule, and the MCP tool trait every work-package codes against.
+// Real MCP transport + token validation (task T0) are built on top of this.
+pub mod sharing;
+
 pub use core::app_state::AppState;
 pub use core::error::{AppError, Result};
 pub use core::scheduler::Scheduler;
