@@ -1,8 +1,9 @@
 # knows-me MCP 계약 v1 (초안)
 
-> 2026-09-09 · 작성: U4(인터페이스·페르소나) · 상태: **초안, 리뷰 대기**
+> 2026-09-09 · 작성: U4(인터페이스·페르소나) · 상태: **v1 · 구현 완료** (MCP 벌티컬 단계 1~5 머지, PR #7/#9/#11/#13)
 > 근거: [`team-sharing.md`](team-sharing.md) — 컨셉 확정본
 > 이 문서가 확정되면 U1~U4가 여기에 맞춰 병렬로 진행합니다.
+> 구현 현황·해소된 열린 항목은 **§11**, 코드는 `src-tauri/src/sharing/` (요약: [`aidlc-docs/construction/sharing-mcp-vertical/code/summary.md`](../aidlc-docs/construction/sharing-mcp-vertical/code/summary.md)).
 
 ## 0. 이 계약이 정하는 것 / 정하지 않는 것
 
@@ -315,3 +316,23 @@ invalid_input : "요청 인자가 올바르지 않습니다: <필드명>"
 2. **`updated_at`의 정의** — 마지막 확정 시각인지 본문 수정 시각인지. U3가 이력을 갖고 있으니 U3가 정합니다.
 3. **터널 방식** — 어떤 터널을 쓸지, 토큰이 URL에 실리지 않게 하는 방법. U1.
 4. **`page_count` 성능** — 매 `list_categories`마다 세는지 캐시하는지. 개인 규모면 세도 됩니다.
+
+---
+
+## 11. 구현 현황 (오너 MCP 벌티컬)
+
+> 이 계약은 오너의 MCP 벌티컬로 구현·머지되었습니다(단계 1~5, PR #7/#9/#11/#13, main `83110bb`). 코드: `src-tauri/src/sharing/`. 상세 요약: [`aidlc-docs/construction/sharing-mcp-vertical/code/summary.md`](../aidlc-docs/construction/sharing-mcp-vertical/code/summary.md).
+
+- **§1 두 모드** — 오너/컨슈머를 **별도 리스너**로 분리했습니다. `start_owner`(loopback 전용, ⓐ) / `start_shared`(Bearer 전용, ⓑ). 오너 허용 여부는 리스너 속성(`allow_owner`)으로 판정하며 **`Host` 문자열로 신원을 정하지 않습니다** — 터널은 공유 리스너에만 브리지되므로 무토큰 외부 요청이 오너로 샐 수 없습니다.
+- **§4 서빙 안전** — 봉투(`<knows-me:content>`) + 내부 델리미터 이스케이프 + 모든 툴 설명에 §4.2 문구를 구현(`sharing::envelope`). 레닥션 재수행 없음(§4.3).
+- **§6 단일 인가 지점** — 툴 핸들러는 `visibility`/`category`를 재검사하지 않습니다. `Token::can_access`가 유일한 인가 지점이고 오너 모드도 같은 경로를 씁니다.
+- **§7.1 분리** — MCP 서버는 페르소나 `LocalApiServer`(8765)와 포트·코드 경로가 분리됩니다(MCP 기본 포트 8766, 공유 리스너는 오너 포트 +1).
+
+### 11.1 §10 열린 항목 해소
+
+| §10 항목 | 상태 | 결정 |
+|---|---|---|
+| 1. 범주 `summary` 누가 쓰나 | **열림** | 잠정 `null`로 서빙(필드는 존재). U3·U4 협의 대기. |
+| 2. `updated_at` 정의 | **열림** | U3 소관. 잠정 `confirmed_at` 소비, U3가 정의하면 값만 교체. |
+| 3. 터널 방식 / 토큰 URL 미노출 | **해소** | cloudflared 퀵터널(`brew install cloudflared`). 토큰은 `Authorization: Bearer` 헤더 전용, URL에 절대 안 실림. 토큰 저장 키 = `base64url(SHA-256(secret))`(원문 미저장), 발급 시 시크릿 1회만 반환·per-consumer 폐기. |
+| 4. `page_count` 성능 | **해소** | 요청마다 계산(개인 규모=수용). `MetaLite`에 `visibility`+`category`를 캐시하는 최적화는 후속(U3 `SearchIndex`, `FactSummary`에 `category` 추가 필요). |
