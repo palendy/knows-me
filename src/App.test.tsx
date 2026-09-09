@@ -14,15 +14,18 @@ describe("UnlockedShell (app wiring)", () => {
     for (const label of [
       "대시보드",
       "대기열",
-      "미니홈피",
-      "지식 그래프",
-      "페르소나",
+      "나와 대화",
       "설정",
     ]) {
       expect(within(tablist).getByRole("tab", { name: label })).toBeInTheDocument();
     }
     // Let the default dashboard tab settle so its async load doesn't warn.
     await screen.findByRole("heading", { name: "대시보드" });
+    expect(within(tablist).queryByRole("tab", { name: "미니홈피" })).not.toBeInTheDocument();
+    expect(within(tablist).queryByRole("tab", { name: "지식 그래프" })).not.toBeInTheDocument();
+    expect(within(tablist).queryByRole("tab", { name: "소스" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "나를 이루는 맥락" })).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "지식 그래프" })).toBeInTheDocument();
   });
 
   it("opens on the dashboard", async () => {
@@ -34,7 +37,7 @@ describe("UnlockedShell (app wiring)", () => {
     render(<UnlockedShell onLock={() => {}} />);
     // Let the dashboard finish loading before leaving it (avoids act warnings).
     await screen.findByRole("heading", { name: "대시보드" });
-    await userEvent.click(screen.getByRole("tab", { name: "페르소나" }));
+    await userEvent.click(screen.getByRole("tab", { name: "나와 대화" }));
     // PersonaChatView renders its chat surface; the dashboard heading is gone.
     expect(screen.queryByRole("heading", { name: "대시보드" })).not.toBeInTheDocument();
   });
@@ -50,6 +53,15 @@ describe("UnlockedShell (app wiring)", () => {
     render(<UnlockedShell onLock={() => {}} />);
     await screen.findByRole("heading", { name: "대시보드" });
     await userEvent.click(screen.getByRole("tab", { name: "설정" }));
-    expect(await screen.findByRole("button", { name: /lock/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /잠그기|lock/i })).toBeInTheDocument();
+  });
+
+  it("keeps source ingestion available inside settings", async () => {
+    render(<UnlockedShell onLock={() => {}} />);
+    await screen.findByRole("heading", { name: "대시보드" });
+    await userEvent.click(screen.getByRole("tab", { name: "설정" }));
+    await userEvent.click(screen.getByRole("tab", { name: "연결 소스" }));
+    expect(await screen.findByRole("button", { name: "전체 수집" })).toBeEnabled();
   });
 });
+

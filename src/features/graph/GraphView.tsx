@@ -9,6 +9,7 @@ import type { FactId, GraphDto, Scope } from "../../shared/contracts";
 import type { KnowsMeApi } from "../u4-shared/api";
 import { StateShell } from "../u4-shared/StateShell";
 import { muted } from "../u4-shared/styles";
+import "../u4-shared/work-views.css";
 import {
   layoutGraph,
   neighborsOf,
@@ -20,6 +21,7 @@ interface Props {
   api: KnowsMeApi;
   width?: number;
   height?: number;
+  embedded?: boolean;
 }
 
 const SCOPES: Array<{ value: Scope | ""; label: string }> = [
@@ -29,7 +31,7 @@ const SCOPES: Array<{ value: Scope | ""; label: string }> = [
   { value: "Unknown", label: "미분류" },
 ];
 
-export function GraphView({ api, width = 640, height = 480 }: Props) {
+export function GraphView({ api, width = 640, height = 480, embedded = false }: Props) {
   const [state, setState] = useState<ViewState<GraphDto>>(loading);
   const [scope, setScope] = useState<Scope | "">("");
   const [selected, setSelected] = useState<FactId | null>(null);
@@ -65,9 +67,9 @@ export function GraphView({ api, width = 640, height = 480 }: Props) {
   const toggle = (id: FactId) => setSelected((cur) => (cur === id ? null : id));
 
   return (
-    <section aria-label="지식 그래프">
-      <header style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>지식 그래프</h2>
+    <section aria-label="지식 그래프" className={`graph-workspace${embedded ? " graph-workspace--embedded" : ""}`}>
+      <header className="work-view-header">
+        <div>{embedded ? <h3>지식 그래프</h3> : <h2>지식 그래프</h2>}<p>따로 쌓인 기록이 어떻게 이어지는지 살펴보세요.</p></div>
         <label>
           범위{" "}
           <select
@@ -90,19 +92,20 @@ export function GraphView({ api, width = 640, height = 480 }: Props) {
       >
         {() =>
           layout === null ? null : (
-            <>
+            <div className="graph-panel">
+              <div className="graph-toolbar"><span>내 맥락의 연결</span><span>사실 <strong>{layout.nodes.length}</strong> · 연결 <strong>{layout.edges.length}</strong></span></div>
               {normalized?.truncated && (
                 <p role="status" style={muted}>
                   노드가 많아 연결이 많은 상위 항목만 표시하고 있습니다.
                 </p>
               )}
-              <svg
+              <div className="graph-explorer"><svg
                 viewBox={`0 0 ${layout.width} ${layout.height}`}
                 width="100%"
                 role="img"
                 aria-label={`사실 ${layout.nodes.length}개, 연결 ${layout.edges.length}개`}
                 onClick={() => setSelected(null)}
-                style={{ border: "1px solid #e3e3e6", borderRadius: 10 }}
+                className="graph-canvas"
               >
                 {layout.edges.map((e) => (
                   <line
@@ -111,7 +114,7 @@ export function GraphView({ api, width = 640, height = 480 }: Props) {
                     y1={e.y1}
                     x2={e.x2}
                     y2={e.y2}
-                    stroke="#c9c9cf"
+                    stroke="#c7d1c8"
                     strokeWidth={1}
                     opacity={isDimmed(e.from) && isDimmed(e.to) ? 0.15 : 1}
                   />
@@ -140,22 +143,28 @@ export function GraphView({ api, width = 640, height = 480 }: Props) {
                       cx={n.x}
                       cy={n.y}
                       r={6 + Math.min(6, n.degree)}
-                      fill={selected === n.id ? "#1a56b8" : "#7a8899"}
+                      fill={selected === n.id ? "#365d4b" : "#91a491"}
+                      stroke={selected === n.id ? "#e0e9df" : "#fff"}
+                      strokeWidth={4}
                     />
-                    <text x={n.x + 12} y={n.y + 4} fontSize={11} fill="#2b2b30">
-                      {n.label}
+                    <text x={n.x > layout.width * 0.7 ? n.x - 16 : n.x + 16} textAnchor={n.x > layout.width * 0.7 ? "end" : "start"} y={n.y + 4} fontSize={11} fill="#252923">
+                      {n.label.length > 22 ? `${n.label.slice(0, 21)}…` : n.label}
                     </text>
                   </g>
                 ))}
-              </svg>
+              </svg><aside className="graph-inspector">
+                <span className="work-eyebrow">{selected ? "선택한 사실" : "연결 살펴보기"}</span>
+                <h3>{selected ? layout.nodes.find((n) => n.id === selected)?.label : "기록 사이의 관계"}</h3>
+                {selected ? <><p>직접 연결된 사실 {neighbors.size}개</p><ul>{layout.nodes.filter((n) => neighbors.has(n.id)).map((n) => <li key={n.id}><button type="button" onClick={() => toggle(n.id)}>{n.label}<span aria-hidden="true">↗</span></button></li>)}</ul></> : <p>점을 선택하면 연결된 사실을 함께 볼 수 있어요. 연결이 많은 사실일수록 중심에 가깝게 표시됩니다.</p>}
+              </aside></div>
 
               {selected !== null && (
-                <p role="status" style={muted}>
+                <p role="status" className="graph-status">
                   선택한 사실과 직접 연결된 항목 {neighbors.size}개를 강조하고
                   있습니다. 배경을 클릭하면 해제됩니다.
                 </p>
               )}
-            </>
+            </div>
           )
         }
       </StateShell>

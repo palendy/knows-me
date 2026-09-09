@@ -10,7 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AnswerInput, QueueItem } from "../../shared/contracts";
 import type { InterviewApi } from "./api";
 import { StateShell } from "../u4-shared/StateShell";
-import { card, muted } from "../u4-shared/styles";
+import "../u4-shared/work-views.css";
 import { load, loading, messageOf, type ViewState } from "../u4-shared/view-state";
 
 interface Props {
@@ -52,9 +52,9 @@ export function QueueView({ api, onChanged }: Props) {
   );
 
   return (
-    <section aria-label="인터뷰 대기열">
-      <header style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <h2 style={{ margin: 0 }}>인터뷰 대기열</h2>
+    <section aria-label="인터뷰 대기열" className="queue-workspace">
+      <header className="work-view-header">
+        <div><h2>인터뷰 대기열</h2><p>짧은 확인으로, 나를 더 정확하게 이해하도록.</p></div>
         <button type="button" onClick={refresh}>
           새로고침
         </button>
@@ -72,7 +72,7 @@ export function QueueView({ api, onChanged }: Props) {
         onRetry={refresh}
       >
         {(items) => (
-          <ul style={{ listStyle: "none", padding: 0 }}>
+          <><div className="queue-summary"><span>확인을 기다리는 질문 <strong>{items.length}</strong></span><span>우선순위 높은 순</span></div><ul className="queue-list">
             {items.map((item) => (
               <QueueRow
                 key={item.id}
@@ -81,7 +81,7 @@ export function QueueView({ api, onChanged }: Props) {
                 onAnswer={(input) => answer(item.id, input)}
               />
             ))}
-          </ul>
+          </ul></>
         )}
       </StateShell>
     </section>
@@ -102,22 +102,24 @@ function QueueRow({
   if ("Confirm" in item.kind) {
     const c = item.kind.Confirm.candidate;
     return (
-      <li style={{ ...card, marginBottom: 8 }}>
-        <div style={{ fontWeight: 600 }}>{c.title}</div>
-        <p style={{ margin: "4px 0" }}>{c.body}</p>
-        <label style={{ display: "block", ...muted, fontSize: 13 }}>
+      <li className="queue-card">
+        <QueueMetadata item={item} />
+        <h3>{c.title}</h3>
+        <p className="queue-body">{c.body}</p>
+        <div className="queue-provenance"><span>{({Session: "대화 기록", Notion: "Notion", Gmail: "Gmail", File: "파일"})[c.provenance.source]}</span><span>{({Company: "업무", Personal: "개인", Unknown: "미분류"})[c.suggested_scope]}</span><span>{formatDate(c.provenance.collected_at)} 수집</span></div>
+        <label className="queue-answer-label">
           정정 (선택)
           <input
             type="text"
             value={text}
             placeholder="내용을 고치려면 입력하세요"
             onChange={(e) => setText(e.target.value)}
-            style={{ display: "block", width: "100%", marginTop: 4 }}
           />
         </label>
-        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <div className="queue-actions">
           <button
             type="button"
+            className="work-primary"
             disabled={busy}
             onClick={() =>
               onAnswer(text.trim() ? { Text: text.trim() } : { Choice: "yes" })
@@ -138,21 +140,23 @@ function QueueRow({
 
   const { question, hypothesis } = item.kind.Deepen;
   return (
-    <li style={{ ...card, marginBottom: 8 }}>
-      <div style={{ fontWeight: 600 }}>{question}</div>
-      {hypothesis && <p style={{ ...muted, margin: "4px 0" }}>{hypothesis}</p>}
-      <label style={{ display: "block", fontSize: 13 }}>
+    <li className="queue-card">
+      <QueueMetadata item={item} />
+      <h3>{question}</h3>
+      {hypothesis && <p className="queue-body">{hypothesis}</p>}
+      <label className="queue-answer-label">
         답변
         <input
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          style={{ display: "block", width: "100%", marginTop: 4 }}
+          placeholder="내 생각을 간단히 남겨주세요"
         />
       </label>
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+      <div className="queue-actions">
         <button
           type="button"
+          className="work-primary"
           disabled={busy || text.trim() === ""}
           onClick={() => onAnswer({ Text: text.trim() })}
         >
@@ -164,4 +168,13 @@ function QueueRow({
       </div>
     </li>
   );
+}
+
+function formatDate(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+}
+
+function QueueMetadata({ item }: { item: QueueItem }) {
+  return <div className="queue-metadata"><span className="work-tag">{"Confirm" in item.kind ? "사실 확인" : "더 알아가기"}</span><span>우선순위 {item.priority}</span><time dateTime={item.created_at}>{formatDate(item.created_at)}</time>{item.expires_at && <span>{formatDate(item.expires_at)}까지</span>}</div>;
 }

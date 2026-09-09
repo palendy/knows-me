@@ -142,7 +142,7 @@ describe("PersonaChatView", () => {
       await userEvent.click(screen.getByRole("button", { name: question }));
 
       // A persona turn was appended...
-      expect(await screen.findByText("페르소나")).toBeInTheDocument();
+      expect(await screen.findByText("knows me")).toBeInTheDocument();
       // ...and it is a grounded answer, not the no-context fallback.
       expect(screen.queryByText(/확정된 맥락이 없어/)).not.toBeInTheDocument();
 
