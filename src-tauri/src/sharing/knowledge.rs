@@ -8,7 +8,7 @@
 //! transport, token minting, and the `<knows-me:content>` envelope layer on top
 //! of this in later steps of the vertical.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -30,6 +30,109 @@ pub struct KnowledgeSharing {
 impl KnowledgeSharing {
     pub fn new(knowledge: Arc<KnowledgeService>) -> Self {
         Self { knowledge }
+    }
+
+    /// (`mcp-contract.md` §3.2) Search within the token's scope, returning the
+    /// **full** visible facts (not the lossy [`FactSummary`] the frozen trait
+    /// projects), in stable (title, then id) order, capped at `limit`. Uses U3's
+    /// index for match quality, then the single [`Token::can_access`] predicate to
+    /// narrow scope — the token is the only thing that narrows, never a tool
+    /// argument (§3.2).
+    ///
+    /// Returning full facts (rather than re-fetching each hit downstream) means
+    /// each returned hit is read from the store once. Out-of-scope and
+    /// raced-deletion candidates are skipped *while collecting*, so a full page of
+    /// `limit` results comes back whenever that many are genuinely accessible —
+    /// an earlier hit vanishing does not shorten the page. [`SharingApi::search_knowledge`]
+    /// is a thin projection of this.
+    pub async fn search_visible(
+        &self,
+        token: &Token,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<Fact>, AccessError> {
+        let mut hits = self
+            .knowledge
+            .search(query.to_string(), FactFilter::default())
+            .await
+            .map_err(to_access_error)?;
+        // The index yields hits in HashSet order (non-deterministic); impose a
+        // stable (title, id) order before capping so a truncated subset is
+        // deterministic and human-legible. (Relevance ranking is future work.)
+        hits.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
+        let mut out = Vec::new();
+        for h in hits {
+            if out.len() >= limit {
+                break;
+            }
+            // The index summary lacks visibility/category, so load each candidate to
+            // decide access. Out of scope or a raced deletion ⇒ skip and keep going
+            // (backfilling the page); any other store error fails loud.
+            match self.knowledge.get(h.id).await {
+                Ok(f) if token.can_access(f.metadata.visibility, f.metadata.category.as_ref()) => {
+                    out.push(f)
+                }
+                Ok(_) => {}
+                Err(AppError::NotFound(_)) => {}
+                Err(e) => return Err(to_access_error(e)),
+            }
+        }
+        Ok(out)
+    }
+
+    /// (`mcp-contract.md` §3.1) The token-visible categories, each with the count
+    /// of pages the token can read. `page_count` is derived from the same
+    /// [`accessible`] predicate as every other read, so a `Private`/ungranted page
+    /// can never leak into a count. Sorted by category name (`BTreeMap`).
+    ///
+    /// The richer form behind [`SharingApi::list_categories`], which yields only
+    /// names: the MCP serialization layer needs counts the frozen projection
+    /// cannot carry. Authorization is unchanged — the one predicate, one place.
+    pub async fn category_counts(
+        &self,
+        token: &Token,
+    ) -> Result<Vec<(String, usize)>, AccessError> {
+        let facts = self.knowledge.all_facts().await.map_err(to_access_error)?;
+        let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+        for f in accessible(token, &facts) {
+            if let Some(c) = f.metadata.category.as_ref() {
+                *counts.entry(c.as_str().to_string()).or_default() += 1;
+            }
+        }
+        Ok(counts.into_iter().collect())
+    }
+
+    /// (`mcp-contract.md` §3.4) The token-visible pages of one category, full
+    /// form, in stable (title, then id) order. `NotFound` when the category has
+    /// no visible page — indistinguishable from an ungranted category (§5.1) and
+    /// consistent with [`Self::category_counts`], which likewise omits a category
+    /// with nothing visible.
+    ///
+    /// The richer form behind [`SharingApi::get_guide`] (which yields a composed
+    /// `String`): the MCP layer needs structured pages. Mirrors the frozen
+    /// `get_guide` step for step (grant check → filter → NotFound-if-empty →
+    /// stable sort), on the same [`accessible`] predicate as [`SharingApi::get_page`]
+    /// — no second authorization point.
+    pub async fn guide_pages(
+        &self,
+        token: &Token,
+        category: &Category,
+    ) -> Result<Vec<Fact>, AccessError> {
+        // Existence of an ungranted category is never revealed (§3.4); short-circuit
+        // before touching the store, exactly as the frozen `get_guide` does.
+        if !token.grants(category) {
+            return Err(AccessError::NotFound);
+        }
+        let facts = self.knowledge.all_facts().await.map_err(to_access_error)?;
+        let mut pages: Vec<Fact> = accessible(token, &facts)
+            .filter(|f| f.metadata.category.as_ref() == Some(category))
+            .cloned()
+            .collect();
+        if pages.is_empty() {
+            return Err(AccessError::NotFound);
+        }
+        pages.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
+        Ok(pages)
     }
 }
 
@@ -77,38 +180,23 @@ impl SharingApi for KnowledgeSharing {
         query: &str,
         limit: usize,
     ) -> Result<Vec<FactSummary>, AccessError> {
-        // Reuse U3's index for match quality (tokenized, Korean-aware). No
-        // category/scope narrowing here — the tool takes no such argument (§3.2);
-        // the token is the only thing that narrows scope.
-        let mut hits = self
-            .knowledge
-            .search(query.to_string(), FactFilter::default())
-            .await
-            .map_err(to_access_error)?;
-        // The index yields hits in HashSet order (non-deterministic), so when
-        // matches exceed `limit` the truncated subset would vary run to run. Impose
-        // a stable order (title, then id) before truncating — deterministic and
-        // human-legible. Relevance ranking is future work (the index scores no
-        // match), and would live here once it exists.
-        hits.sort_by(|a, b| a.title.cmp(&b.title).then_with(|| a.id.0.cmp(&b.id.0)));
-        // Filter to what the token may see, THEN take `limit`, so a consumer never
-        // gets fewer results just because out-of-scope hits sorted first. The index
-        // summary lacks visibility/category, so reload each hit to decide access.
-        let mut out = Vec::new();
-        for h in hits {
-            if out.len() >= limit {
-                break;
-            }
-            match self.knowledge.get(h.id).await {
-                Ok(f) if token.can_access(f.metadata.visibility, f.metadata.category.as_ref()) => {
-                    out.push(h)
-                }
-                Ok(_) => {}                      // indexed, but out of this token's scope
-                Err(AppError::NotFound(_)) => {} // raced deletion between index and store
-                Err(e) => return Err(to_access_error(e)),
-            }
-        }
-        Ok(out)
+        // A thin projection of `search_visible`: same index, same single access
+        // point (§3.2), returning the frozen surface's lossy summaries. One search
+        // implementation, so ordering/scope semantics can't drift between the two.
+        Ok(self
+            .search_visible(token, query, limit)
+            .await?
+            .into_iter()
+            .map(|f| FactSummary {
+                id: f.id,
+                title: f.title,
+                scope: f.metadata.scope,
+                kind: f.metadata.kind,
+                topics: f.metadata.topics,
+                visibility: f.metadata.visibility,
+                confirmed: f.metadata.confirmed,
+            })
+            .collect())
     }
 
     async fn get_page(&self, token: &Token, id: FactId) -> Result<Fact, AccessError> {
@@ -240,6 +328,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn category_counts_owner_counts_all_pages_per_category() {
+        let (s, _) = seeded().await;
+        let t = Token::owner();
+        // deploy: "a"(Private)+"b"(Shared)=2; workstyle: "c"=1; "d" has no category.
+        assert_eq!(
+            s.category_counts(&t).await.unwrap(),
+            vec![("deploy".to_string(), 2), ("workstyle".to_string(), 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn category_counts_consumer_never_leaks_private_pages() {
+        let (s, _) = seeded().await;
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        // Only "b" (Shared + deploy) is visible; the Private "a" must not be counted.
+        assert_eq!(
+            s.category_counts(&t).await.unwrap(),
+            vec![("deploy".to_string(), 1)]
+        );
+    }
+
+    #[tokio::test]
+    async fn guide_pages_owner_returns_all_category_pages_sorted() {
+        let (s, _) = seeded().await;
+        let t = Token::owner();
+        let titles: Vec<String> = s
+            .guide_pages(&t, &cat("deploy"))
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.title)
+            .collect();
+        assert_eq!(titles, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn guide_pages_consumer_excludes_private_and_hides_ungranted() {
+        let (s, _) = seeded().await;
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        // deploy is granted: only the Shared "b" comes back, never the Private "a".
+        let pages = s.guide_pages(&t, &cat("deploy")).await.unwrap();
+        assert_eq!(pages.len(), 1);
+        assert_eq!(pages[0].title, "b");
+        // workstyle is not granted → NotFound (never reveal it exists).
+        assert!(matches!(
+            s.guide_pages(&t, &cat("workstyle")).await,
+            Err(AccessError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn guide_pages_notfound_when_granted_but_nothing_visible() {
+        // Granted a category whose only page is Private ⇒ nothing visible ⇒
+        // NotFound, agreeing with `category_counts` (which omits it).
+        let svc = Arc::new(KnowledgeService::new(Arc::new(InMemoryStore::default())));
+        svc.upsert(fact("x", Visibility::Private, Some("secret")))
+            .await
+            .unwrap();
+        let s = KnowledgeSharing::new(svc);
+        let t = Token::consumer("teammate", [cat("secret")]);
+        assert!(matches!(
+            s.guide_pages(&t, &cat("secret")).await,
+            Err(AccessError::NotFound)
+        ));
+    }
+
+    #[tokio::test]
     async fn search_respects_limit() {
         let (s, _) = seeded().await;
         let t = Token::owner();
@@ -253,6 +408,32 @@ mod tests {
             .map(|f| f.title)
             .collect();
         assert_eq!(titles, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn search_visible_backfills_past_inaccessible_hits() {
+        // Inaccessible facts sort *between* accessible ones; a limit-2 search must
+        // still return 2 accessible facts, not stop short after skipping one.
+        let svc = Arc::new(KnowledgeService::new(Arc::new(InMemoryStore::default())));
+        for f in [
+            fact("1 body", Visibility::Private, Some("deploy")),
+            fact("2 body", Visibility::Shared, Some("deploy")),
+            fact("3 body", Visibility::Private, Some("deploy")),
+            fact("4 body", Visibility::Shared, Some("deploy")),
+        ] {
+            svc.upsert(f).await.unwrap();
+        }
+        let s = KnowledgeSharing::new(svc);
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        let titles: Vec<String> = s
+            .search_visible(&t, "body", 2)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|f| f.title)
+            .collect();
+        // "1 body"/"3 body" are Private (skipped); the two Shared ones backfill.
+        assert_eq!(titles, vec!["2 body".to_string(), "4 body".to_string()]);
     }
 
     #[tokio::test]
