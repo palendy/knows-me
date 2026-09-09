@@ -92,7 +92,6 @@ export function PersonaChatView({ api }: Props) {
     <section aria-label="나와 대화" className="chat-workspace">
       <header className="work-view-header">
         <div><h2>나와 대화</h2><p>쌓아 둔 맥락에서 나에게 필요한 답을 찾아보세요.</p></div>
-        <span className="work-tag">확정된 맥락 기반</span>
       </header>
       <div className="chat-content">
 

@@ -71,7 +71,7 @@ export function App() {
   return (
     <main className={status?.initialized && status.unlocked ? "app" : "app auth-app"}>
       {!(status?.initialized && status.unlocked) && <header className="brand">
-        <h1>knows&#8209;me</h1>
+        <h1>Knows Me</h1>
         <p className="tagline">나의 맥락이 모이는 곳</p>
       </header>}
 
@@ -104,7 +104,7 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
   return (
     <div className="workspace">
       <aside className="sidebar">
-        <a className="wordmark" href="#" onClick={(event) => { event.preventDefault(); setTab("dashboard"); }} aria-label="knows-me 대시보드"><span className="brand-symbol">k.</span>knows-me</a>
+        <a className="wordmark" href="#" onClick={(event) => { event.preventDefault(); setTab("dashboard"); }} aria-label="Knows Me 대시보드"><span className="brand-symbol">K</span>Knows Me</a>
         <div className="workspace-label">내 공간</div>
       <nav role="tablist" aria-label="화면" className="tabs">
         {TABS.map((t) => (
@@ -121,7 +121,7 @@ export function UnlockedShell({ onLock }: { onLock: () => void }) {
           </button>
         ))}
       </nav>
-      <div className="sidebar-foot"><span className="version">knows-me · v0.1</span></div>
+      <div className="sidebar-foot"><span className="version">Knows Me · v0.1</span></div>
       </aside>
       <div className="workspace-body">
       <div className="workspace-topbar"><span>내 공간 <span className="breadcrumb-divider">/</span> <strong>{TABS.find(t => t.id === tab)?.label}</strong></span></div>

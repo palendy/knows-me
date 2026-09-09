@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "knows-me",
+        "title": "Knows Me",
         "width": 960,
         "height": 820,
         "resizable": true
