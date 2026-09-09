@@ -8,7 +8,7 @@
    layout edges. `overflow-x: clip` (not hidden) hides horizontal overflow without
    creating a scroll container, so the sticky sidebar keeps working. */
 html, body { overscroll-behavior: none; overflow-x: clip; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.65 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.65 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 button, input, textarea, select { font: inherit; }
 button { padding: 10px 16px; border: 1px solid transparent; border-radius: 7px; background: var(--accent); color: var(--accent-ink); font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s; }
 button:hover:not(:disabled) { filter: brightness(.94); }
@@ -28,11 +28,13 @@ h3 { font-size: 16px; letter-spacing: -.02em; }
 .workspace { min-height: 100vh; display: grid; grid-template-columns: 224px minmax(0, 1fr); }
 .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; padding: 31px 18px 24px; background: #f1f2ec; border-right: 1px solid var(--border); }
 .wordmark { display: flex; align-items: center; justify-content: center; gap: 11px; color: var(--text); text-decoration: none; font-family: Georgia, 'Palatino Linotype', 'Book Antiqua', 'Times New Roman', serif; font-size: 24px; font-weight: 500; letter-spacing: .2px; padding: 0; white-space: nowrap; }
-.brand-symbol { display: inline-grid; place-items: center; text-align: center; flex: 0 0 auto; width: 32px; height: 32px; background: var(--accent); color: white; border-radius: 9px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; font-weight: 700; font-size: 18px; line-height: 1; }
+.brand-symbol { display: inline-grid; place-items: center; text-align: center; flex: 0 0 auto; width: 32px; height: 32px; background: var(--accent); color: white; border-radius: 9px; font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Malgun Gothic', sans-serif; font-weight: 700; font-size: 18px; line-height: 1; }
 .workspace-label { margin: 46px 13px 13px; color: var(--muted); font-size: 11px; display: flex; align-items: center; justify-content: space-between; }
 .workspace-label span { font-size: 8px; letter-spacing: 1.3px; }
 .tabs { display: flex; flex-direction: column; gap: 5px; }
-.tabs button[role='tab'] { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: transparent; color: #6c7269; font-weight: 500; text-align: left; }
+.tabs button[role='tab'] { display: flex; gap: 12px; align-items: center; padding: 12px 14px; background: transparent; color: #6c7269; font-weight: 500; text-align: left; transition: background-color .15s ease, color .15s ease; }
+.tabs button[role='tab']:hover { filter: none; }
+.tabs button[role='tab']:not([aria-selected='true']):hover { background: #e8ebe3; color: #3c4239; }
 .tabs button[role='tab'][aria-selected='true'] { background: #e0e7dc; color: #284734; font-weight: 650; }
 .tabs button:last-child { margin-top: 23px; }
 .sidebar-foot { margin-top: auto; padding: 28px 13px 0; font-size: 11px; color: #58624f; }
