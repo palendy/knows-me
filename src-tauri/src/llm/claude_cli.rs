@@ -88,13 +88,32 @@ impl ClaudeCliLlm {
     /// Tools are disabled and the turn count pinned to one so a classification
     /// call cannot wander into reading files.
     async fn run(&self, instruction: &str, input: &str) -> Result<String> {
-        // `binary` may carry leading args so a WSL install can be selected —
-        // e.g. `wsl -d Ubuntu claude` runs the distro's logged-in CLI from the
-        // Windows app. A bare `claude` splits to just the program, unchanged.
-        let mut argv = self.config.binary.split_whitespace();
-        let program = argv.next().unwrap_or("claude");
-        let mut child = Command::new(program)
-            .args(argv)
+        // Build the base command from `binary`.
+        //
+        // A `wsl -d <distro> <path>` binary (a selected WSL install) is run
+        // through an *interactive* bash — `bash -ic 'exec <path> "$@"' bash` —
+        // so the distro's ~/.bashrc loads. That matters because the CLI's auth
+        // env (e.g. Bedrock creds) is often exported there, and `.bashrc` is read
+        // only by interactive shells (a login `-l` shell skips it). `exec … "$@"`
+        // forwards our flags to claude. A native `claude` (or a plain path) runs
+        // directly, so non-WSL platforms are unaffected.
+        let tokens: Vec<&str> = self.config.binary.split_whitespace().collect();
+        let mut cmd = if tokens.first() == Some(&"wsl") && tokens.len() >= 4 && tokens[1] == "-d" {
+            let distro = tokens[2];
+            let claude = tokens[3..].join(" ");
+            let mut c = Command::new("wsl");
+            c.args(["-d", distro, "--", "bash", "-ic"])
+                .arg(format!("exec {claude} \"$@\""))
+                .arg("bash");
+            c
+        } else {
+            let mut it = tokens.iter().copied();
+            let program = it.next().unwrap_or("claude");
+            let mut c = Command::new(program);
+            c.args(it);
+            c
+        };
+        let mut child = cmd
             .arg("-p")
             .args(["--model", &self.config.model])
             .args(["--allowed-tools", ""])
