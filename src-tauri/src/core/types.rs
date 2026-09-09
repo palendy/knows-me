@@ -82,6 +82,52 @@ pub enum Visibility {
     Shared,
 }
 
+/// A sharing category — the grant unit. Free-form, but stored/compared only in
+/// normalized form so `Deploy` and `deploy` cannot become distinct grants (a
+/// silent authorization miss). Construct only via [`Category::parse`].
+/// See `docs/mcp-contract.md` §2.1.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Category(String);
+
+impl Category {
+    /// Normalize `raw` and return a valid `Category`, or `InvalidInput`.
+    ///
+    /// Rules: trim + lowercase; whitespace and `_` become a single `-`; keep only
+    /// `a-z 0-9 - .` and Hangul; collapse repeated `-` and trim leading/trailing
+    /// `-`; final length must be 1..=64 chars.
+    pub fn parse(raw: &str) -> crate::core::error::Result<Self> {
+        fn is_hangul(c: char) -> bool {
+            matches!(c, '\u{AC00}'..='\u{D7A3}' | '\u{1100}'..='\u{11FF}' | '\u{3130}'..='\u{318F}')
+        }
+        let mut out = String::with_capacity(raw.len());
+        let mut prev_dash = false;
+        for ch in raw.trim().to_lowercase().chars() {
+            if ch.is_whitespace() || ch == '_' || ch == '-' {
+                if !prev_dash {
+                    out.push('-');
+                    prev_dash = true;
+                }
+            } else if ch.is_ascii_alphanumeric() || ch == '.' || is_hangul(ch) {
+                out.push(ch);
+                prev_dash = false;
+            }
+            // disallowed characters are dropped
+        }
+        let trimmed = out.trim_matches('-');
+        let count = trimmed.chars().count();
+        if count == 0 || count > 64 {
+            return Err(crate::core::error::AppError::InvalidInput(
+                "category".into(),
+            ));
+        }
+        Ok(Category(trimmed.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 /// Policy governing what may be sent to the cloud LLM.
 /// Default reflects the confirmed decision (mask/minimize before sending).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -192,7 +238,7 @@ pub struct FactMetadata {
     /// Grant unit for sharing (e.g. "deploy", "workstyle"). `None` = uncategorized.
     /// A fact must carry a category to be reachable once `visibility == Shared`.
     #[serde(default)]
-    pub category: Option<String>,
+    pub category: Option<Category>,
 }
 
 /// A confirmed unit of context. Persisted as one document (wiki page).
@@ -237,9 +283,10 @@ pub struct FactSummary {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FactFilter {
     pub scope: Option<Scope>,
-    /// Restrict to a single category. `None` = no category filter.
+    /// Restrict to a single category (U3-internal search). `None` = no filter.
+    /// Not an MCP argument — see `docs/mcp-contract.md` §3.2.
     #[serde(default)]
-    pub category: Option<String>,
+    pub category: Option<Category>,
 }
 
 /// Filter for graph queries.

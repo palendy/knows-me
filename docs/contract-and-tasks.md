@@ -1,38 +1,17 @@
-# 강화 컨셉 — 계약 + 4개 태스크 카드
+# 강화 컨셉 — 계약 + 분담
 
-> 목적: 4명이 서로 안 기다리고 병렬로 가기 위한 **계약 동결** + 그 위에서 쪼갠 태스크.
-> 착수 전 유일한 전제 = **계약(아래 1)**. 이것만 타입+목으로 박히면 태스크가 독립적으로 굴러간다.
+> 목적: 병렬 진행을 위한 계약(정본 `mcp-contract.md`) + 그 위에서 쪼갠 분담.
+> 계약 surface는 `sharing::`로 동결됨(PR #6). 각자 `sharing::MockSharing` 상대로 독립 진행.
 
-## 1. 먼저 동결할 계약 (병렬의 전제)
+## 1. 계약 (정본: `mcp-contract.md`)
 
-기존 타입에 얹는 최소 변경만 정의한다. (파일: `src-tauri/src/core/types.rs`, `traits.rs`)
+계약 정본은 **[`mcp-contract.md`](mcp-contract.md)** 하나다 — 툴 4종(`list_categories`/`search_knowledge`/`get_page`/`get_guide`), 인가 시맨틱, 에러 코드, 서빙 안전 규칙, 요구 공유 타입. **여기서 중복 기술하지 않는다**(둘로 갈리면 계약이 둘이 된다).
 
-### A. 데이터모델 (공유 타입)
+코드 상태(PR #6, **동결·구현됨**):
+- 공유 타입: `core::types::{Visibility(기본 Private), Category(정규화 생성자)}`, `FactMetadata`에 `visibility`·`category`.
+- 계약 surface: `sharing::{Token, SharingApi, MockSharing, AccessError}` — `mcp-contract.md`의 Rust 인코딩. 불변식(토큰 파생 grant, `Shared ∩ 부여범주`, 인자는 좁히기만)이 테스트로 고정됨.
 
-- **접근 축을 새로 추가.** 기존 `Scope { Company, Personal, Unknown }`은 *주제* 분류이지 접근제어가 아니다. 별개로:
-  - `Visibility { Private, Shared }` — 기본 `Private`(오너·오너 에이전트만). `Shared`만 남에게 노출.
-  - `Fact.metadata`에 `visibility: Visibility` + `category: String` 추가. (`category`가 grant 단위, 예: `deploy`, `project-x`, `workstyle`)
-- `FactFilter`에 `category: Option<String>` 추가 (기존 `scope: Option<Scope>` 옆에).
-- **Queue 확정 = 공개 승인 + 범주 지정 게이트.** `AnswerInput`에 확정 시 `visibility`·`category`를 실어 보낼 수 있게 확장(예: `Confirm { visibility, category }`).
-
-### B. MCP 툴 계약 (surface — 팀이 의존하는 유일한 표면)
-
-| 툴 | 시그니처 | 의미 |
-|---|---|---|
-| `list_categories` | `() -> [Category]` | 이 토큰이 접근 가능한 범주 |
-| `search_knowledge` | `(query, category?) -> [FactSummary]` | 스코프 안에서만 검색 |
-| `get_fact` | `(id) -> Fact` | 스코프 밖이면 `forbidden` |
-| `get_guide` | `(category?) -> string` | 오너 가이드(온보딩 대신) |
-
-- 에러 enum: `unauthorized`(토큰 없음/무효) vs `forbidden`(인증됐으나 범위 밖).
-- **불변식**: 신원·grant는 토큰에서만. 요청 인자는 이미 허용된 범위를 *좁히기만*. 인가는 서버 단일 지점.
-
-### C. 토큰 ↔ 범주 계약
-
-- `Token { id, granted_categories: Set<String>, owner: bool }`
-- **오너 토큰** = 전 범주 + `Private` 포함(셀프 참조). **그 외** = `granted_categories`에 속한 `Shared` 사실만.
-
-> 이 계약의 **enforcement 구현**(스코프 판정 로직 + MCP 전송 뼈대 + 전송경계 강제)은 **오너가 제공**한다(아래 T0). 팀은 위 surface에만 의존한다.
+각 유닛은 이 `sharing::` 계약 + `MockSharing` 상대로 병렬 진행한다.
 
 ## 2. 실제 분담 (진행 현황 반영)
 

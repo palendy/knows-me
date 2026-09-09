@@ -1,41 +1,49 @@
-//! Sharing contract (frozen interface for the strengthened concept).
+//! Sharing contract (Rust surface of the canonical MCP contract).
 //!
-//! This module defines *only the surface* that the four work-packages code
-//! against — the access model, the token/scope rule, and the tool trait an MCP
-//! server exposes. The real MCP transport, token minting/validation over HTTP,
-//! and transmission-boundary enforcement (task **T0**, owner-provided) live
-//! elsewhere; this file is the neutral contract everyone builds on.
+//! The **canonical, team-ratified contract is `docs/mcp-contract.md`.** This
+//! module is its Rust encoding — the access model, token/scope rule, and the
+//! read-only tool trait an MCP server exposes. The real MCP transport, token
+//! minting/validation, and transmission-boundary enforcement live in the owner's
+//! MCP vertical, built on top of this.
 //!
-//! Invariant (do not weaken): identity and grants come from the [`Token`] only.
-//! Call arguments (e.g. `category`) may *narrow* within the granted scope — they
-//! can never widen it. See `docs/contract-and-tasks.md`.
+//! Invariant (do not weaken, `mcp-contract.md` §6): identity and grants come
+//! from the [`Token`] only; a consumer sees exactly
+//! `granted_categories ∩ {visibility == Shared}`. Tool arguments never widen it.
 
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
 
-use crate::core::types::{Fact, FactId, FactSummary, Visibility};
+use crate::core::types::{Category, Fact, FactId, FactSummary, Visibility};
 
-/// Why a sharing call was refused.
+/// Contract error codes (`mcp-contract.md` §5). Which layer produces each:
+/// `NotFound` = tool domain (this trait) for absent *or* out-of-scope targets —
+/// existence is never leaked. `Unauthorized`/`Locked`/`Unavailable`/`InvalidInput`
+/// are produced by the transport/auth/store layers of the MCP vertical, not here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AccessError {
-    /// No token, or the token is invalid.
+    /// Absent, or outside the token's scope (indistinguishable on purpose).
+    NotFound,
+    /// No token, malformed, or revoked.
     Unauthorized,
-    /// Authenticated, but the target is outside the token's granted scope.
-    /// Also returned for non-existent targets, so existence is never leaked.
-    Forbidden,
+    /// Vault is locked.
+    Locked,
+    /// App not running / store unreachable.
+    Unavailable,
+    /// Bad argument (e.g. category normalization failed).
+    InvalidInput,
 }
 
 /// A consumer's identity and the categories it may read.
 ///
-/// Grants are fixed at mint time and carried by the token; they are never
-/// accepted as request arguments.
+/// Grants are fixed at mint time and carried by the token; never accepted as a
+/// request argument.
 #[derive(Clone, Debug)]
 pub struct Token {
     pub id: String,
     /// Categories this token may read (only meaningful for non-owner tokens).
-    pub granted: BTreeSet<String>,
-    /// The owner token reads everything, including `Private` facts.
+    pub granted: BTreeSet<Category>,
+    /// The owner token reads everything, including `Private`, all categories.
     pub owner: bool,
 }
 
@@ -50,7 +58,7 @@ impl Token {
     }
 
     /// A consumer token scoped to a set of granted categories.
-    pub fn consumer(id: impl Into<String>, granted: impl IntoIterator<Item = String>) -> Self {
+    pub fn consumer(id: impl Into<String>, granted: impl IntoIterator<Item = Category>) -> Self {
         Self {
             id: id.into(),
             granted: granted.into_iter().collect(),
@@ -58,46 +66,50 @@ impl Token {
         }
     }
 
-    /// The single access rule. A fact is readable iff:
-    /// - this is the owner token, or
-    /// - the fact is `Shared` **and** its category is in the granted set.
-    ///
-    /// A `Shared` fact with no category is not reachable by any consumer.
-    pub fn can_access(&self, visibility: Visibility, category: Option<&str>) -> bool {
+    /// The single access rule (`mcp-contract.md` §1). Readable iff owner, or the
+    /// fact is `Shared` **and** its category is in the granted set. Category and
+    /// visibility are an AND — checking only one is a bug. A `Shared` fact with no
+    /// category is unreachable by any consumer.
+    pub fn can_access(&self, visibility: Visibility, category: Option<&Category>) -> bool {
         if self.owner {
             return true;
         }
         visibility == Visibility::Shared && category.is_some_and(|c| self.granted.contains(c))
     }
+
+    /// Whether this token may read a given category at all (owner, or granted).
+    fn grants(&self, category: &Category) -> bool {
+        self.owner || self.granted.contains(category)
+    }
 }
 
-/// The knowledge surface an MCP server exposes to a token-bearing caller.
-///
-/// Every method takes the caller's resolved [`Token`]; enforcement is a single
-/// server-side point (this trait's implementations), never the caller.
+/// The read-only knowledge surface an MCP server exposes to a token-bearing
+/// caller (`mcp-contract.md` §3). Enforcement is a single server-side point (the
+/// implementation), never the caller. No tool takes a `category` argument that
+/// could widen scope — see §3.2.
 #[async_trait]
 pub trait SharingApi: Send + Sync {
-    /// Categories this token can reach.
+    /// Categories this token can reach (§3.1).
     async fn list_categories(&self, token: &Token) -> Result<Vec<String>, AccessError>;
 
-    /// Search within the token's scope. `category` narrows further (never widens).
+    /// Search within the token's scope only. No `category` arg by design (§3.2).
     async fn search_knowledge(
         &self,
         token: &Token,
         query: &str,
-        category: Option<&str>,
+        limit: usize,
     ) -> Result<Vec<FactSummary>, AccessError>;
 
-    /// Fetch one fact, or `Forbidden` if out of scope (or absent).
-    async fn get_fact(&self, token: &Token, id: FactId) -> Result<Fact, AccessError>;
+    /// Fetch one page, or `NotFound` if absent or out of scope (§3.3).
+    async fn get_page(&self, token: &Token, id: FactId) -> Result<Fact, AccessError>;
 
-    /// The owner's guidance text (stands in for personal onboarding).
-    async fn get_guide(&self, token: &Token, category: Option<&str>)
-        -> Result<String, AccessError>;
+    /// Owner guidance for one category (§3.4). `NotFound` if that category is not
+    /// granted — existence of the category is never revealed.
+    async fn get_guide(&self, token: &Token, category: &Category) -> Result<String, AccessError>;
 }
 
-/// In-memory `SharingApi` so the four work-packages can build/test in parallel
-/// before the real store + MCP server (T0) land.
+/// In-memory `SharingApi` so the work-packages can build/test in parallel before
+/// the real store + MCP server land.
 pub struct MockSharing {
     facts: Vec<Fact>,
     guide: String,
@@ -112,9 +124,9 @@ impl MockSharing {
     }
 
     fn visible<'a>(&'a self, token: &'a Token) -> impl Iterator<Item = &'a Fact> {
-        self.facts.iter().filter(move |f| {
-            token.can_access(f.metadata.visibility, f.metadata.category.as_deref())
-        })
+        self.facts
+            .iter()
+            .filter(move |f| token.can_access(f.metadata.visibility, f.metadata.category.as_ref()))
     }
 }
 
@@ -123,7 +135,7 @@ impl SharingApi for MockSharing {
     async fn list_categories(&self, token: &Token) -> Result<Vec<String>, AccessError> {
         let cats: BTreeSet<String> = self
             .visible(token)
-            .filter_map(|f| f.metadata.category.clone())
+            .filter_map(|f| f.metadata.category.as_ref().map(|c| c.as_str().to_string()))
             .collect();
         Ok(cats.into_iter().collect())
     }
@@ -132,12 +144,12 @@ impl SharingApi for MockSharing {
         &self,
         token: &Token,
         query: &str,
-        category: Option<&str>,
+        limit: usize,
     ) -> Result<Vec<FactSummary>, AccessError> {
         Ok(self
             .visible(token)
-            .filter(|f| category.is_none_or(|c| f.metadata.category.as_deref() == Some(c)))
             .filter(|f| f.title.contains(query) || f.body.contains(query))
+            .take(limit)
             .map(|f| FactSummary {
                 id: f.id,
                 title: f.title.clone(),
@@ -147,18 +159,17 @@ impl SharingApi for MockSharing {
             .collect())
     }
 
-    async fn get_fact(&self, token: &Token, id: FactId) -> Result<Fact, AccessError> {
+    async fn get_page(&self, token: &Token, id: FactId) -> Result<Fact, AccessError> {
         self.visible(token)
             .find(|f| f.id == id)
             .cloned()
-            .ok_or(AccessError::Forbidden)
+            .ok_or(AccessError::NotFound)
     }
 
-    async fn get_guide(
-        &self,
-        _token: &Token,
-        _category: Option<&str>,
-    ) -> Result<String, AccessError> {
+    async fn get_guide(&self, token: &Token, category: &Category) -> Result<String, AccessError> {
+        if !token.grants(category) {
+            return Err(AccessError::NotFound);
+        }
         Ok(self.guide.clone())
     }
 }
@@ -168,6 +179,10 @@ mod tests {
     use super::*;
     use crate::core::types::{FactMetadata, Provenance, Scope, SourceKind};
     use chrono::Utc;
+
+    fn cat(s: &str) -> Category {
+        Category::parse(s).unwrap()
+    }
 
     fn fact(id: &str, visibility: Visibility, category: Option<&str>) -> Fact {
         Fact {
@@ -184,7 +199,7 @@ mod tests {
                 scope: Scope::Unknown,
                 confirmed_at: Some(Utc::now()),
                 visibility,
-                category: category.map(str::to_string),
+                category: category.map(cat),
             },
         }
     }
@@ -205,16 +220,15 @@ mod tests {
     async fn owner_sees_everything() {
         let s = store();
         let t = Token::owner();
-        assert_eq!(s.search_knowledge(&t, "body", None).await.unwrap().len(), 4);
+        assert_eq!(s.search_knowledge(&t, "body", 50).await.unwrap().len(), 4);
     }
 
     #[tokio::test]
     async fn consumer_sees_only_granted_shared() {
         let s = store();
-        let t = Token::consumer("teammate", ["deploy".to_string()]);
-        // only fact "b" (Shared + deploy). "a" is Private, "c" wrong category, "d" no category.
-        let hits = s.search_knowledge(&t, "body", None).await.unwrap();
-        assert_eq!(hits.len(), 1);
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        // only fact "b" (Shared + deploy). "a" Private, "c" wrong category, "d" no category.
+        assert_eq!(s.search_knowledge(&t, "body", 50).await.unwrap().len(), 1);
         assert_eq!(
             s.list_categories(&t).await.unwrap(),
             vec!["deploy".to_string()]
@@ -222,39 +236,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn category_arg_only_narrows() {
+    async fn search_respects_limit() {
         let s = store();
-        let t = Token::consumer("teammate", ["deploy".to_string(), "workstyle".to_string()]);
-        assert_eq!(s.search_knowledge(&t, "body", None).await.unwrap().len(), 2);
-        assert_eq!(
-            s.search_knowledge(&t, "body", Some("workstyle"))
-                .await
-                .unwrap()
-                .len(),
-            1
-        );
-        // asking for a category not granted yields nothing (cannot widen).
-        assert_eq!(
-            s.search_knowledge(&t, "body", Some("secret"))
-                .await
-                .unwrap()
-                .len(),
-            0
-        );
+        let t = Token::owner();
+        assert_eq!(s.search_knowledge(&t, "body", 2).await.unwrap().len(), 2);
     }
 
     #[tokio::test]
-    async fn get_fact_hides_out_of_scope_as_forbidden() {
-        // The private fact exists in the store, but must look absent to a
-        // consumer token — same `Forbidden` as a non-existent id (no leak).
+    async fn get_page_hides_out_of_scope_as_not_found() {
+        // The private page exists, but must look absent to a consumer token.
         let private = fact("a", Visibility::Private, Some("deploy"));
         let private_id = private.id;
         let shared = fact("b", Visibility::Shared, Some("deploy"));
         let s = MockSharing::new(vec![private, shared], "guide");
-        let t = Token::consumer("teammate", ["deploy".to_string()]);
+        let t = Token::consumer("teammate", [cat("deploy")]);
         assert!(matches!(
-            s.get_fact(&t, private_id).await,
-            Err(AccessError::Forbidden)
+            s.get_page(&t, private_id).await,
+            Err(AccessError::NotFound)
         ));
+    }
+
+    #[tokio::test]
+    async fn get_guide_hides_ungranted_category() {
+        let s = store();
+        let t = Token::consumer("teammate", [cat("deploy")]);
+        assert!(s.get_guide(&t, &cat("deploy")).await.is_ok());
+        // not granted → NotFound (never reveal the category exists).
+        assert!(matches!(
+            s.get_guide(&t, &cat("workstyle")).await,
+            Err(AccessError::NotFound)
+        ));
+    }
+
+    #[test]
+    fn category_normalizes() {
+        assert_eq!(cat(" Deploy ").as_str(), "deploy");
+        assert_eq!(cat("payment service").as_str(), "payment-service");
+        assert_eq!(cat("--a__b  c--").as_str(), "a-b-c");
+        assert_eq!(cat("결제-서비스").as_str(), "결제-서비스");
+        assert!(Category::parse("   ").is_err());
+        assert!(Category::parse(&"x".repeat(65)).is_err());
     }
 }
