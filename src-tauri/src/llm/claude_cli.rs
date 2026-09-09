@@ -88,7 +88,13 @@ impl ClaudeCliLlm {
     /// Tools are disabled and the turn count pinned to one so a classification
     /// call cannot wander into reading files.
     async fn run(&self, instruction: &str, input: &str) -> Result<String> {
-        let mut child = Command::new(&self.config.binary)
+        // `binary` may carry leading args so a WSL install can be selected —
+        // e.g. `wsl -d Ubuntu claude` runs the distro's logged-in CLI from the
+        // Windows app. A bare `claude` splits to just the program, unchanged.
+        let mut argv = self.config.binary.split_whitespace();
+        let program = argv.next().unwrap_or("claude");
+        let mut child = Command::new(program)
+            .args(argv)
             .arg("-p")
             .args(["--model", &self.config.model])
             .args(["--allowed-tools", ""])

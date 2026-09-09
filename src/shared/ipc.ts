@@ -8,6 +8,7 @@
 import type {
   AppConfig,
   AppStatus,
+  ClaudeInstall,
   ConfigDto,
   LlmConfigInput,
   TransferPolicy,
@@ -44,6 +45,8 @@ export const ipc = {
     call<void>("set_transfer_policy", { policy }),
   setLlmConfig: (input: LlmConfigInput) =>
     call<void>("set_llm_config", { ...input }),
+  discoverClaudeInstalls: () =>
+    call<ClaudeInstall[]>("discover_claude_installs"),
   setServerEnabled: (on: boolean) => call<void>("set_server_enabled", { on }),
   listTransfers: () => call<TransferRecord[]>("list_transfers"),
 };
@@ -68,6 +71,7 @@ function defaultConfig(): AppConfig {
     llm_provider: "claude-cli",
     llm_model: "claude-sonnet-5",
     llm_base_url: null,
+    llm_binary: null,
   };
 }
 
@@ -134,6 +138,8 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       cfg.llm_model = String(args?.model ?? "");
       const base = args?.base_url as string | null | undefined;
       cfg.llm_base_url = base && base.trim() ? base.trim() : null;
+      const bin = args?.binary as string | null | undefined;
+      cfg.llm_binary = bin && bin.trim() ? bin.trim() : null;
       localStorage.setItem(LS.config, JSON.stringify(cfg));
       // Write-only key: only touch storage when a value was supplied.
       const key = args?.api_key as string | null | undefined;
@@ -152,6 +158,12 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       localStorage.setItem(LS.config, JSON.stringify(cfg));
       return undefined as T;
     }
+    case "discover_claude_installs":
+      // Standalone UI dev: pretend a native + one WSL install were found.
+      return [
+        { id: "native", label: "로컬", binary: "claude", model: "claude-sonnet-5" },
+        { id: "wsl:Ubuntu", label: "WSL · Ubuntu", binary: "wsl -d Ubuntu claude", model: "opus" },
+      ] as T;
     case "list_transfers":
       return [] as T;
     default:

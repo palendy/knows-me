@@ -7,12 +7,14 @@
 //! - [`client`] — real Anthropic client under the `llm-http` feature.
 
 pub mod claude_cli;
+pub mod claude_discovery;
 pub mod client;
 pub mod masker;
 pub mod prompts;
 pub mod transfer_log;
 
 pub use claude_cli::{ClaudeCliConfig, ClaudeCliLlm};
+pub use claude_discovery::{discover as discover_claude_installs, ClaudeInstall};
 pub use masker::RegexMasker;
 pub use transfer_log::TransferLog;
 

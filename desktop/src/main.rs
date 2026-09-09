@@ -178,6 +178,9 @@ async fn set_llm_config(
     model: String,
     base_url: Option<String>,
     api_key: Option<String>,
+    // For the `claude-cli` backend: which local install to drive, as a command
+    // line ("claude", a path, or "wsl -d <distro> claude"). Ignored otherwise.
+    binary: Option<String>,
 ) -> CmdResult<()> {
     use knows_me_core::core::traits::EncryptedStore;
 
@@ -202,6 +205,7 @@ async fn set_llm_config(
     cfg.llm_base_url = base_url
         .map(|u| u.trim().to_string())
         .filter(|u| !u.is_empty());
+    cfg.llm_binary = binary.map(|b| b.trim().to_string()).filter(|b| !b.is_empty());
     state.save_config(cfg).await.map_err(err)?;
 
     // 3. Reflect the (possibly just-changed) key for the selected provider.
@@ -243,6 +247,18 @@ fn list_transfers(state: tauri::State<'_, AppState>) -> Vec<TransferRecord> {
 #[tauri::command]
 async fn local_api_status(services: tauri::State<'_, Services>) -> CmdResult<Option<u16>> {
     Ok(services.local_api_port().await)
+}
+
+/// Detect the local Claude Code CLI installs (native + WSL distros) for the
+/// settings picker. Runs `where`/`which`/`wsl` under the hood, so it's done on a
+/// blocking thread to keep the async runtime free.
+#[tauri::command]
+async fn discover_claude_installs() -> CmdResult<Vec<knows_me_core::llm::ClaudeInstall>> {
+    Ok(
+        tokio::task::spawn_blocking(knows_me_core::llm::discover_claude_installs)
+            .await
+            .unwrap_or_default(),
+    )
 }
 
 // --- U4: read views + persona (locked → AppError::Locked) ------------------
@@ -621,6 +637,7 @@ fn main() {
             set_server_enabled,
             list_transfers,
             local_api_status,
+            discover_claude_installs,
             get_dashboard,
             get_minihome,
             get_graph,

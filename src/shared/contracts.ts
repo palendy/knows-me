@@ -221,6 +221,21 @@ export interface AppConfig {
   llm_model: string;
   /** Base URL override for the HTTP providers (null = provider default). */
   llm_base_url: string | null;
+  /** Which local Claude Code install the CLI backend drives, as a command line
+   * ("claude", a path, or "wsl -d <distro> claude"). null = default `claude`. */
+  llm_binary: string | null;
+}
+
+/** A detected local Claude Code CLI install offered in the settings picker. */
+export interface ClaudeInstall {
+  /** Stable id, e.g. "native" or "wsl:Ubuntu". */
+  id: string;
+  /** Human label, e.g. "Windows" or "WSL · Ubuntu". */
+  label: string;
+  /** Command line the backend invokes for this install. */
+  binary: string;
+  /** Model this install currently has configured (settings.json), if known. */
+  model: string | null;
 }
 
 /**
@@ -241,6 +256,8 @@ export interface LlmConfigInput {
   base_url: string | null;
   /** Write-only: omit (null) to keep the stored key, "" to clear it. */
   api_key: string | null;
+  /** claude-cli only: the selected install's command line (null = default). */
+  binary: string | null;
 }
 
 /** One recorded outbound cloud-LLM call (masked content only). */

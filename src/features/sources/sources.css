@@ -283,21 +283,20 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  max-width: 56%;
+  max-width: min(100%, 480px);
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: 14px;
   font-size: 12.5px;
   line-height: 1.4;
   background: #f1f5f9;
   color: #475569;
-  white-space: nowrap;
-  overflow: hidden;
+  /* Wrap long status text (e.g. "N건 수집 · 사실 · 질문") instead of clipping it. */
+  white-space: normal;
   animation: sync-toast-in 160ms ease;
 }
 
 .sync-toast__msg {
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .sync-toast--ok {

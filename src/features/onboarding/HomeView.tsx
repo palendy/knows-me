@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ConfigDto, LlmProvider, TransferPolicy, TransferRecord } from "../../shared/contracts";
+import type { ClaudeInstall, ConfigDto, LlmProvider, TransferPolicy, TransferRecord } from "../../shared/contracts";
 import { ipc } from "../../shared/ipc";
 import { SourcesView } from "../sources/SourcesView";
 import type { SourcesApi } from "../sources/api";
@@ -16,6 +16,10 @@ const PROVIDERS: { value: LlmProvider; label: string; desc: string; needsKey: bo
   { value: "anthropic", label: "Anthropic API", desc: "API 키로 api.anthropic.com에 직접 연결합니다.", needsKey: true },
   { value: "openai", label: "OpenAI 호환", desc: "OpenAI·OpenRouter 등 호환 게이트웨이에 연결합니다.", needsKey: true },
 ];
+// Claude Code has no "list models" command, so the CLI backend offers a curated
+// set of aliases (the selected install's own configured model is added on top).
+const CLAUDE_MODELS = ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"];
+
 export type SettingsTab = "general" | "sources" | "transfers";
 const TABS: { id: SettingsTab; title: string }[] = [
   { id: "general", title: "일반" }, { id: "sources", title: "연결 소스" }, { id: "transfers", title: "전송 기록" },
@@ -36,8 +40,18 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [llmSaved, setLlmSaved] = useState(false);
+  // Detected Claude Code installs (native + WSL) for the claude-cli picker, and
+  // the one currently selected (its command line; null = default `claude`).
+  const [installs, setInstalls] = useState<ClaudeInstall[]>([]);
+  const [binary, setBinary] = useState<string | null>(null);
 
   useEffect(() => { setTab(initialTab); }, [initialTab]);
+  // Detect local Claude Code installs once so the claude-cli picker can list them.
+  useEffect(() => {
+    let active = true;
+    void ipc.discoverClaudeInstalls().then((list) => { if (active) setInstalls(list); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     let active = true;
     void Promise.all([ipc.getConfig(), ipc.listTransfers()]).then(([nextConfig, records]) => {
@@ -53,10 +67,22 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
     setProvider(cfg.llm_provider);
     setModel(cfg.llm_model);
     setBaseUrl(cfg.llm_base_url ?? "");
+    setBinary(cfg.llm_binary);
     setApiKey("");
   }
 
   const providerInfo = PROVIDERS.find((p) => p.value === provider) ?? PROVIDERS[0];
+
+  // Show the save button only when the form differs from the stored config (or a
+  // new key was typed). Keeps the AI-model block quiet until there's something to save.
+  const norm = (s?: string | null) => (s ?? "").trim();
+  const dirty = !!config && (
+    provider !== config.llm_provider ||
+    norm(model) !== norm(config.llm_model) ||
+    norm(baseUrl) !== norm(config.llm_base_url) ||
+    norm(binary) !== norm(config.llm_binary) ||
+    apiKey.trim().length > 0
+  );
 
   async function choose(policy: TransferPolicy) {
     setBusy(true); setError("");
@@ -74,6 +100,8 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
         base_url: providerInfo.needsKey ? (baseUrl.trim() || null) : null,
         // Blank → keep the stored key (send null); a typed value replaces it.
         api_key: apiKey.trim() ? apiKey.trim() : null,
+        // Which claude install to drive (claude-cli only; null = default `claude`).
+        binary: provider === "claude-cli" ? binary : null,
       });
       const next = await ipc.getConfig();
       setConfig(next); syncLlmForm(next); setLlmSaved(true);
@@ -119,20 +147,38 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
                 <span><strong>{p.label}</strong><span>{p.desc}</span></span>
               </label>)}
             </div>
-            <label className="settings-field"><span>모델 이름</span>
-              <input type="text" value={model} onChange={(e) => { setModel(e.target.value); setLlmSaved(false); }} placeholder="claude-sonnet-5" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
-            </label>
-            {providerInfo.needsKey && <>
-              <label className="settings-field"><span>Base URL <small>(선택)</small></span>
-                <input type="text" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setLlmSaved(false); }} placeholder={provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+            {provider === "claude-cli" ? <>
+              <div className="settings-field"><span>사용할 Claude Code {installs.length > 0 && <small>({installs.length}개 감지됨)</small>}</span>
+                {installs.length === 0
+                  ? <p className="hint">감지된 Claude Code가 없습니다. 설치돼 있으면 설정을 다시 열어 주세요.</p>
+                  : <div className="settings-providers" role="radiogroup" aria-label="Claude Code 설치">
+                      {installs.map((inst) => <label key={inst.id} className={`settings-provider${(binary ?? "claude") === inst.binary ? " is-selected" : ""}`}>
+                        <input type="radio" name="claude-install" checked={(binary ?? "claude") === inst.binary} onChange={() => { setBinary(inst.binary); if (inst.model) setModel(inst.model); setLlmSaved(false); }} />
+                        <span><strong>{inst.label}</strong><span>{inst.binary}{inst.model ? ` · ${inst.model}` : ""}</span></span>
+                      </label>)}
+                    </div>}
+              </div>
+              <label className="settings-field"><span>모델</span>
+                <select value={model} onChange={(e) => { setModel(e.target.value); setLlmSaved(false); }}>
+                  {(CLAUDE_MODELS.includes(model) || !model ? CLAUDE_MODELS : [model, ...CLAUDE_MODELS]).map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
               </label>
-              <label className="settings-field"><span>API 키 {config?.has_api_key && <small>(저장됨 · 비워 두면 유지)</small>}</span>
-                <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setLlmSaved(false); }} placeholder={config?.has_api_key ? "••••••••" : "sk-..."} autoComplete="off" spellCheck={false} />
+            </> : <>
+              <label className="settings-field"><span>모델 이름</span>
+                <input type="text" value={model} onChange={(e) => { setModel(e.target.value); setLlmSaved(false); }} placeholder="claude-sonnet-5" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
               </label>
+              {providerInfo.needsKey && <>
+                <label className="settings-field"><span>Base URL <small>(선택)</small></span>
+                  <input type="text" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setLlmSaved(false); }} placeholder={provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                </label>
+                <label className="settings-field"><span>API 키 {config?.has_api_key && <small>(저장됨 · 비워 두면 유지)</small>}</span>
+                  <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setLlmSaved(false); }} placeholder={config?.has_api_key ? "••••••••" : "sk-..."} autoComplete="off" spellCheck={false} />
+                </label>
+              </>}
             </>}
             <div className="settings-llm-actions">
-              <button className="primary" type="button" onClick={() => void saveLlm()} disabled={busy || !model.trim()}>저장</button>
-              {llmSaved && <span className="settings-saved" role="status">저장했습니다.</span>}
+              {llmSaved && !dirty && <span className="settings-saved" role="status">저장했습니다.</span>}
+              {dirty && <button className="primary" type="button" onClick={() => void saveLlm()} disabled={busy || !model.trim()}>저장</button>}
             </div>
           </fieldset>
         </section>

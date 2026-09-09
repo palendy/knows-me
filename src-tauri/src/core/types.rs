@@ -601,6 +601,12 @@ pub struct AppConfig {
     /// compatible gateway such as OpenRouter). Ignored by the CLI backend.
     #[serde(default)]
     pub llm_base_url: Option<String>,
+    /// Which local Claude Code install the `claude-cli` backend invokes, as a
+    /// command line (e.g. `claude`, a full path, or `wsl -d Ubuntu claude` to
+    /// drive a WSL install from the Windows app). `None` = the default `claude`
+    /// on PATH. Ignored by the HTTP providers.
+    #[serde(default)]
+    pub llm_binary: Option<String>,
 }
 
 /// The backend the app drives when nothing has been configured yet. Matches the
@@ -621,6 +627,7 @@ impl Default for AppConfig {
             // agree before the owner picks a model.
             llm_model: "claude-sonnet-5".to_string(),
             llm_base_url: None,
+            llm_binary: None,
         }
     }
 }
@@ -648,6 +655,7 @@ impl AppConfig {
             }
             "claude-cli" | "claude" => {
                 std::env::set_var("CLAUDE_CLI_MODEL", &self.llm_model);
+                Self::set_or_clear("CLAUDE_CLI_BINARY", self.llm_binary.as_deref());
             }
             // Anthropic HTTP is the fallback provider in the gateway, so treat
             // any other value the same way rather than dropping the model.

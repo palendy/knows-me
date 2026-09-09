@@ -67,9 +67,11 @@
 .settings-field { display: block; margin-bottom: 14px; }
 .settings-field > span { display: block; font-size: 13px; font-weight: 550; color: #3a3f37; margin-bottom: 7px; }
 .settings-field > span small { font-weight: 450; color: #8a8e84; }
-.settings-field input { width: 100%; box-sizing: border-box; padding: 11px 13px; font-size: 13px; border: 1px solid #d9dcd2; border-radius: 9px; background: #fff; color: #252923; }
-.settings-field input:focus { outline: none; border-color: #365d4b; box-shadow: 0 0 0 3px #e6edde; }
-.settings-llm-actions { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+/* Direct children only — a nested radiogroup (e.g. the Claude install picker)
+   must not inherit the full-width text-input sizing. */
+.settings-field > input, .settings-field > select { width: 100%; box-sizing: border-box; padding: 11px 13px; font-size: 13px; border: 1px solid #d9dcd2; border-radius: 9px; background: #fff; color: #252923; }
+.settings-field > input:focus, .settings-field > select:focus { outline: none; border-color: #365d4b; box-shadow: 0 0 0 3px #e6edde; }
+.settings-llm-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 18px; min-height: 20px; }
 .settings-saved { color: #365d4b; font-size: 12px; }
 .settings-toggle { display: flex; align-items: center; gap: 12px; padding: 18px 21px; border: 1px solid #e1e4db; border-radius: 12px; background: #fff; font-size: 14px; color: #252923; cursor: pointer; }
 .settings-toggle input { width: 17px; height: 17px; margin: 0; accent-color: #365d4b; flex-shrink: 0; }
