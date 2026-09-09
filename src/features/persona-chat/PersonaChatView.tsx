@@ -60,9 +60,14 @@ const MAX_PROMPT_CHARS = 4000;
  * lists silently drifting apart is how that ships unnoticed.
  */
 export const EXAMPLE_QUESTIONS = [
+  // A self-directed question: this one is answered from topic pages ranked by
+  // friction, not by keyword search, so it exercises the path that makes the
+  // persona worth asking. The dropped example ("선호하는 에디터") asked about a
+  // preference nothing in the vault records — a suggestion that reliably
+  // answers "모른다" teaches the owner the app does not know them.
+  "내가 요즘 제일 걱정하는 게 뭘까?",
   "내 배포 절차 알려줘",
   "코드 리뷰는 어떻게 하지?",
-  "내가 선호하는 에디터가 뭐였지?",
 ];
 
 export function PersonaChatView({ api }: Props) {

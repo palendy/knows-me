@@ -127,6 +127,9 @@ mod tests {
     fn worries_are_recognized_through_korean_particles() {
         for q in [
             "내가 요즘 뭘 걱정하고 있지?",
+            // The exact wording the chat view offers as an example button.
+            // A suggested question that misroutes is worse than none.
+            "내가 요즘 제일 걱정하는 게 뭘까?",
             "나 요즘 뭐가 막혀 있어?",
             "요즘 내 고민이 뭐야",
             "what am i worried about lately",
