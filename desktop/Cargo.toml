@@ -14,14 +14,16 @@ name = "knows-me"
 path = "src/main.rs"
 
 [features]
-# The Notion connector is ON by default: `tauri dev` / a plain release build
-# both talk to the real Notion API, so a stored token immediately reports its
-# reachable-page count and collects pages. Build with `--no-default-features`
-# to get the offline skeleton (used by the core's offline tests).
-default = ["notion-http"]
-# Forward the core's real cloud LLM client (+ the Notion connector, which it
-# needs anyway). Off by default so the app runs offline for the LLM (canned
-# client); turn on with `--features llm-http`.
+# Both HTTP features are ON by default, so `tauri dev` / a plain release
+# build can (a) talk to the real Notion API and (b) drive any LLM reachable by
+# URL — LM Studio / Ollama on the owner's PC, OpenRouter, Anthropic, OpenAI —
+# straight from the settings screen, with no extra build flag. The local
+# Claude Code CLI backend needs neither feature and remains the default
+# provider. Build with `--no-default-features` for the fully offline shell
+# (canned LLM + skeleton Notion connector).
+default = ["notion-http", "llm-http"]
+# Forward the core's real HTTP LLM clients (+ the Notion connector, which
+# shares the HTTP stack).
 llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http"]
 # The real Notion connector (Notion HTTP API). Enabled via `default` above.
 notion-http = ["knows-me-core/notion-http"]

@@ -69,20 +69,13 @@ fn model_label(provider: &str) -> String {
     #[cfg(feature = "llm-http")]
     {
         match provider {
-            "openai" => match std::env::var("OPENAI_API_KEY") {
-                Ok(k) if !k.trim().is_empty() => {
-                    let model =
-                        std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4o".to_string());
-                    let base = std::env::var("OPENAI_BASE_URL").unwrap_or_default();
-                    // Name the gateway when it's OpenRouter so the owner knows
-                    // the request path, not just the model.
-                    if base.contains("openrouter") {
-                        format!("{model} (OpenRouter)")
-                    } else {
-                        format!("{model} (OpenAI)")
-                    }
-                }
-                _ => "오프라인 (키 미설정)".to_string(),
+            // Mirror `OpenAiConfig::from_env` exactly: a key is mandatory only
+            // for api.openai.com, and a local server (LM Studio, Ollama) runs
+            // without one — so the label must not report "키 미설정" for a
+            // backend that is live.
+            "openai" => match client::OpenAiConfig::from_env() {
+                Ok(cfg) => format!("{} ({})", cfg.model, openai_gateway_name(&cfg.base_url)),
+                Err(_) => "오프라인 (키 미설정)".to_string(),
             },
             _ => match std::env::var("ANTHROPIC_API_KEY") {
                 Ok(k) if !k.trim().is_empty() => {
@@ -93,6 +86,35 @@ fn model_label(provider: &str) -> String {
                 _ => "오프라인 (키 미설정)".to_string(),
             },
         }
+    }
+}
+
+/// A short name for where an OpenAI-compatible request actually goes, so the
+/// settings screen names the request path and not just the model: OpenAI
+/// itself, OpenRouter, or the host:port of a local/self-hosted server.
+#[cfg(feature = "llm-http")]
+fn openai_gateway_name(base_url: &str) -> String {
+    let lower = base_url.to_ascii_lowercase();
+    if lower.contains("api.openai.com") {
+        return "OpenAI".to_string();
+    }
+    if lower.contains("openrouter") {
+        return "OpenRouter".to_string();
+    }
+    // Strip the scheme and any path so "http://localhost:1234/v1" reads as
+    // "localhost:1234" — the thing the owner typed into LM Studio.
+    let host = base_url
+        .trim()
+        .split("://")
+        .nth(1)
+        .unwrap_or(base_url)
+        .split('/')
+        .next()
+        .unwrap_or(base_url);
+    if host.is_empty() {
+        "OpenAI 호환".to_string()
+    } else {
+        host.to_string()
     }
 }
 
@@ -157,6 +179,30 @@ pub fn build_client(transfer_log: Arc<TransferLog>) -> Arc<dyn LlmClient> {
                 }
             },
         }
+    }
+}
+
+#[cfg(all(test, feature = "llm-http"))]
+mod gateway_name_tests {
+    use super::openai_gateway_name;
+
+    #[test]
+    fn names_the_place_a_request_goes() {
+        assert_eq!(openai_gateway_name("https://api.openai.com"), "OpenAI");
+        assert_eq!(
+            openai_gateway_name("https://openrouter.ai/api"),
+            "OpenRouter"
+        );
+        // A local server is named by what the owner typed: its host and port.
+        assert_eq!(
+            openai_gateway_name("http://localhost:1234"),
+            "localhost:1234"
+        );
+        assert_eq!(
+            openai_gateway_name("http://172.18.144.1:1234/v1"),
+            "172.18.144.1:1234"
+        );
+        assert_eq!(openai_gateway_name(""), "OpenAI 호환");
     }
 }
 

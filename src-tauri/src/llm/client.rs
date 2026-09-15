@@ -12,10 +12,13 @@
 ///
 /// The labels themselves need a handful of tokens; the headroom is for
 /// reasoning models that emit an internal reasoning block before the answer.
-/// At Flash-tier pricing the unused headroom costs nothing, and without it the
-/// call comes back with `content: null`.
+/// The budget is an upper bound, not a spend — unused headroom costs nothing —
+/// and without it the call comes back with `content: null`. Measured on a
+/// local LM Studio `google/gemma-4-12b` (thinking on): the reasoning block
+/// alone used 1021 of a 1024 budget and the answer never arrived, so this
+/// matches the summarize budget rather than assuming a Flash-sized think.
 #[cfg(feature = "llm-http")]
-const CLASSIFY_MAX_TOKENS: u32 = 1024;
+const CLASSIFY_MAX_TOKENS: u32 = 4096;
 
 /// Token budget for extraction calls.
 ///
@@ -245,25 +248,48 @@ pub(crate) mod openai_impl {
     /// Connection/config for the OpenAI Chat Completions API.
     #[derive(Clone)]
     pub struct OpenAiConfig {
+        /// Bearer token. Empty means "send no `Authorization` header" — local
+        /// OpenAI-compatible servers (LM Studio, Ollama, vLLM, …) run without
+        /// one, and the app must not demand a key that does not exist.
         pub api_key: String,
         pub model: String,
         pub base_url: String,
     }
 
     impl OpenAiConfig {
-        /// Build from the environment: `OPENAI_API_KEY` (required) and optional
-        /// `OPENAI_MODEL` / `OPENAI_BASE_URL`.
+        /// Build from the environment: `OPENAI_MODEL`, `OPENAI_BASE_URL`, and
+        /// `OPENAI_API_KEY`.
+        ///
+        /// The key is required only when talking to the default host
+        /// (`api.openai.com`), which rejects unauthenticated calls anyway. Any
+        /// other base URL — a local LM Studio/Ollama server, a self-hosted
+        /// gateway — may leave it unset; the request then carries no
+        /// `Authorization` header.
         pub fn from_env() -> Result<Self> {
+            let base_url = normalize_base_url(
+                &std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
+            );
             let api_key = std::env::var("OPENAI_API_KEY")
-                .map_err(|_| AppError::External("OPENAI_API_KEY not set".into()))?;
+                .map(|k| k.trim().to_string())
+                .unwrap_or_default();
+            if api_key.is_empty() && !Self::allows_missing_key(&base_url) {
+                return Err(AppError::External(
+                    "OPENAI_API_KEY not set (required for api.openai.com; a local \
+                     OpenAI-compatible server may leave it blank)"
+                        .into(),
+                ));
+            }
             Ok(Self {
                 api_key,
                 model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
-                base_url: normalize_base_url(
-                    &std::env::var("OPENAI_BASE_URL")
-                        .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
-                ),
+                base_url,
             })
+        }
+
+        /// Whether `base_url` points somewhere that can run without a key:
+        /// anything other than OpenAI's own host.
+        pub(crate) fn allows_missing_key(base_url: &str) -> bool {
+            normalize_base_url(base_url) != DEFAULT_BASE_URL
         }
     }
 
@@ -304,11 +330,16 @@ pub(crate) mod openai_impl {
             });
             body[token_key] = json!(max_tokens);
 
-            let resp = self
+            let mut req = self
                 .client
                 .post(format!("{}/v1/chat/completions", self.config.base_url))
-                .header("authorization", format!("Bearer {}", self.config.api_key))
-                .header("content-type", "application/json")
+                .header("content-type", "application/json");
+            // Keyless local servers get no Authorization header at all; some
+            // (LM Studio) accept any bearer, others reject a malformed one.
+            if !self.config.api_key.is_empty() {
+                req = req.header("authorization", format!("Bearer {}", self.config.api_key));
+            }
+            let resp = req
                 .json(&body)
                 .send()
                 .await
@@ -459,6 +490,21 @@ pub(crate) mod openai_impl {
                 OpenAiLlm::extract_text(&json!({ "choices": [ { "message": {} } ] })),
                 ""
             );
+        }
+
+        #[test]
+        fn a_key_is_only_mandatory_for_openai_itself() {
+            // LM Studio / Ollama / a self-hosted gateway run without a key.
+            assert!(OpenAiConfig::allows_missing_key("http://localhost:1234/v1"));
+            assert!(OpenAiConfig::allows_missing_key("http://172.18.144.1:1234"));
+            assert!(OpenAiConfig::allows_missing_key(
+                "https://openrouter.ai/api/v1"
+            ));
+            // api.openai.com rejects unauthenticated calls, so demand one up front.
+            assert!(!OpenAiConfig::allows_missing_key("https://api.openai.com"));
+            assert!(!OpenAiConfig::allows_missing_key(
+                "https://api.openai.com/v1/"
+            ));
         }
 
         #[test]

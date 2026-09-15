@@ -38,12 +38,16 @@ cargo build                          # compile the library + demo binary
 cargo test                           # unit + property tests (proptest)
 cargo run                            # headless U1 demo (onboarding→unlock→mask)
 cargo clippy --all-targets -- -D warnings
-cargo build --features llm-http      # + real Anthropic cloud client (needs a C toolchain)
+cargo build --features llm-http      # + HTTP LLM clients (Anthropic, OpenAI-compatible)
+cargo run --features llm-http --example llm_probe   # smoke-test the configured LLM URL
 ```
 
-The real cloud client (`llm-http`) reads `ANTHROPIC_API_KEY` (and optional
-`ANTHROPIC_MODEL`, default `claude-opus-5`) from the environment — no secrets in
-code. It is off by default so the core builds/tests fully offline.
+The HTTP clients (`llm-http`) read their settings from the environment — no
+secrets in code: `LLM_PROVIDER` (`claude-cli` default / `anthropic` / `openai`),
+`ANTHROPIC_API_KEY` + `ANTHROPIC_MODEL`, or `OPENAI_BASE_URL` + `OPENAI_MODEL`
+(+ `OPENAI_API_KEY`, which a local server such as LM Studio or Ollama may leave
+unset). The feature is off by default in this crate so the core builds/tests
+fully offline; the desktop shell enables it by default.
 
 ## Property-based tests (NFR-8, Partial: PBT-02/03/07/08/09)
 

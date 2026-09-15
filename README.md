@@ -2,167 +2,80 @@
 
 ![knows-me 데모](docs/demo.gif)
 
-**나에 대한 지식을 의도적으로 쌓고, 공용/개인으로 나눠, 나도 쓰고 내 에이전트가 남에게도 대신 전한다.**
+**내 작업 기록에서 "나에 대한 지식"을 뽑아 개인 위키로 쌓고, 내가 허락한 부분만 팀원의 AI가 물어볼 수 있게 하는 데스크탑 앱.**
 
-## 시작점
+## 뭐 하는 앱인가
 
-Claude Code와 Codex를 쓰면서 세션만 진행했을 뿐인데, 에이전트에 나에 대한 정보가 남아 있었다. 그런데 남는 것은 에이전트가 알아서 고른 것이다.
+Claude Code·Codex 같은 AI 코딩 도구를 쓰다 보면, 내가 어떤 프로젝트를 어떻게 띄우고, 어떤 규칙을 지키고, 무엇을 결정했는지가 세션 기록에 남는다. knows-me는 그 기록을 읽어서:
 
-그래서 그 정보를 **더 상세하게, 의도적으로** 남긴다. 그리고 거기서 한 걸음 더 간다 — 쌓인 지식을 **나도 참조하고, 내가 없을 때 내 에이전트가 남에게 대신 전하게** 한다.
+1. **나에 대한 사실 후보를 뽑는다** — "이 프로젝트는 `./run.sh`로 띄운다", "PR은 squash merge만 한다" 같은 것.
+2. **내가 확인한다** — 앱의 대기열에서 맞다/아니다, 공개/비공개를 정한다. 확인 전에는 아무것도 지식이 되지 않는다.
+3. **위키로 쌓는다** — 내 PC 안에 암호화해서 저장한다. 밖으로 나가지 않는다.
+4. **내 AI와 팀원의 AI가 물어본다** — 나는 내 지식 전부를, 팀원은 내가 공개로 지정한 범위만 MCP로 질의한다.
 
-## 한 문장으로
+한 줄로: **"이 사람이라면 어떻게 할까?"를 사람 대신 내 지식이 답한다.**
 
-> **나에 대한 개인 지식 위키를 만든다. 공용/개인으로 분류하고 접근권한을 걸어, MCP로 제공한다. 나는 내 지식 전부를 쓰고, 남은 내가 부여한 범주만 참조한다.**
+지식을 뽑는 데 쓰는 LLM은 골라 쓸 수 있다: 내 PC의 **LM Studio·Ollama**, 이미 설치된 **Claude Code**, 또는 **OpenAI 호환 API·Anthropic API**.
 
-## 두 소비자
+## 5분 안에 띄우기
 
-지식을 쌓는 목적이 둘이다.
+### 1. 준비물 설치
 
-| 소비자 | 무엇을 | 어떻게 |
-|---|---|---|
-| **나** | 내가 쌓은 지식 전부. 작업을 더 효율적으로, 찾아보고 싶을 때 | 내 기기(localhost)에서 MCP로 질의 |
-| **남 (과 그 에이전트)** | 내가 **공용으로 승인하고 범주를 부여한** 것만 | 내 MCP 서버에 토큰으로 접속 |
+| OS | 한 번에 |
+|---|---|
+| **Linux (Ubuntu/Debian, WSL 포함)** | `bash scripts/setup-linux.sh` |
+| **Windows** | PowerShell에서 `.\scripts\setup-windows.ps1` |
 
-②가 핵심이다. 팀원이 내게 일일이 물어보지 않아도, 그 사람의 에이전트가 "이 상황에서 이 사람이라면 어떻게?"를 내 지식에 직접 질의한다. **내가 사람을 가이드하는 것을 대신한다.**
+스크립트는 Rust, Node.js, Tauri가 필요로 하는 시스템 라이브러리를 설치하고 `npm install`까지 해 준다. 직접 설치하려면 [docs/build.md](docs/build.md).
 
-## 무엇을 모으나
-
-세 가지 소스가 있다. 세션만으로는 나를 다 설명할 수 없다.
-
-| # | 소스 | 어떻게 | 여기서만 나오는 것 |
-|---|---|---|---|
-| ① | **에이전트 세션** — Claude Code, Codex | 자동 수집 | 실제로 쓴 명령, 고친 것, 결정한 것 |
-| ② | **외부 시스템** — Confluence, Jira 등 | 훅으로 자동 수집 | 내가 맡은 이슈, 팀 문서, 업무 흐름 |
-| ③ | **인터뷰** — 에이전트가 나에게 물어봄 | 대화 | 세션에 안 나오는 업무 맥락, 하고 싶은 것 |
-
-## 가공과 분류 — 여기가 보안의 심장
-
-에이전트는 **후보만 고른다.** 후보는 **Queue**에 들어간다. 내가 확인한 것만 지식이 된다.
-
-분류가 접근제어의 근간이다.
-
-- **기본은 private.** 자동 수집물은 확정 전까지 전부 격리된다. 시크릿은 수집 시점에 레닥션한다.
-- Queue는 두 가지를 묻는다: *이거 지식으로 확정할까? 공용으로 풀까, 어느 범주로?*
-- **내가 공용 승인 + 범주 부여한 것만** 남에게 노출된다. 그 외는 나만(내 에이전트만) 본다.
-
-가공 원칙: 원본을 그대로 쌓으면 메모리가 아니라 로그다. 반복되는 것만 골라 요약·분류를 거쳐 Queue에 넣는다.
-
-## 인터뷰 — 확인이 아니라 캐내기
-
-인터뷰에는 두 층위가 있다.
-
-**확인형** — 세션에서 뽑은 후보가 맞는지 짧게 묻는다.
-> "이 프로젝트는 `./run.sh`로 띄우는 것 맞나요?"
-
-**심화형** — 수집된 정보에서 가설을 세우고, 거기서부터 파고든다. 답에서 나온 단어를 다시 파고든다.
-> 관찰: 세션 절반이 SLSI 에이전트 리포다
-> → "SLSI 에이전트 개발하시는 것 같은데, 자동화하고 싶은 업무 있으세요?"
-> → (답에 'VoC'가 나옴) "VoC는 지금 어떻게 처리하고 계세요?"
-> → "그중 반복되는 건 어떤 건가요?"
-
-한 번에 하나씩, 답을 근거로 다음 질문을 만든다. 이렇게 해야 세션에 없는 업무 맥락이 데이터가 된다.
-
-## 공유 — MCP로 제공
-
-지식은 **MCP 서버(Streamable HTTP) 하나**로 제공한다. 나와 남이 같은 서버를 쓴다.
-
-- **나**: 내 Claude Code에 `http://localhost:PORT/mcp`를 붙여 내 지식 전부를 질의.
-- **남**: 내가 발급한 **Bearer 토큰**으로 접속. 토큰이 곧 부여된 범주다.
-
-접근제어의 불변식:
-
-> **신원과 grant는 토큰에서만 나온다. 요청 인자로는 절대 받지 않는다. 인자는 이미 허용된 범위를 *좁히기만* 한다 — 넓힐 수 없다.** 인가는 서버 단일 지점에서만 강제한다.
-
-**데이터는 내 기기 밖으로 나가지 않는다.** 스냅샷을 퍼뜨리는 게 아니라, 남의 에이전트가 **내 기기에 라이브로 스코프 질의**하고 그 결과만(범주 스코프 + 레닥션) 받는다. 남이 쓴 콘텐츠를 다룰 땐 "인용이지 지시 아님"으로 취급한다(프롬프트 인젝션 방어).
-
-공유 배선은 마지막 5분 작업이다.
-
-```
-로컬만  : MCP 서버를 localhost에 기동 → 내 에이전트가 붙음
-공유    : cloudflared / Tailscale로 터널 → 팀원이 URL+토큰으로 claude mcp add
-```
-
-터널은 배관일 뿐, 인증을 대신해주지 않는다. **토큰-스코프 인증은 서버가 강제**한다:
-
-- 토큰은 고엔트로피 랜덤, per-consumer 발급/폐기 (추측 가능한 순차 토큰 금지)
-- 무인증 read 경로 없음, 클라이언트가 스코프를 자가선언하지 못함
-- 공개는 명시 opt-in만 — 자동 발행 없음
-- 폐기는 소급 적용을 지향 (이미 받아간 것도 무효화)
-
-## 구성
-
-```
-① 에이전트 세션 ─┐                                        ┌─▶ 나 (localhost, full scope)
-② 외부 시스템   ─┼─▶ 가공 ─▶ Queue ─▶ 내가 확인·분류 ─▶ 지식 위키 ─▶ MCP 서버 ─┤
-③ 인터뷰        ─┘  요약    사실·질문   공용/개인·범주    (로컬 암호화)          └─▶ 남 (터널+토큰, 부여 범주만)
-                            ▲                                          │
-                            └──────────── 다음 질문 생성 ◀─────────────┘
-```
-
-- ①은 지금 만든다. ②는 붙일 수 있는 구조로 하고 하나를 붙여 본다. ③은 ①·②가 쌓일수록 좋아진다.
-- 저장은 **내 기기의 로컬 암호화 저장소**. git에 올리지 않는다. 사람이 읽는 형태는 명시적 export로 얻는다.
-- 사실마다 출처(어느 소스·언제), 확인 여부, **공용/개인·범주**, 확인일이 붙는다.
-
-## 목표 / 성공 기준
-
-- **나**: 아무 프로젝트 폴더에서 새 세션을 열고 "이거 어떻게 띄워? 규칙은?"을 물으면, 내 에이전트가 설명 없이 답한다.
-- **남**: 팀원이 내게 안 물어보고, 자기 에이전트로 내 MCP에 질의해 내가 부여한 범주 안의 답을 얻는다. 부여 안 한 것은 존재조차 안 보인다.
-
-## 구현 현황 (초안 기준)
-
-이 리포는 위 아이디어를 **데스크탑 앱(Tauri 2)**으로 구현한 것이다. Rust 코어 + React/TypeScript 프론트엔드로 되어 있고, 4개 유닛으로 나뉜다.
-
-| 유닛 | 범위 | 위치 |
-|---|---|---|
-| **U1** 코어 & 보안 | 공통 계약, Argon2id 키 유도 + AES-256-GCM 암호화 저장, LLM 게이트웨이(식별자 마스킹·전송 로그), 온보딩/잠금 | `src-tauri/src/{core,security,llm}/`, `src/features/onboarding/` |
-| **U2** 수집 & 가공 | 소스 커넥터(세션/파일/Notion/Gmail), 증분 수집, 요약·분류 후 Queue 적재 | `src-tauri/src/{ingestion,processing}/` |
-| **U3** 지식 & 인터뷰 | 사실(fact) 저장·변경 이력·검색, 인터뷰 Queue(확인형·심화형), 답변 반영 | `src-tauri/src/{knowledge,interview}/`, `src/features/queue/` |
-| **U4** 인터페이스 & 페르소나 | 대시보드·미니홈피·지식 그래프 뷰, 페르소나 챗, 로컬 REST API | `src-tauri/src/persona/`, `src/features/{dashboard,minihome,graph,persona-chat}/` |
-
-앱은 온보딩(비밀번호 설정)·잠금 해제를 거치면 6개 화면 탭을 연다: **대시보드 · 대기열 · 미니홈피 · 지식 그래프 · 페르소나 · 설정**.
-
-보안은 로컬 전용으로 시작한다. 비밀번호에서 Argon2id로 키를 유도하고, 평문 키는 디스크에 남기지 않으며(메모리에서 zeroize), 맥락 데이터와 외부 자격증명은 모두 암호화 저장한다. LLM 클라우드 호출은 기본 비활성(`llm-http` feature)이고, 켜더라도 전송 전 식별자를 마스킹하고 전송 내역을 로그로 남긴다. **팀 공유(MCP 스코프 제공)도 구현 완료다** — 오너 셀프 참조(localhost)와 터널+토큰 팀 공유가 모두 동작한다(코드 `src-tauri/src/sharing/`, 계약 [`docs/mcp-contract.md`](docs/mcp-contract.md)).
-
-## 실행
-
-전제: Rust(stable), Node.js, Tauri 시스템 의존성(플랫폼 webview). 자세한 것은 <https://tauri.app/start/prerequisites/>.
+### 2. 실행
 
 ```bash
-npm install
-npx tauri dev      # Vite + 데스크탑 창 실행
-npx tauri build    # 배포 번들
+npx tauri dev
 ```
 
-LLM은 **로컬에 설치된 Claude Code를 그대로 쓴다** — API 키도 계정 연결도 없다.
-`claude`가 로그인돼 있기만 하면 된다(`echo ping | claude -p`로 확인). 처음
-연결하는 순서는 [`docs/collecting.md` §1](docs/collecting.md).
+창이 뜨면 **보관함 비밀번호**를 정한다. 이 비밀번호로 모든 데이터가 암호화된다 (잊으면 복구 불가).
 
-Tauri 없이 프론트만 브라우저에서 보려면 `npm run dev` — 이때는 목(mock) 어댑터가 주입되어 전 화면을 둘러볼 수 있다.
+### 3. LLM 연결 — 예: 내 PC의 LM Studio
 
-테스트:
+1. LM Studio에서 모델을 하나 로드하고 **서버를 켠다** (기본 주소 `http://localhost:1234`).
+2. 앱 → **설정** → **AI 모델** → **OpenAI 호환** 선택.
+3. 입력:
+   - 모델 이름: LM Studio 서버 탭에 보이는 식별자 (예 `google/gemma-4-12b`)
+   - Base URL: `http://localhost:1234/v1`
+   - API 키: **비워 둔다**
+4. **저장**. "현재 사용 중"에 `google/gemma-4-12b (localhost:1234)`처럼 표시되면 연결된 것.
+
+다른 LLM(Claude Code, Ollama, OpenRouter, Anthropic)과 WSL에서 쓸 때의 주의점은 [docs/usage.md](docs/usage.md#2-llm-연결).
+
+### 4. 첫 수집
+
+앱 → **설정** → **연결 소스** → **수집**. 로컬의 Claude Code(`~/.claude/projects/`)·Codex(`~/.codex/sessions/`) 기록을 읽어 후보를 만든다. 결과는 **대기열** 탭에 쌓이고, 거기서 하나씩 확인하면 위키가 된다.
+
+## 배포용 빌드
 
 ```bash
-# Rust 코어 (Tauri 의존성 없음 — 어느 툴체인에서나 실행)
-cd src-tauri && cargo test
-
-# 프론트엔드 (Vitest + RTL + fast-check)
-npm test
+npx tauri build
 ```
 
-세부 문서: 설계·유닛·진행 상태는 `aidlc-docs/`, 코어/셸 안내는 `src-tauri/README.md`·`desktop/README.md`, 수집을 직접 돌리고 진단하는 법은 [`docs/collecting.md`](docs/collecting.md), 팀 공유 안내는 `docs/team-sharing.md`, 데모 영상 각본은 [`docs/demo/`](docs/demo/).
+결과물은 `desktop/target/release/bundle/` 아래에 생긴다 — Linux는 `.deb`·`.rpm`·`.AppImage`, Windows는 `.msi`·설치용 `.exe`. GitHub Actions([`.github/workflows/build.yml`](.github/workflows/build.yml))가 main 브랜치와 `v*` 태그에서 두 OS 번들을 자동으로 만든다.
 
-## 우선순위
+## 더 읽을 것
 
-1. **ⓐ 오너 셀프 참조** — MCP 서버(Streamable HTTP) + 토큰-스코프 인증 + localhost 질의. ✅ 완료.
-2. **ⓑ 터널+토큰 공유로 확장** — 같은 서버에 cloudflared 퀵터널을 얹는다(오너 리스너는 loopback 유지, 공유 리스너만 터널에 브리지). ✅ 완료.
-3. 상시 가용(배포)은 데이터-off-device 문제를 다시 여니 나중 단계. (미착수)
+| 알고 싶은 것 | 문서 |
+|---|---|
+| 빌드 환경 상세, WSL, 문제 해결 | [docs/build.md](docs/build.md) |
+| 화면별 사용법, LLM 설정 전부, 명령줄 도구 | [docs/usage.md](docs/usage.md) |
+| 수집이 왜 안 되나, 무엇이 들어오나 | [docs/collecting.md](docs/collecting.md) |
+| 팀원에게 MCP로 공유하기 | [docs/team-sharing.md](docs/team-sharing.md) |
+| 왜 이렇게 설계했나 (원래 README) | [docs/concept.md](docs/concept.md) |
 
-## 활용 방향 (그다음)
+## 개발자용
 
-- AI-DLC의 `team.md`·`project.md`를 이 위키에서 채운다 → practices-discovery가 다시 묻지 않는다.
-- Agent Factory 아바타 카드의 개인 실행 프로필을 이 위키에서 만든다.
-- 사람마다 쌓인 위키가 MCP로 연결되면 팀 맥락이 된다.
+```bash
+cd src-tauri && cargo test && cargo test --features llm-http   # Rust 코어 (GUI 불필요)
+npm test                                                        # 프론트엔드
+npm run dev                                                     # 브라우저에서 UI만 (목 데이터)
+```
 
-## 상태
-
-**컨셉 강화 (draft)** — 2026-09-09. 최초 초안(세션 수집 → CLAUDE.md)에서 **개인 지식 위키 + 공용/개인 분류 + MCP 스코프 제공**으로 컨셉을 조였다. 4개 유닛(U1~U4) 라이브러리는 초안 기준으로 구현·통합 완료. **MCP 벌티컬(전송·토큰-스코프·터널·공유 UI)도 구현·머지 완료**(단계 1~5, PR #7/#9/#11/#13) — ⓐ 오너 셀프 참조와 ⓑ 터널+토큰 팀 공유가 모두 동작한다. 요약은 [`aidlc-docs/construction/sharing-mcp-vertical/code/summary.md`](aidlc-docs/construction/sharing-mcp-vertical/code/summary.md).
+구조: Rust 코어 라이브러리 `src-tauri/`(암호화 저장·수집·LLM 게이트웨이·MCP 서버), Tauri 2 셸 `desktop/`, React 프론트 `src/`. 라이선스 MIT.

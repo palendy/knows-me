@@ -102,8 +102,13 @@ function readConfig(): AppConfig {
 /** The provider labels the real backend produces, mirrored for the mock. */
 function mockLabel(cfg: AppConfig): string {
   switch (cfg.llm_provider) {
-    case "openai":
-      return `${cfg.llm_model} (${cfg.llm_base_url?.includes("openrouter") ? "OpenRouter" : "OpenAI"})`;
+    case "openai": {
+      const base = cfg.llm_base_url ?? "";
+      const gateway = !base || base.includes("api.openai.com") ? "OpenAI"
+        : base.includes("openrouter") ? "OpenRouter"
+        : (base.split("://")[1] ?? base).split("/")[0] || "OpenAI 호환";
+      return `${cfg.llm_model} (${gateway})`;
+    }
     case "anthropic":
       return `${cfg.llm_model} (Anthropic)`;
     default:
