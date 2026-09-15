@@ -86,7 +86,10 @@ impl ServiceSet {
         #[cfg(debug_assertions)]
         if std::env::var("KNOWSME_RESET_GMAIL").as_deref() == Ok("1") {
             use knows_me_core::core::types::SourceKind;
-            match knowledge_svc.delete_facts_from_source(SourceKind::Gmail).await {
+            match knowledge_svc
+                .delete_facts_from_source(SourceKind::Gmail)
+                .await
+            {
                 Ok(n) => eprintln!("[dev-reset] removed {n} Gmail fact(s)"),
                 Err(e) => eprintln!("[dev-reset] fact purge failed: {e}"),
             }
@@ -112,7 +115,10 @@ impl ServiceSet {
             .is_some_and(|n| n > 0)
         {
             use knows_me_core::core::types::SourceKind;
-            match knowledge_svc.delete_facts_from_source(SourceKind::Notion).await {
+            match knowledge_svc
+                .delete_facts_from_source(SourceKind::Notion)
+                .await
+            {
                 Ok(n) => eprintln!("[dev-reset] removed {n} Notion fact(s)"),
                 Err(e) => eprintln!("[dev-reset] fact purge failed: {e}"),
             }

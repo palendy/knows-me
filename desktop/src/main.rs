@@ -170,7 +170,12 @@ async fn get_config(state: tauri::State<'_, AppState>) -> CmdResult<ConfigDto> {
 /// `api_key` is write-only: `Some` replaces the stored secret, `None` leaves it
 /// untouched (so re-saving the form without retyping the key keeps it). The key
 /// goes to the encrypted store, never into `AppConfig`.
-#[tauri::command]
+// The frontend sends `base_url` / `api_key` as written in `LlmConfigInput`.
+// Tauri's default expects camelCase (`baseUrl`), silently binding those two
+// `Option`s to `None` — so a Base URL or API key typed into the settings
+// screen was never saved and every HTTP provider fell back to the canned
+// client. Match the wire names instead of renaming the frontend's contract.
+#[tauri::command(rename_all = "snake_case")]
 async fn set_llm_config(
     state: tauri::State<'_, AppState>,
     services: tauri::State<'_, Services>,
@@ -450,7 +455,12 @@ async fn set_fact_sharing(
         .transpose()
         .map_err(err)?;
     services
-        .with(|s| async move { s.knowledge.set_sharing(id, visibility, category).await.map(|_| ()) })
+        .with(|s| async move {
+            s.knowledge
+                .set_sharing(id, visibility, category)
+                .await
+                .map(|_| ())
+        })
         .await
         .map_err(err)
 }
