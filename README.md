@@ -52,6 +52,8 @@ npx tauri dev
 
 앱 → **설정** → **연결 소스** → Claude 카드의 **수집**. 로컬의 Claude Code(`~/.claude/projects/`)·Codex(`~/.codex/sessions/`) 기록을 읽어 사실 후보를 만든다. 확실한 것은 바로 사실로 저장되고, 물어봐야 할 것은 **대기열** 탭에 질문으로 쌓인다. **나와 대화** 탭에서 "내가 요즘 제일 걱정하는 게 뭘까?"처럼 물어보면 저장된 사실을 근거로 답한다.
 
+같은 화면에서 **Confluence·Jira**(사내 Server/DC, 개인 액세스 토큰)와 Notion·Gmail도 연결할 수 있다. 사내에 배포할 때는 [docs/internal-release.md](docs/internal-release.md).
+
 ## 배포용 빌드
 
 ```bash
@@ -68,6 +70,7 @@ npx tauri build
 | 화면별 사용법, LLM 설정 전부, 명령줄 도구 | [docs/usage.md](docs/usage.md) |
 | 수집이 왜 안 되나, 무엇이 들어오나 | [docs/collecting.md](docs/collecting.md) |
 | 팀원에게 MCP로 공유하기 | [docs/team-sharing.md](docs/team-sharing.md) |
+| 사내(회사망)에 배포하기 — Confluence·Jira·PAT·사설 인증서 | [docs/internal-release.md](docs/internal-release.md) |
 | 왜 이렇게 설계했나 (원래 README) | [docs/concept.md](docs/concept.md) |
 
 ## 개발자용

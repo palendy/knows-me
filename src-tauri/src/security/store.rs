@@ -134,6 +134,8 @@ fn source_key(source: SourceKind) -> &'static str {
         SourceKind::Notion => "Notion",
         SourceKind::Gmail => "Gmail",
         SourceKind::File => "File",
+        SourceKind::Confluence => "Confluence",
+        SourceKind::Jira => "Jira",
     }
 }
 

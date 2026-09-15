@@ -20,8 +20,10 @@ use knows_me_core::core::traits::{
 };
 use knows_me_core::core::types::{Category, SourceConfig};
 use knows_me_core::ingestion::connectors::{
-    FileConnector, GmailConnector, NotionConnector, SessionConnector,
+    ConfluenceConnector, FileConnector, JiraConnector, SessionConnector,
 };
+#[cfg(not(feature = "internal"))]
+use knows_me_core::ingestion::connectors::{GmailConnector, NotionConnector};
 use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
@@ -191,8 +193,16 @@ impl ServiceSet {
             }
         }
         registry.register(Arc::new(FileConnector::new()));
-        registry.register(Arc::new(NotionConnector::new(credentials.clone())));
-        registry.register(Arc::new(GmailConnector::new(credentials)));
+        // Notion/Gmail are not offered by the in-house edition (no route to
+        // them from the corporate network); keep the registry consistent with
+        // the catalog so "collect all" never runs a source the screen hides.
+        #[cfg(not(feature = "internal"))]
+        {
+            registry.register(Arc::new(NotionConnector::new(credentials.clone())));
+            registry.register(Arc::new(GmailConnector::new(credentials.clone())));
+        }
+        registry.register(Arc::new(ConfluenceConnector::new(credentials.clone())));
+        registry.register(Arc::new(JiraConnector::new(credentials)));
 
         let ingestion: Arc<dyn IngestionApi> = Arc::new(IngestionService::new(
             Arc::new(registry),

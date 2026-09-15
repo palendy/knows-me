@@ -60,6 +60,12 @@ pub enum SourceKind {
     Notion,
     Gmail,
     File,
+    /// Atlassian Confluence (Server/Data Center, PAT). Pages the owner created
+    /// or edited.
+    Confluence,
+    /// Atlassian Jira (Server/Data Center, PAT). Issues the owner is assignee
+    /// or reporter of, with comments.
+    Jira,
 }
 
 /// What kind of thing a stored item is.

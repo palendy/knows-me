@@ -92,9 +92,11 @@ Rust 코어는 Tauri에 의존하지 않는다. CI 샌드박스든 서버든 Rus
 
 ```bash
 cd src-tauri
-cargo test                       # 오프라인 (LLM은 canned 응답)
-cargo test --features llm-http   # HTTP LLM 클라이언트 포함
-cargo run                        # 헤드리스 데모 (온보딩→잠금해제→암호화 저장→마스킹)
+cargo test                            # 오프라인 (LLM은 canned 응답, 커넥터는 스켈레톤)
+cargo test --features llm-http        # HTTP LLM 클라이언트 포함
+cargo test --features atlassian-http  # Confluence·Jira HTTP 코드 포함 (테스트는 여전히 오프라인)
+cargo test --features internal        # 사내 배포판 카탈로그
+cargo run                             # 헤드리스 데모 (온보딩→잠금해제→암호화 저장→마스킹)
 ```
 
 `--release`로 테스트를 돌리면 dev 전용 Gmail 픽스처 모듈 때문에 컴파일이 실패한다. 테스트는 기본(debug) 프로필로 돌린다.
@@ -105,8 +107,12 @@ cargo run                        # 헤드리스 데모 (온보딩→잠금해제
 |---|---|---|
 | `llm-http` | URL로 연결하는 LLM 클라이언트 (LM Studio·Ollama·OpenRouter·OpenAI·Anthropic) | **켜짐** |
 | `notion-http` | 실제 Notion API 커넥터 | **켜짐** |
+| `atlassian-http` | 실제 Confluence·Jira 커넥터 (Server/DC REST + PAT) | **켜짐** |
+| `internal` | **사내 배포판**: Notion·Gmail을 카탈로그에서 뺀다 (세션·파일·Confluence·Jira만) | 꺼짐 |
 
 로컬 Claude Code CLI 백엔드는 피처 없이 항상 들어 있다. 완전 오프라인 셸이 필요하면 `npx tauri build -- --no-default-features`.
+
+사내 배포판은 `npx tauri build -- --features internal`. 자세한 것은 [`internal-release.md`](internal-release.md).
 
 코어의 example(`llm_probe`, `chat_demo` 등)은 코어 크레이트 기준이라 `--features llm-http`를 직접 붙인다.
 
@@ -114,9 +120,10 @@ cargo run                        # 헤드리스 데모 (온보딩→잠금해제
 
 [`.github/workflows/build.yml`](../.github/workflows/build.yml):
 
-- 모든 push / PR: 코어 테스트(피처 on/off) + 프론트 typecheck·테스트
+- 모든 push / PR: 코어 테스트(피처 on/off, `atlassian-http`, `internal`) + 프론트 typecheck·테스트
 - `main` push, `v*` 태그, 수동 실행: **Linux·Windows 번들** 생성 → Actions 아티팩트 업로드
 - `v*` 태그: 번들을 GitHub Release에 첨부
+- 수동 실행(workflow_dispatch)에서 **edition = internal**을 고르면 사내 배포판 번들을 만든다
 
 릴리스를 내려면:
 

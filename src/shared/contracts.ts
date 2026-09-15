@@ -14,7 +14,13 @@ export type QueueItemId = Uuid;
 /** ISO-8601 timestamp (UTC). */
 export type IsoDateTime = string;
 
-export type SourceKind = "Session" | "Notion" | "Gmail" | "File";
+export type SourceKind =
+  | "Session"
+  | "Notion"
+  | "Gmail"
+  | "File"
+  | "Confluence"
+  | "Jira";
 export type Scope = "Company" | "Personal" | "Unknown";
 export type TransferPolicy = "MaskAndMinimize" | "AllowAll" | "LocalOnlyNoLlm";
 export type DraftKind = "Email" | "Message" | "Post";

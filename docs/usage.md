@@ -118,7 +118,9 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 | 파일 | 폴더 지정 (텍스트·마크다운) |
 | Notion | 연결 → Notion Integrations에서 만든 내부 통합 토큰 입력 |
 | Gmail | 연결 → Gmail 주소 + 앱 비밀번호 |
-| Confluence · Jira · Knox Mail | 자리만 있음 (아직 미구현) |
+| Confluence (Server/DC) | 연결 → 서버 주소 + 개인 액세스 토큰(PAT). §3-1 |
+| Jira (Server/DC) | 연결 → 서버 주소 + PAT. §3-1 |
+| Knox Mail | 자리만 있음 (아직 미구현) |
 
 - **새로 온 것만** — 각 소스에서 한 묶음(세션 최대 30개)씩 증분으로 가져와 LLM으로 요약·분류하고 대기열·사실에 넣는다.
 - **끝까지 수집** — 남은 기록을 전부. 처음이면 오래 걸린다.
@@ -126,6 +128,38 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 - **수집 범위** — 어떤 프로젝트의 세션을 모을지 고른다. 처음엔 프로젝트 한두 개로 좁혀 시작하는 게 빠르다.
 
 자세한 것과 문제 진단은 [`collecting.md`](collecting.md).
+
+### 3-1. Confluence · Jira (사내 Server / Data Center)
+
+Atlassian **Cloud가 아니라 사내에 설치된 Server/Data Center**용이다. 인증은 **개인 액세스 토큰(PAT)** 하나다.
+
+1. Confluence/Jira 오른쪽 위 프로필 → **Personal Access Tokens** → **Create token**. 토큰은 그 자리에서만 보이니 바로 복사한다.
+2. 앱 → 설정 → 연결 소스 → Confluence 또는 Jira 카드의 스위치:
+
+| 항목 | 값 |
+|---|---|
+| 서버 주소 | `https://jira.example.com` 처럼 REST API가 열려 있는 주소. 끝에 `/` 없이, `/wiki`·`/browse` 같은 경로 없이 |
+| 개인 액세스 토큰 | 방금 복사한 값 |
+| 링크용 주소 (Confluence만, 선택) | API 주소가 **mirror 서버**라면, 사람이 클릭할 링크에 쓸 원본 서버 주소 |
+
+3. **연결**을 누르면 그 자리에서 검증한다 — "연결됨 · 홍길동 · 내가 작성·수정한 페이지 37개"처럼 누구로 인증됐고 무엇이 보이는지 알려준다.
+
+무엇을 가져오나:
+
+- **Confluence**: 내가 **만들거나 편집한 페이지**(`contributor = currentUser()`)의 본문. 페이지가 새 버전으로 바뀌면 다시 가져온다.
+- **Jira**: 내가 **담당자이거나 보고자인 이슈**의 설명 + 댓글 전체. 진행 중에 한 번, 해결된 뒤 한 번 가져온다(상태가 바뀔 때마다는 아니다).
+- 둘 다 **수정 시각 순으로 증분** 수집한다. "새로 온 것만"은 Confluence 10페이지 / Jira 25이슈씩, "끝까지 수집"은 남은 것 전부.
+
+자주 보는 메시지:
+
+| 메시지 | 뜻 |
+|---|---|
+| 인증에 실패했습니다 (401) | PAT가 틀렸거나 만료. 다시 발급 |
+| 권한이 없습니다 (403) … PAT 문제가 아니라 | 인증은 됐지만 그 문서/프로젝트가 제한됨. **PAT를 다시 넣어도 소용없다.** 수집은 그 항목만 건너뛰고 계속된다 |
+| JSON 대신 로그인/HTML 페이지 | SSO가 PAT를 안 받았거나, 주소가 API 서버가 아님 |
+| 이상 문자(한글/공백 등) | 토큰을 복사하다 IME 글자가 섞임. 다시 붙여넣기 |
+
+사내 프록시·사설 인증서 환경은 [`internal-release.md`](internal-release.md).
 
 ## 4. 화면
 
@@ -160,6 +194,11 @@ cd src-tauri
 # LLM 연결이 되는지 30초 안에 확인 — 요약·분류·대화 한 번씩
 LLM_PROVIDER=openai OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_MODEL=google/gemma-4-12b \
   cargo run --features llm-http --example llm_probe
+
+# Confluence·Jira 연결이 되는지 — 검증 + 한 묶음 수집 + 커서 재개 (저장은 안 함)
+CONFLUENCE_BASE_URL=https://confluence.example.com CONFLUENCE_PAT=... \
+JIRA_BASE_URL=https://jira.example.com JIRA_PAT=... \
+  cargo run --features atlassian-http --example atlassian_probe
 
 # 확정 사실 / 대기열 덤프 — 앱 데이터 디렉터리와 보관함 비밀번호를 넘긴다
 export KNOWSME_DATA_DIR=~/.local/share/app.knowsme.desktop KNOWSME_DEMO_PASSWORD='보관함 비밀번호'

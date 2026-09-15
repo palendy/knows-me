@@ -603,6 +603,8 @@ mod tests {
             Just(SourceKind::Notion),
             Just(SourceKind::Gmail),
             Just(SourceKind::File),
+            Just(SourceKind::Confluence),
+            Just(SourceKind::Jira),
         ]
     }
 

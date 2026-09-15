@@ -8,6 +8,12 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      edition:
+        description: "public (Notion·Gmail 포함) / internal (사내: 세션·파일·Confluence·Jira만)"
+        type: choice
+        default: public
+        options: [public, internal]
 
 permissions:
   contents: write
@@ -26,11 +32,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: core tests (offline + llm-http)
+      - name: core tests (offline + llm-http + atlassian-http + internal)
         working-directory: src-tauri
         run: |
           cargo test
           cargo test --features llm-http
+          cargo test --features atlassian-http
+          cargo test --features internal
       - name: frontend typecheck + tests
         run: |
           npm ci
@@ -38,9 +46,12 @@ jobs:
           npm test
 
   bundle:
-    name: bundle (${{ matrix.os }})
+    name: bundle (${{ matrix.os }}, ${{ github.event.inputs.edition || 'public' }})
     needs: test
     if: github.event_name != 'pull_request'
+    env:
+      # 사내 배포판은 Notion·Gmail 없이 빌드한다 (desktop/Cargo.toml `internal` 피처).
+      EDITION: ${{ github.event.inputs.edition || 'public' }}
     strategy:
       fail-fast: false
       matrix:
@@ -78,10 +89,16 @@ jobs:
           cache: npm
       - run: npm ci
       - name: tauri build
-        run: npx tauri build
+        shell: bash
+        run: |
+          if [ "$EDITION" = "internal" ]; then
+            npx tauri build -- --features internal
+          else
+            npx tauri build
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}${{ env.EDITION == 'internal' && '-internal' || '' }}
           path: ${{ matrix.bundle_glob }}
           if-no-files-found: error
       - name: attach to release (tags only)

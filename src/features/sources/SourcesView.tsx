@@ -43,7 +43,9 @@ interface CardModel {
 }
 
 /** How each backend source expands into display cards. Session → Claude+Codex.
- * Coming-soon cards (Confluence/Jira/Knox Mail) are shown dimmed as a roadmap. */
+ * A card whose source the backend does not list (e.g. Notion/Gmail in the
+ * in-house edition) is simply not rendered. Coming-soon cards (Knox Mail) are
+ * shown dimmed as a roadmap. */
 const CARDS: CardModel[] = [
   {
     id: "claude",
@@ -82,17 +84,17 @@ const CARDS: CardModel[] = [
   },
   {
     id: "confluence",
+    sourceKind: "Confluence",
     label: "Confluence",
-    detail: "곧 지원 예정 — 스페이스·페이지 수집",
+    detail: "사내 서버(Server/DC) + 개인 액세스 토큰 — 내가 쓴 페이지 수집",
     icon: "/source-icons/confluence.svg",
-    comingSoon: true,
   },
   {
     id: "jira",
+    sourceKind: "Jira",
     label: "Jira",
-    detail: "곧 지원 예정 — 이슈·코멘트 수집",
+    detail: "사내 서버(Server/DC) + 개인 액세스 토큰 — 내 이슈·댓글 수집",
     icon: "/source-icons/jira.svg",
-    comingSoon: true,
   },
   {
     id: "knox-mail",

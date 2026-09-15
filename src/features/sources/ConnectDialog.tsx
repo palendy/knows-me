@@ -54,6 +54,32 @@ const GUIDES: Partial<Record<SourceKind, Guide>> = {
       text: "Google 앱 비밀번호 발급",
     },
   },
+  // Server / Data Center only (PAT as Bearer). Atlassian Cloud's email + API
+  // token is a different auth scheme and is not what an in-house server takes.
+  Confluence: {
+    steps: [
+      "Confluence 오른쪽 위 프로필 → Settings → Personal Access Tokens → Create token",
+      "토큰은 발급 직후 한 번만 보이니 바로 복사",
+      "서버 주소는 REST API가 열려 있는 주소 (사내가 mirror 서버라면 mirror 주소)",
+      "사람이 클릭할 링크를 원본 서버로 만들고 싶으면 '링크용 주소'에 원본 주소 (선택)",
+    ],
+    link: {
+      href: "https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html",
+      text: "PAT 발급 안내 (Atlassian)",
+    },
+  },
+  Jira: {
+    steps: [
+      "Jira 오른쪽 위 프로필 → Personal Access Tokens → Create token",
+      "토큰은 발급 직후 한 번만 보이니 바로 복사",
+      "서버 주소는 브라우저에서 여는 Jira 주소 그대로 (예 https://jira.example.com)",
+      "내가 담당자이거나 보고자인 이슈를 댓글과 함께 수집합니다",
+    ],
+    link: {
+      href: "https://confluence.atlassian.com/enterprise/using-personal-access-tokens-1026032365.html",
+      text: "PAT 발급 안내 (Atlassian)",
+    },
+  },
 };
 
 export function ConnectDialog({
