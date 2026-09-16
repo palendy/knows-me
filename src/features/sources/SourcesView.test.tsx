@@ -12,7 +12,7 @@ function card(title: string): HTMLElement {
 }
 
 describe("SourcesView", () => {
-  it("renders the card catalog with Claude/Codex split and coming-soon cards", async () => {
+  it("renders the card catalog with Claude/Codex split and only real sources", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
 
     expect(await screen.findByText("Claude")).toBeInTheDocument();
@@ -21,20 +21,17 @@ describe("SourcesView", () => {
     expect(screen.getByText("Gmail")).toBeInTheDocument();
     expect(screen.getByText("Confluence")).toBeInTheDocument();
     expect(screen.getByText("Jira")).toBeInTheDocument();
-    expect(screen.getByText("Knox Mail")).toBeInTheDocument();
+    // Nothing that cannot actually be connected is shown (no placeholder cards).
+    expect(screen.queryByText("Knox Mail")).toBeNull();
+    expect(screen.queryByText("준비 중")).toBeNull();
   });
 
-  it("dims not-ready and coming-soon cards", async () => {
+  it("dims not-ready cards but keeps their toggle live", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
     await screen.findByText("Claude");
 
     expect(card("Claude").className).not.toContain("is-dimmed");
     expect(card("Notion").className).toContain("is-dimmed");
-    expect(card("Knox Mail").className).toContain("is-dimmed");
-    // Coming-soon toggle is disabled.
-    expect(within(card("Knox Mail")).getByRole("switch")).toBeDisabled();
-    // Confluence/Jira are real sources now: dimmed only until connected,
-    // with a live toggle.
     expect(card("Jira").className).toContain("is-dimmed");
     expect(within(card("Jira")).getByRole("switch")).toBeEnabled();
   });

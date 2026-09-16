@@ -120,7 +120,6 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 | Gmail | 연결 → Gmail 주소 + 앱 비밀번호 |
 | Confluence (Server/DC) | 연결 → 서버 주소 + 개인 액세스 토큰(PAT). §3-1 |
 | Jira (Server/DC) | 연결 → 서버 주소 + PAT. §3-1 |
-| Knox Mail | 자리만 있음 (아직 미구현) |
 
 - **새로 온 것만** — 각 소스에서 한 묶음(세션 최대 30개)씩 증분으로 가져와 LLM으로 요약·분류하고 대기열·사실에 넣는다.
 - **끝까지 수집** — 남은 기록을 전부. 처음이면 오래 걸린다.
