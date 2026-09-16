@@ -4,6 +4,8 @@
 
 **내 작업 기록에서 "나에 대한 지식"을 뽑아 개인 위키로 쌓고, 내가 허락한 부분만 팀원의 AI가 물어볼 수 있게 하는 데스크탑 앱.**
 
+동작 환경은 **Windows**와 **WSL(Ubuntu)** 두 가지다.
+
 ## 뭐 하는 앱인가
 
 Claude Code·Codex 같은 AI 코딩 도구를 쓰다 보면, 내가 어떤 프로젝트를 어떻게 띄우고, 어떤 규칙을 지키고, 무엇을 결정했는지가 세션 기록에 남는다. knows-me는 그 기록을 읽어서:
@@ -17,18 +19,28 @@ Claude Code·Codex 같은 AI 코딩 도구를 쓰다 보면, 내가 어떤 프�
 
 지식을 뽑는 데 쓰는 LLM은 골라 쓸 수 있다: 내 PC의 **LM Studio·Ollama**, 이미 설치된 **Claude Code**, 또는 **OpenAI 호환 API·Anthropic API**.
 
+## 어디서 돌릴 것인가 — 먼저 고른다
+
+| | **Windows에 설치** (권장) | **WSL(Ubuntu) 안에서** |
+|---|---|---|
+| 준비물 | WebView2 (Win11 기본 포함) | WSLg(창 표시) — **Windows 11 필요** |
+| Claude Code 세션 수집 | Windows 것 + **WSL 것까지 자동으로 읽는다** | 그 WSL 안의 것만 |
+| LLM에 로컬 Claude Code 쓰기 | Windows 설치본과 **WSL 설치본 중 선택** | 그 WSL 안의 설치본 |
+| LM Studio(보통 Windows에서 실행) | `http://localhost:1234/v1` | 호스트 IP 필요 ([usage §2-3](docs/usage.md#2-3-wsl에서-windows의-lm-studio에-붙기)) |
+| 보관함 위치 | `%APPDATA%\app.knowsme.desktop\` | `~/.local/share/app.knowsme.desktop/` |
+
+**대부분은 Windows에 설치하면 된다.** Windows에서 돌려도 WSL 안의 Claude Code 기록을 읽고, LLM으로 WSL의 Claude Code를 구동할 수 있다. WSL 설치는 개발 환경 안에서 같이 돌리고 싶을 때만 고른다. 둘 다 설치하면 **보관함이 각각 따로** 생긴다 (한쪽 데이터가 다른 쪽에 보이지 않는다).
+
 ## 5분 안에 띄우기
 
 ### 1. 준비물 설치
 
-| OS | 한 번에 |
+| 환경 | 한 번에 |
 |---|---|
-| **Linux (Ubuntu 22.04 이상·Debian, WSL2 포함)** | `bash scripts/setup-linux.sh` |
-| **Windows 10 / 11** | PowerShell에서 `.\scripts\setup-windows.ps1` |
+| **Windows 10 / 11** | PowerShell에서 `Set-ExecutionPolicy -Scope Process Bypass; .\scripts\setup-windows.ps1` |
+| **WSL(Ubuntu 22.04 이상) · Linux** | `bash scripts/setup-linux.sh` |
 
-스크립트는 Rust, Node.js 20 이상, Tauri가 필요로 하는 시스템 라이브러리를 설치하고 `npm install`까지 해 준다. 직접 설치하거나 다른 배포판을 쓰려면 [docs/build.md](docs/build.md).
-
-> macOS는 Tauri 자체는 지원하지만 이 저장소에 설치 스크립트와 CI 빌드가 없다. 직접 준비해야 한다.
+스크립트는 Rust, Node.js 20 이상, 웹뷰 라이브러리(Windows는 WebView2, Linux는 webkit2gtk)를 확인·설치하고 `npm install`까지 해 준다. 직접 설치하려면 [docs/build.md](docs/build.md).
 
 ### 2. 실행
 
@@ -44,39 +56,47 @@ npx tauri dev
 2. 앱 → **설정** → **AI 모델** → **OpenAI 호환** 선택.
 3. 입력:
    - 모델 이름: LM Studio 서버 탭에 보이는 식별자 (예 `google/gemma-4-12b`)
-   - Base URL: `http://localhost:1234/v1`
+   - Base URL: Windows에서 앱을 돌리면 `http://localhost:1234/v1`, **WSL에서 돌리면 호스트 IP** (예 `http://172.18.144.1:1234/v1`)
    - API 키: **비워 둔다**
 4. **저장**. "현재 사용 중"에 `google/gemma-4-12b (localhost:1234)`처럼 표시되면 연결된 것.
 
-**"현재 사용 중"은 지금 실제로 호출되는 백엔드를 그대로 보여준다.** 설정을 저장했는데도 여기에 `오프라인 (LLM 미연결 — 고정 응답)`이 뜨면 그 설정으로는 클라이언트를 만들지 못한 것이다 (주소 오타, 키 누락 등). 화면이 고른 모델을 그대로 되읽는 게 아니라서, 여기 표시된 것과 다른 곳으로 요청이 나가는 일은 없다.
+**"현재 사용 중"은 지금 실제로 호출되는 백엔드를 그대로 보여준다.** 설정을 저장했는데도 여기에 `오프라인 (LLM 미연결 — 고정 응답)`이 뜨면 그 설정으로는 클라이언트를 만들지 못한 것이다 (주소 오타, 키 누락 등).
 
 사내 게이트웨이처럼 호출에 **별도 헤더**가 필요하면 같은 화면의 **추가 헤더**에 `이름: 값`을 한 줄씩 적는다.
 
-다른 LLM(Claude Code, Ollama, OpenRouter, Anthropic)과 WSL에서 쓸 때의 주의점은 [docs/usage.md](docs/usage.md#2-llm-연결).
+LLM을 고르는 다른 방법들은 [docs/usage.md §2](docs/usage.md#2-llm-연결).
 
 ### 4. 첫 수집
 
-앱 → **설정** → **연결 소스** → Claude 카드의 **수집**. 로컬의 Claude Code(`~/.claude/projects/`)·Codex(`~/.codex/sessions/`) 기록을 읽어 사실 후보를 만든다. 확실한 것은 바로 사실로 저장되고, 물어봐야 할 것은 **대기열** 탭에 질문으로 쌓인다. **나와 대화** 탭에서 "내가 요즘 제일 걱정하는 게 뭘까?"처럼 물어보면 저장된 사실을 근거로 답한다.
+앱 → **설정** → **연결 소스** → Claude 카드의 **수집**. Claude Code(`~/.claude/projects/`)·Codex(`~/.codex/sessions/`) 기록을 읽어 사실 후보를 만든다. 확실한 것은 바로 사실로 저장되고, 물어봐야 할 것은 **대기열** 탭에 질문으로 쌓인다. **나와 대화** 탭에서 "내가 요즘 제일 걱정하는 게 뭘까?"처럼 물어보면 저장된 사실을 근거로 답한다.
 
-같은 화면에서 **Confluence·Jira**(사내 Server/DC, 개인 액세스 토큰)와 Notion·Gmail도 연결할 수 있다. 사내에 배포할 때는 [docs/internal-release.md](docs/internal-release.md).
+같은 화면에서 **Confluence·Jira**(사내 Server/DC, 개인 액세스 토큰)와 Notion·Gmail도 연결할 수 있다.
 
 ## 배포용 빌드
 
 ```bash
-npx tauri build
+npx tauri build                       # 공개판
+npx tauri build -- --features internal  # 사내판 (Notion·Gmail 제외)
 ```
 
-결과물은 `desktop/target/release/bundle/` 아래에 생긴다 — Linux는 `.deb`·`.rpm`·`.AppImage`, Windows는 `.msi`·설치용 `.exe`. GitHub Actions([`.github/workflows/build.yml`](.github/workflows/build.yml))가 main 브랜치와 `v*` 태그에서 두 OS 번들을 자동으로 만든다.
+| 빌드 환경 | 결과물 |
+|---|---|
+| Windows | `desktop\target\release\bundle\` 의 `.msi`, 설치용 `.exe` |
+| WSL · Linux | `desktop/target/release/bundle/` 의 `.deb`, `.rpm`, `.AppImage` |
+
+**Windows 설치 파일은 Windows에서만 만들 수 있다** (WSL에서는 못 만든다). GitHub Actions([`.github/workflows/build.yml`](.github/workflows/build.yml))가 두 환경의 번들을 자동으로 만든다.
+
+사내 배포 절차는 [docs/internal-release.md](docs/internal-release.md).
 
 ## 더 읽을 것
 
 | 알고 싶은 것 | 문서 |
 |---|---|
-| 빌드 환경 상세, WSL, 문제 해결 | [docs/build.md](docs/build.md) |
+| **사내 배포 — Windows/WSL 선택, Confluence·Jira, 프록시·사설 인증서** | [docs/internal-release.md](docs/internal-release.md) |
+| 빌드 환경 상세, 문제 해결 | [docs/build.md](docs/build.md) |
 | 화면별 사용법, LLM 설정 전부, 명령줄 도구 | [docs/usage.md](docs/usage.md) |
 | 수집이 왜 안 되나, 무엇이 들어오나 | [docs/collecting.md](docs/collecting.md) |
 | 팀원에게 MCP로 공유하기 | [docs/team-sharing.md](docs/team-sharing.md) |
-| 사내(회사망)에 배포하기 — Confluence·Jira·PAT·사설 인증서 | [docs/internal-release.md](docs/internal-release.md) |
 | 왜 이렇게 설계했나 (원래 README) | [docs/concept.md](docs/concept.md) |
 
 ## 개발자용

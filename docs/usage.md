@@ -1,25 +1,35 @@
 # 사용 가이드
 
-> 대상: 앱을 빌드한 다음 실제로 쓰려는 사람. 빌드는 [`build.md`](build.md).
+> 대상: 앱을 설치한 다음 실제로 쓰려는 사람. 동작 환경은 **Windows**와 **WSL(Ubuntu)** 두 가지다.
+> 빌드는 [`build.md`](build.md), 사내 배포는 [`internal-release.md`](internal-release.md).
+
+## 0. 앱이 Windows에 있나, WSL에 있나
+
+설정이 갈리는 지점이 몇 군데 있어서 이걸 먼저 확인한다.
+
+| | **Windows 앱** | **WSL(Ubuntu) 앱** |
+|---|---|---|
+| 수집되는 Claude·Codex 기록 | Windows 홈 + **설치된 모든 WSL 배포판의 홈** | 그 WSL 안의 홈만 |
+| LLM으로 쓸 로컬 Claude Code | Windows 설치본 / WSL 설치본 중 선택 | 그 WSL 안의 설치본 |
+| Windows에서 도는 LM Studio 주소 | `http://localhost:1234/v1` | 호스트 IP (§2-3) |
+| 프록시·사설 인증서 설정 위치 | Windows | 그 WSL 안 |
+| 보관함(데이터) 위치 | `%APPDATA%\app.knowsme.desktop\` | `~/.local/share/app.knowsme.desktop/` |
+
+**Windows 앱이 WSL 기록까지 읽는다**는 게 핵심이다. WSL에서만 Claude Code를 쓰더라도 Windows에 설치한 앱으로 수집된다. 어느 쪽에 설치할지의 판단은 [`internal-release.md` §1](internal-release.md#1-어디에-설치할-것인가--windows를-기본으로).
+
+**두 곳에 다 설치하면 보관함이 각각 따로 생긴다.** 비밀번호도 모아 둔 사실도 공유되지 않는다.
 
 ## 1. 처음 실행
 
 ```bash
 npx tauri dev            # 개발 실행
-# 또는 설치한 앱(.msi / .deb / .AppImage) 실행
+# 또는 설치한 앱 실행 — Windows는 .msi/.exe, WSL은 .deb
 ```
 
 1. **비밀번호 설정** — 첫 화면에서 보관함 비밀번호를 정한다. 이 비밀번호에서 암호화 키를 만들고(Argon2id), 저장되는 모든 것을 AES-256-GCM으로 암호화한다. 평문 키는 디스크에 남지 않는다. **잊으면 복구할 수 없다.**
 2. **잠금 해제** — 이후 실행할 때마다 같은 비밀번호를 넣는다.
 
-데이터 위치:
-
-| OS | 경로 |
-|---|---|
-| Linux | `~/.local/share/app.knowsme.desktop/` |
-| Windows | `%APPDATA%\app.knowsme.desktop\` |
-
-전부 암호화돼 있다. 지우면 처음부터 다시 시작한다.
+데이터는 §0의 경로에 전부 암호화돼 저장된다. 지우면 처음부터 다시 시작한다.
 
 ## 2. LLM 연결
 
@@ -95,7 +105,7 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 
 ### 2-6. 로컬 Claude Code
 
-**로컬 Claude Code** 선택 → 감지된 설치 중 하나(Windows 네이티브 / WSL) 선택 → 모델(`claude-opus-5` 권장, 빠른 건 `claude-haiku-4-5`).
+**로컬 Claude Code** 선택 → 감지된 설치 중 하나를 고른다. Windows 앱이면 "Windows"와 "WSL · \<배포판\>"이 각각 후보로 뜬다 — 두 설치본의 **로그인 상태가 다른 경우가 많으니** 실제로 쓰는 쪽을 고른다. 그다음 모델(`claude-opus-5` 권장, 빠른 건 `claude-haiku-4-5`).
 
 호출마다 `claude -p` 세션이 하나 뜨므로 한 호출에 10초 남짓 걸린다. 텍스트는 Anthropic에 도달한다는 점에서 클라우드 백엔드와 같다.
 
@@ -130,8 +140,8 @@ X-Gateway-Id: team-a
 
 | 소스 | 어떻게 |
 |---|---|
-| Claude (Claude Code 세션) | 자동. `~/.claude/projects/`를 읽는다 |
-| Codex 세션 | 자동. `~/.codex/sessions/`를 읽는다 |
+| Claude (Claude Code 세션) | 자동. `~/.claude/projects/`를 읽는다 (Windows 앱이면 WSL 쪽 홈까지) |
+| Codex 세션 | 자동. `~/.codex/sessions/`를 읽는다 (같음) |
 | 파일 | 폴더 지정 (텍스트·마크다운) |
 | Notion | 연결 → Notion Integrations에서 만든 내부 통합 토큰 입력 |
 | Gmail | 연결 → Gmail 주소 + 앱 비밀번호 |
@@ -141,11 +151,11 @@ X-Gateway-Id: team-a
 - **새로 온 것만** — 각 소스에서 한 묶음(세션 최대 30개)씩 증분으로 가져와 LLM으로 요약·분류하고 대기열·사실에 넣는다.
 - **끝까지 수집** — 남은 기록을 전부. 처음이면 오래 걸린다.
 - 실측: LM Studio gemma-4-12b(thinking)로 Claude 세션 한 묶음이 약 10분(요약·분류 호출 14회). Claude Code CLI나 클라우드 API가 더 빠르다.
-- **수집 범위** — 어떤 프로젝트의 세션을 모을지 고른다. 처음엔 프로젝트 한두 개로 좁혀 시작하는 게 빠르다.
+- **수집 범위** — 어떤 프로젝트의 세션을 모을지 고른다. 처음엔 프로젝트 한두 개로 좁혀 시작하는 게 빠르다. Windows 앱이면 이 목록에 WSL 쪽 프로젝트도 함께 나온다.
 
 자세한 것과 문제 진단은 [`collecting.md`](collecting.md).
 
-### 3-1. Confluence · Jira (사내 Server / Data Center)
+### 3-1. Confluence와 Jira (사내 Server DC)
 
 Atlassian **Cloud가 아니라 사내에 설치된 Server/Data Center**용이다. 인증은 **개인 액세스 토큰(PAT)** 하나다.
 
