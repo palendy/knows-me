@@ -21,12 +21,18 @@ path = "src/main.rs"
 # Claude Code CLI backend needs neither feature and remains the default
 # provider. Build with `--no-default-features` for the fully offline shell
 # (canned LLM + skeleton Notion connector).
-default = ["notion-http", "llm-http"]
+default = ["notion-http", "atlassian-http", "llm-http"]
 # Forward the core's real HTTP LLM clients (+ the Notion connector, which
 # shares the HTTP stack).
 llm-http = ["knows-me-core/llm-http", "knows-me-core/notion-http"]
 # The real Notion connector (Notion HTTP API). Enabled via `default` above.
 notion-http = ["knows-me-core/notion-http"]
+# The real Confluence + Jira connectors (Atlassian Server/DC REST + PAT).
+atlassian-http = ["knows-me-core/atlassian-http"]
+# In-house edition (`npx tauri build -- --features internal`): drops Notion and
+# Gmail — they are unreachable inside the corporate network — leaving Claude/
+# Codex sessions, files, Confluence and Jira. See docs/internal-release.md.
+internal = ["knows-me-core/internal"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

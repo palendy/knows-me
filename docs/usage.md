@@ -1,25 +1,35 @@
 # 사용 가이드
 
-> 대상: 앱을 빌드한 다음 실제로 쓰려는 사람. 빌드는 [`build.md`](build.md).
+> 대상: 앱을 설치한 다음 실제로 쓰려는 사람. 동작 환경은 **Windows**와 **WSL(Ubuntu)** 두 가지다.
+> 빌드는 [`build.md`](build.md), 사내 배포는 [`internal-release.md`](internal-release.md).
+
+## 0. 앱이 Windows에 있나, WSL에 있나
+
+설정이 갈리는 지점이 몇 군데 있어서 이걸 먼저 확인한다.
+
+| | **Windows 앱** | **WSL(Ubuntu) 앱** |
+|---|---|---|
+| 수집되는 Claude·Codex 기록 | Windows 홈 + **설치된 모든 WSL 배포판의 홈** | 그 WSL 안의 홈만 |
+| LLM으로 쓸 로컬 Claude Code | Windows 설치본 / WSL 설치본 중 선택 | 그 WSL 안의 설치본 |
+| Windows에서 도는 LM Studio 주소 | `http://localhost:1234/v1` | 호스트 IP (§2-3) |
+| 프록시·사설 인증서 설정 위치 | Windows | 그 WSL 안 |
+| 보관함(데이터) 위치 | `%APPDATA%\app.knowsme.desktop\` | `~/.local/share/app.knowsme.desktop/` |
+
+**Windows 앱이 WSL 기록까지 읽는다**는 게 핵심이다. WSL에서만 Claude Code를 쓰더라도 Windows에 설치한 앱으로 수집된다. 어느 쪽에 설치할지의 판단은 [`internal-release.md` §1](internal-release.md#1-어디에-설치할-것인가--windows를-기본으로).
+
+**두 곳에 다 설치하면 보관함이 각각 따로 생긴다.** 비밀번호도 모아 둔 사실도 공유되지 않는다.
 
 ## 1. 처음 실행
 
 ```bash
 npx tauri dev            # 개발 실행
-# 또는 설치한 앱(.msi / .deb / .AppImage) 실행
+# 또는 설치한 앱 실행 — Windows는 .msi/.exe, WSL은 .deb
 ```
 
 1. **비밀번호 설정** — 첫 화면에서 보관함 비밀번호를 정한다. 이 비밀번호에서 암호화 키를 만들고(Argon2id), 저장되는 모든 것을 AES-256-GCM으로 암호화한다. 평문 키는 디스크에 남지 않는다. **잊으면 복구할 수 없다.**
 2. **잠금 해제** — 이후 실행할 때마다 같은 비밀번호를 넣는다.
 
-데이터 위치:
-
-| OS | 경로 |
-|---|---|
-| Linux | `~/.local/share/app.knowsme.desktop/` |
-| Windows | `%APPDATA%\app.knowsme.desktop\` |
-
-전부 암호화돼 있다. 지우면 처음부터 다시 시작한다.
+데이터는 §0의 경로에 전부 암호화돼 저장된다. 지우면 처음부터 다시 시작한다.
 
 ## 2. LLM 연결
 
@@ -31,7 +41,9 @@ npx tauri dev            # 개발 실행
 | **OpenAI 호환** | 내 PC의 LM Studio·Ollama, 또는 OpenRouter·OpenAI | URL (+ 클라우드는 API 키) |
 | **Anthropic API** | Anthropic 키를 직접 쓸 때 | API 키 |
 
-저장하면 즉시 반영된다. "현재 사용 중"에 실제로 선택된 백엔드가 표시된다.
+저장하면 즉시 반영된다. **"현재 사용 중"에는 지금 살아 있는 클라이언트가 스스로 보고한 이름이 뜬다** — 설정값을 되읽는 게 아니라서, 저장한 설정으로 클라이언트를 만들지 못했으면 고른 모델 대신 `오프라인 (LLM 미연결 — 고정 응답)`이 보인다. 그 상태에서는 요약·분류가 고정 문구로 채워지므로 수집을 돌리기 전에 먼저 고쳐야 한다.
+
+잠금 해제 전에는 아직 클라이언트가 없어 `(잠금 해제 전)`이 붙은 예상값이 보인다. 터미널에서 앱을 띄웠다면 `[llm] client built: …` 줄이 같은 값을 찍는다.
 
 > `.env` 파일의 LLM 설정은 **앱이 아니라 명령줄 도구(§6)용**이다. 앱은 설정 화면에 저장된 값을 우선한다.
 
@@ -93,11 +105,26 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 
 ### 2-6. 로컬 Claude Code
 
-**로컬 Claude Code** 선택 → 감지된 설치 중 하나(Windows 네이티브 / WSL) 선택 → 모델(`claude-opus-5` 권장, 빠른 건 `claude-haiku-4-5`).
+**로컬 Claude Code** 선택 → 감지된 설치 중 하나를 고른다. Windows 앱이면 "Windows"와 "WSL · \<배포판\>"이 각각 후보로 뜬다 — 두 설치본의 **로그인 상태가 다른 경우가 많으니** 실제로 쓰는 쪽을 고른다. 그다음 모델(`claude-opus-5` 권장, 빠른 건 `claude-haiku-4-5`).
 
 호출마다 `claude -p` 세션이 하나 뜨므로 한 호출에 10초 남짓 걸린다. 텍스트는 Anthropic에 도달한다는 점에서 클라우드 백엔드와 같다.
 
-### 2-7. 데이터 전송 정책
+### 2-7. 추가 헤더 (사내 게이트웨이 등)
+
+호출에 별도 헤더가 필요한 LLM이 있다. 사내 게이트웨이의 라우팅 헤더, Azure 스타일의 `api-key`, OpenRouter의 `X-Title` 같은 것이다. **설정 → AI 모델 → 추가 헤더**에 한 줄에 하나씩 적는다.
+
+```
+api-key: 1234abcd
+X-Gateway-Id: team-a
+# 이 줄은 주석
+```
+
+- **OpenAI 호환**과 **Anthropic API**에만 적용된다. 로컬 Claude Code는 HTTP 호출을 하지 않는다.
+- 여기 적은 헤더가 **마지막에** 붙는다. 그래서 `Authorization`을 적으면 위의 API 키 대신 그 값이 나간다 — 게이트웨이가 자체 인증 헤더를 요구할 때 쓰라는 뜻이다.
+- 형식이 틀리면 **저장 시점에** 몇 번째 줄이 왜 틀렸는지 알려준다. 값에 한글이 섞여 있어도 (IME로 복사하다 섞이는 일이 잦다) 거기서 걸린다.
+- 값은 나머지 설정과 같은 암호화 보관함에 저장된다.
+
+### 2-8. 데이터 전송 정책
 
 **설정 → 데이터 전송**:
 
@@ -105,7 +132,7 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 - **원본 그대로 전송**
 - **기기 안에서만 사용** — LLM에 아무것도 보내지 않는다 (추출은 사실상 멈춘다).
 
-무엇을 보냈는지는 **설정 → 전송 기록**에 남는다. LM Studio처럼 로컬 LLM이면 PC 밖으로 나가는 것은 없다.
+무엇을 보냈는지는 **설정 → 전송 기록**에 남는다 (탭을 열 때마다, 그리고 수집이 끝날 때마다 다시 읽는다). LM Studio처럼 로컬 LLM이면 PC 밖으로 나가는 것은 없다.
 
 ## 3. 소스 연결과 수집
 
@@ -113,19 +140,52 @@ WSL 네트워크를 mirrored 모드(`.wslconfig`의 `networkingMode=mirrored`)�
 
 | 소스 | 어떻게 |
 |---|---|
-| Claude (Claude Code 세션) | 자동. `~/.claude/projects/`를 읽는다 |
-| Codex 세션 | 자동. `~/.codex/sessions/`를 읽는다 |
+| Claude (Claude Code 세션) | 자동. `~/.claude/projects/`를 읽는다 (Windows 앱이면 WSL 쪽 홈까지) |
+| Codex 세션 | 자동. `~/.codex/sessions/`를 읽는다 (같음) |
 | 파일 | 폴더 지정 (텍스트·마크다운) |
 | Notion | 연결 → Notion Integrations에서 만든 내부 통합 토큰 입력 |
 | Gmail | 연결 → Gmail 주소 + 앱 비밀번호 |
-| Confluence · Jira · Knox Mail | 자리만 있음 (아직 미구현) |
+| Confluence (Server/DC) | 연결 → 서버 주소 + 개인 액세스 토큰(PAT). §3-1 |
+| Jira (Server/DC) | 연결 → 서버 주소 + PAT. §3-1 |
 
 - **새로 온 것만** — 각 소스에서 한 묶음(세션 최대 30개)씩 증분으로 가져와 LLM으로 요약·분류하고 대기열·사실에 넣는다.
 - **끝까지 수집** — 남은 기록을 전부. 처음이면 오래 걸린다.
 - 실측: LM Studio gemma-4-12b(thinking)로 Claude 세션 한 묶음이 약 10분(요약·분류 호출 14회). Claude Code CLI나 클라우드 API가 더 빠르다.
-- **수집 범위** — 어떤 프로젝트의 세션을 모을지 고른다. 처음엔 프로젝트 한두 개로 좁혀 시작하는 게 빠르다.
+- **수집 범위** — 어떤 프로젝트의 세션을 모을지 고른다. 처음엔 프로젝트 한두 개로 좁혀 시작하는 게 빠르다. Windows 앱이면 이 목록에 WSL 쪽 프로젝트도 함께 나온다.
 
 자세한 것과 문제 진단은 [`collecting.md`](collecting.md).
+
+### 3-1. Confluence와 Jira (사내 Server DC)
+
+Atlassian **Cloud가 아니라 사내에 설치된 Server/Data Center**용이다. 인증은 **개인 액세스 토큰(PAT)** 하나다.
+
+1. Confluence/Jira 오른쪽 위 프로필 → **Personal Access Tokens** → **Create token**. 토큰은 그 자리에서만 보이니 바로 복사한다.
+2. 앱 → 설정 → 연결 소스 → Confluence 또는 Jira 카드의 스위치:
+
+| 항목 | 값 |
+|---|---|
+| 서버 주소 | `https://jira.example.com` 처럼 REST API가 열려 있는 주소. 끝에 `/` 없이, `/wiki`·`/browse` 같은 경로 없이 |
+| 개인 액세스 토큰 | 방금 복사한 값 |
+| 링크용 주소 (Confluence만, 선택) | API 주소가 **mirror 서버**라면, 사람이 클릭할 링크에 쓸 원본 서버 주소 |
+
+3. **연결**을 누르면 그 자리에서 검증한다 — "연결됨 · 홍길동 · 내가 작성·수정한 페이지 37개"처럼 누구로 인증됐고 무엇이 보이는지 알려준다.
+
+무엇을 가져오나:
+
+- **Confluence**: 내가 **만들거나 편집한 페이지**(`contributor = currentUser()`)의 본문. 페이지가 새 버전으로 바뀌면 다시 가져온다.
+- **Jira**: 내가 **담당자이거나 보고자인 이슈**의 설명 + 댓글 전체. 진행 중에 한 번, 해결된 뒤 한 번 가져온다(상태가 바뀔 때마다는 아니다).
+- 둘 다 **수정 시각 순으로 증분** 수집한다. "새로 온 것만"은 Confluence 10페이지 / Jira 25이슈씩, "끝까지 수집"은 남은 것 전부.
+
+자주 보는 메시지:
+
+| 메시지 | 뜻 |
+|---|---|
+| 인증에 실패했습니다 (401) | PAT가 틀렸거나 만료. 다시 발급 |
+| 권한이 없습니다 (403) … PAT 문제가 아니라 | 인증은 됐지만 그 문서/프로젝트가 제한됨. **PAT를 다시 넣어도 소용없다.** 수집은 그 항목만 건너뛰고 계속된다 |
+| JSON 대신 로그인/HTML 페이지 | SSO가 PAT를 안 받았거나, 주소가 API 서버가 아님 |
+| 이상 문자(한글/공백 등) | 토큰을 복사하다 IME 글자가 섞임. 다시 붙여넣기 |
+
+사내 프록시·사설 인증서 환경은 [`internal-release.md`](internal-release.md).
 
 ## 4. 화면
 
@@ -161,6 +221,11 @@ cd src-tauri
 LLM_PROVIDER=openai OPENAI_BASE_URL=http://localhost:1234/v1 OPENAI_MODEL=google/gemma-4-12b \
   cargo run --features llm-http --example llm_probe
 
+# Confluence·Jira 연결이 되는지 — 검증 + 한 묶음 수집 + 커서 재개 (저장은 안 함)
+CONFLUENCE_BASE_URL=https://confluence.example.com CONFLUENCE_PAT=... \
+JIRA_BASE_URL=https://jira.example.com JIRA_PAT=... \
+  cargo run --features atlassian-http --example atlassian_probe
+
 # 확정 사실 / 대기열 덤프 — 앱 데이터 디렉터리와 보관함 비밀번호를 넘긴다
 export KNOWSME_DATA_DIR=~/.local/share/app.knowsme.desktop KNOWSME_DEMO_PASSWORD='보관함 비밀번호'
 cargo run --example dump_facts
@@ -177,6 +242,8 @@ backend: google/gemma-4-12b (localhost:1234)
 ```
 
 ## 7. 자주 묻는 것
+
+**설정에 "오프라인 (LLM 미연결 — 고정 응답)"이라고 나온다.** 저장한 설정으로 클라이언트를 만들지 못해 고정 응답 클라이언트가 대신 돌고 있다는 뜻이다. Base URL과 키를 확인하고 다시 저장한다. 이 상태로 수집하면 사실이 고정 문구로 채워진다.
 
 **설정에 "오프라인 (키 미설정)"이라고 나온다.** OpenAI 호환에서 Base URL을 비운 채 키도 안 넣은 경우다. 로컬 서버면 Base URL을 넣고, OpenAI 자체면 키를 넣는다.
 

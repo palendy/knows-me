@@ -46,6 +46,10 @@ struct EchoLlm {
 
 #[async_trait]
 impl LlmClient for EchoLlm {
+    fn backend_label(&self) -> String {
+        "테스트 더블".to_string()
+    }
+
     async fn summarize(&self, input: &MaskedText) -> Result<String> {
         Ok(input.text.clone())
     }
@@ -480,6 +484,10 @@ struct DecisiveLlm;
 
 #[async_trait]
 impl LlmClient for DecisiveLlm {
+    fn backend_label(&self) -> String {
+        "테스트 더블".to_string()
+    }
+
     async fn summarize(&self, input: &MaskedText) -> Result<String> {
         Ok(input.text.clone())
     }

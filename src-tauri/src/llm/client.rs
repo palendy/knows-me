@@ -76,6 +76,10 @@ mod http_impl {
         pub api_key: String,
         pub model: String,
         pub base_url: String,
+        /// Extra headers every request carries (`LLM_EXTRA_HEADERS`). Applied
+        /// last, so a gateway that needs its own auth header can override the
+        /// one built in.
+        pub extra_headers: Vec<(String, String)>,
     }
 
     impl LlmConfig {
@@ -92,6 +96,7 @@ mod http_impl {
                     &std::env::var("ANTHROPIC_BASE_URL")
                         .unwrap_or_else(|_| DEFAULT_BASE_URL.to_string()),
                 ),
+                extra_headers: crate::llm::extra_headers_from_env(),
             })
         }
     }
@@ -120,12 +125,16 @@ mod http_impl {
                 "messages": [{ "role": "user", "content": content }],
             });
 
-            let resp = self
+            let mut req = self
                 .client
                 .post(format!("{}/v1/messages", self.config.base_url))
                 .header("x-api-key", &self.config.api_key)
                 .header("anthropic-version", API_VERSION)
-                .header("content-type", "application/json")
+                .header("content-type", "application/json");
+            for (name, value) in &self.config.extra_headers {
+                req = req.header(name.as_str(), value.as_str());
+            }
+            let resp = req
                 .json(&body)
                 .send()
                 .await
@@ -158,6 +167,10 @@ mod http_impl {
 
     #[async_trait]
     impl LlmClient for AnthropicLlm {
+        fn backend_label(&self) -> String {
+            format!("{} (Anthropic)", self.config.model)
+        }
+
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);
@@ -254,6 +267,11 @@ pub(crate) mod openai_impl {
         pub api_key: String,
         pub model: String,
         pub base_url: String,
+        /// Extra headers every request carries (`LLM_EXTRA_HEADERS`). Applied
+        /// after the built-in ones, so a gateway that authenticates with its
+        /// own header (Azure's `api-key`, a corporate routing header) can
+        /// replace the `Authorization` this client would otherwise send.
+        pub extra_headers: Vec<(String, String)>,
     }
 
     impl OpenAiConfig {
@@ -283,6 +301,7 @@ pub(crate) mod openai_impl {
                 api_key,
                 model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| DEFAULT_MODEL.to_string()),
                 base_url,
+                extra_headers: crate::llm::extra_headers_from_env(),
             })
         }
 
@@ -338,6 +357,9 @@ pub(crate) mod openai_impl {
             // (LM Studio) accept any bearer, others reject a malformed one.
             if !self.config.api_key.is_empty() {
                 req = req.header("authorization", format!("Bearer {}", self.config.api_key));
+            }
+            for (name, value) in &self.config.extra_headers {
+                req = req.header(name.as_str(), value.as_str());
             }
             let resp = req
                 .json(&body)
@@ -414,6 +436,14 @@ pub(crate) mod openai_impl {
 
     #[async_trait]
     impl LlmClient for OpenAiLlm {
+        fn backend_label(&self) -> String {
+            format!(
+                "{} ({})",
+                self.config.model,
+                crate::llm::openai_gateway_name(&self.config.base_url)
+            )
+        }
+
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);

@@ -234,6 +234,10 @@ struct RecordingLlm {
 
 #[async_trait::async_trait]
 impl LlmClient for RecordingLlm {
+    fn backend_label(&self) -> String {
+        "테스트 더블".to_string()
+    }
+
     async fn summarize(&self, _i: &MaskedText) -> crate::core::error::Result<String> {
         Ok(String::new())
     }

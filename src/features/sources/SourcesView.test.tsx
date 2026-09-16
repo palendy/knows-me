@@ -12,7 +12,7 @@ function card(title: string): HTMLElement {
 }
 
 describe("SourcesView", () => {
-  it("renders the card catalog with Claude/Codex split and coming-soon cards", async () => {
+  it("renders the card catalog with Claude/Codex split and only real sources", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
 
     expect(await screen.findByText("Claude")).toBeInTheDocument();
@@ -21,18 +21,89 @@ describe("SourcesView", () => {
     expect(screen.getByText("Gmail")).toBeInTheDocument();
     expect(screen.getByText("Confluence")).toBeInTheDocument();
     expect(screen.getByText("Jira")).toBeInTheDocument();
-    expect(screen.getByText("Knox Mail")).toBeInTheDocument();
+    // Nothing that cannot actually be connected is shown (no placeholder cards).
+    expect(screen.queryByText("Knox Mail")).toBeNull();
+    expect(screen.queryByText("준비 중")).toBeNull();
   });
 
-  it("dims not-ready and coming-soon cards", async () => {
+  it("dims not-ready cards but keeps their toggle live", async () => {
     render(<SourcesView api={new MockSourcesApi()} />);
     await screen.findByText("Claude");
 
     expect(card("Claude").className).not.toContain("is-dimmed");
     expect(card("Notion").className).toContain("is-dimmed");
     expect(card("Jira").className).toContain("is-dimmed");
-    // Coming-soon toggle is disabled.
-    expect(within(card("Jira")).getByRole("switch")).toBeDisabled();
+    expect(within(card("Jira")).getByRole("switch")).toBeEnabled();
+  });
+
+  it("connects Jira with server address + PAT and hides cards the backend does not list", async () => {
+    const api = new MockSourcesApi();
+    const spy = vi.spyOn(api, "connectSource");
+    // Simulate the in-house edition: the backend catalog has no Notion/Gmail.
+    vi.spyOn(api, "listSources").mockImplementation(async () =>
+      (await MockSourcesApi.prototype.listSources.call(api)).filter(
+        (s) => s.kind !== "Notion" && s.kind !== "Gmail",
+      ),
+    );
+    render(<SourcesView api={api} />);
+
+    await screen.findByText("Jira");
+    expect(screen.queryByText("Notion")).toBeNull();
+    expect(screen.queryByText("Gmail")).toBeNull();
+
+    await userEvent.click(within(card("Jira")).getByRole("switch"));
+    const dialog = await screen.findByRole("dialog", { name: "Jira 연결" });
+    expect(within(dialog).getByText("연결 방법")).toBeInTheDocument();
+    await userEvent.type(
+      within(dialog).getByLabelText(/Jira 서버 주소/),
+      "https://jira.example.com",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(/개인 액세스 토큰/),
+      "pat_abc",
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "연결" }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("Jira", {
+        base_url: "https://jira.example.com",
+        pat: "pat_abc",
+      }),
+    );
+    await waitFor(() =>
+      expect(within(card("Jira")).getByRole("switch")).toHaveAttribute(
+        "aria-checked",
+        "true",
+      ),
+    );
+    expect(within(card("Jira")).getByRole("button", { name: "수집" })).toBeEnabled();
+  });
+
+  it("Confluence offers the optional link address without requiring it", async () => {
+    const api = new MockSourcesApi();
+    const spy = vi.spyOn(api, "connectSource");
+    render(<SourcesView api={api} />);
+
+    await screen.findByText("Confluence");
+    await userEvent.click(within(card("Confluence")).getByRole("switch"));
+    const dialog = await screen.findByRole("dialog", { name: "Confluence 연결" });
+    expect(within(dialog).getByLabelText(/링크용 주소/)).toBeInTheDocument();
+    await userEvent.type(
+      within(dialog).getByLabelText(/Confluence 서버 주소/),
+      "https://mirror.example.com",
+    );
+    await userEvent.type(
+      within(dialog).getByLabelText(/개인 액세스 토큰/),
+      "pat_abc",
+    );
+    await userEvent.click(within(dialog).getByRole("button", { name: "연결" }));
+
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith("Confluence", {
+        base_url: "https://mirror.example.com",
+        pat: "pat_abc",
+      }),
+    );
   });
 
   it("credential-less sources have no connect toggle", async () => {

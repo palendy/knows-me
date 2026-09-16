@@ -3,7 +3,8 @@
 ## 사전 요구
 - Rust (rustup) — 검증 환경 1.97.1
 - Node.js 20+ — 검증 환경 24.5.0
-- Tauri 데스크탑 빌드 시: 플랫폼 webview 툴체인 (macOS는 Xcode CLT)
+- Tauri 데스크탑 빌드 시: 플랫폼 webview 툴체인 (Windows는 WebView2 + VS C++ Build Tools, WSL/Linux는 libwebkit2gtk-4.1-dev)
+  — 설치는 `scripts/setup-windows.ps1` / `scripts/setup-linux.sh`, 상세는 [docs/build.md](../../../docs/build.md)
 
 ## 코어 라이브러리 (U1~U4 전부)
 ```bash

@@ -68,7 +68,10 @@ pub fn score_priority(item: &QueueItem) -> u8 {
         QueueItemKind::Confirm { candidate } => {
             let s = match candidate.provenance.source {
                 SourceKind::Session => 40,
-                SourceKind::Notion | SourceKind::Gmail => 25,
+                SourceKind::Notion
+                | SourceKind::Gmail
+                | SourceKind::Confluence
+                | SourceKind::Jira => 25,
                 SourceKind::File => 10,
             };
             (s, 20)

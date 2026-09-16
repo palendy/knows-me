@@ -8,6 +8,12 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      edition:
+        description: "public (Notion·Gmail 포함) / internal (사내: 세션·파일·Confluence·Jira만)"
+        type: choice
+        default: public
+        options: [public, internal]
 
 permissions:
   contents: write
@@ -26,21 +32,46 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: core tests (offline + llm-http)
+      - name: core tests (offline + llm-http + atlassian-http + internal)
         working-directory: src-tauri
         run: |
           cargo test
           cargo test --features llm-http
+          cargo test --features atlassian-http
+          cargo test --features internal
       - name: frontend typecheck + tests
         run: |
           npm ci
           npm run typecheck
           npm test
 
+  # 배포 대상이 Windows라서, 번들을 만들지 않는 PR에서도 Windows 전용 코드가
+  # 깨지지 않았는지 확인한다. 코어는 웹뷰 툴체인 없이 빌드되므로 windows-latest
+  # 에서 테스트까지 돌릴 수 있다 — WSL 홈 탐색(`\\wsl.localhost\…`)과 Claude Code
+  # 설치 탐지가 `#[cfg(windows)]` 안에 있어 Linux 잡에서는 컴파일조차 되지 않는다.
+  windows-core:
+    name: test (core on Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: core tests (Windows 전용 경로 포함)
+        working-directory: src-tauri
+        run: |
+          cargo test
+          cargo test --features atlassian-http
+          cargo test --features internal
+
   bundle:
-    name: bundle (${{ matrix.os }})
-    needs: test
+    name: bundle (${{ matrix.os }}, ${{ github.event.inputs.edition || 'public' }})
+    needs: [test, windows-core]
     if: github.event_name != 'pull_request'
+    env:
+      # 사내 배포판은 Notion·Gmail 없이 빌드한다 (desktop/Cargo.toml `internal` 피처).
+      EDITION: ${{ github.event.inputs.edition || 'public' }}
     strategy:
       fail-fast: false
       matrix:
@@ -78,10 +109,16 @@ jobs:
           cache: npm
       - run: npm ci
       - name: tauri build
-        run: npx tauri build
+        shell: bash
+        run: |
+          if [ "$EDITION" = "internal" ]; then
+            npx tauri build -- --features internal
+          else
+            npx tauri build
+          fi
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
+          name: ${{ matrix.artifact }}${{ env.EDITION == 'internal' && '-internal' || '' }}
           path: ${{ matrix.bundle_glob }}
           if-no-files-found: error
       - name: attach to release (tags only)

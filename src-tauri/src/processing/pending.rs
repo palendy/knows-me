@@ -95,6 +95,8 @@ fn source_tag(raw: &RawItem) -> &'static str {
         Notion => "notion",
         Gmail => "gmail",
         File => "file",
+        Confluence => "confluence",
+        Jira => "jira",
     }
 }
 

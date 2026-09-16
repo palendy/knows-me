@@ -174,6 +174,10 @@ impl ClaudeCliLlm {
 
 #[async_trait]
 impl LlmClient for ClaudeCliLlm {
+    fn backend_label(&self) -> String {
+        format!("{} (로컬 Claude Code)", self.config.model)
+    }
+
     async fn summarize(&self, input: &MaskedText) -> Result<String> {
         self.transfer_log
             .record_text("summarize", &self.config.model, input);

@@ -106,7 +106,7 @@ function QueueRow({
         <QueueMetadata item={item} />
         <h3>{c.title}</h3>
         <p className="queue-body">{c.body}</p>
-        <div className="queue-provenance"><span>{({Session: "대화 기록", Notion: "Notion", Gmail: "Gmail", File: "파일"})[c.provenance.source]}</span><span>{({Company: "업무", Personal: "개인", Unknown: "미분류"})[c.suggested_scope]}</span><span>{formatDate(c.provenance.collected_at)} 수집</span></div>
+        <div className="queue-provenance"><span>{({Session: "대화 기록", Notion: "Notion", Gmail: "Gmail", File: "파일", Confluence: "Confluence", Jira: "Jira"})[c.provenance.source]}</span><span>{({Company: "업무", Personal: "개인", Unknown: "미분류"})[c.suggested_scope]}</span><span>{formatDate(c.provenance.collected_at)} 수집</span></div>
         <label className="queue-answer-label">
           정정 (선택)
           <input

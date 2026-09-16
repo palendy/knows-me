@@ -16,6 +16,7 @@ beforeEach(() => {
     llm_model: "test-model",
     llm_base_url: null,
     llm_binary: null,
+    llm_headers: null,
     llm_label: "test-model (로컬 Claude Code)",
     has_api_key: false,
   });
@@ -56,6 +57,7 @@ describe("settings", () => {
     vi.mocked(ipc.getConfig).mockResolvedValue({
       transfer_policy: "MaskAndMinimize", server_enabled: false, sharing_enabled: false,
       llm_provider: "anthropic", llm_model: "claude-opus-5", llm_base_url: null, llm_binary: null,
+    llm_headers: null,
       llm_label: "claude-opus-5 (Anthropic)", has_api_key: true,
     });
     vi.mocked(ipc.setLlmConfig).mockResolvedValue();
@@ -67,6 +69,73 @@ describe("settings", () => {
     // Blank key field → null, so the backend keeps the stored secret.
     expect(ipc.setLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ api_key: null }));
   });
+  it("sends extra gateway headers with the URL backends and drops them for the CLI", async () => {
+    const user = userEvent.setup();
+    vi.mocked(ipc.setLlmConfig).mockResolvedValue();
+    render(<HomeView onLock={vi.fn()} sourcesApi={new MockSourcesApi()} />);
+    await screen.findByText(/현재 사용 중/);
+
+    // The CLI backend makes no HTTP call, so it has no header field at all.
+    expect(screen.queryByRole("textbox", { name: /추가 헤더/ })).toBeNull();
+
+    await user.click(screen.getByRole("radio", { name: /Anthropic API/ }));
+    const field = await screen.findByRole("textbox", { name: /추가 헤더/ });
+    await user.type(field, "api-key: abc123");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(ipc.setLlmConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ headers: "api-key: abc123" }),
+    );
+  });
+
+  it("shows the backend's reason when a header block is rejected", async () => {
+    // A malformed block is rejected with the offending line; a generic
+    // "저장하지 못했습니다" would leave the owner rereading the whole field.
+    const user = userEvent.setup();
+    vi.mocked(ipc.setLlmConfig).mockRejectedValue(
+      new Error("invalid input: 1번째 줄: `이름: 값` 형식이 아닙니다"),
+    );
+    render(<HomeView onLock={vi.fn()} sourcesApi={new MockSourcesApi()} />);
+    await screen.findByText(/현재 사용 중/);
+
+    await user.click(screen.getByRole("radio", { name: /Anthropic API/ }));
+    await user.type(await screen.findByRole("textbox", { name: /추가 헤더/ }), "api-key abc");
+    await user.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByText(/1번째 줄/)).toBeInTheDocument();
+  });
+
+  it("reports the live backend, not the chosen one, when they differ", async () => {
+    // The label comes from the running client. A session that fell back to the
+    // canned client must say so even though the config still names a model.
+    vi.mocked(ipc.getConfig).mockResolvedValue({
+      transfer_policy: "MaskAndMinimize", server_enabled: false, sharing_enabled: false,
+      llm_provider: "openai", llm_model: "google/gemma-4-12b",
+      llm_base_url: "http://localhost:1234/v1", llm_binary: null, llm_headers: null,
+      llm_label: "오프라인 (LLM 미연결 — 고정 응답)", has_api_key: false,
+    });
+    render(<HomeView onLock={vi.fn()} sourcesApi={new MockSourcesApi()} />);
+    expect(await screen.findByText(/오프라인 \(LLM 미연결/)).toBeInTheDocument();
+  });
+
+  it("re-reads the transfer log when its tab is opened", async () => {
+    // The log grows while the app runs. Fetching once at mount left the tab
+    // reporting "아직 전송된 기록이 없어요" right after a collection that had
+    // just sent a dozen requests.
+    const user = userEvent.setup();
+    vi.mocked(ipc.listTransfers)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        { at: "2026-09-16T04:00:00Z", purpose: "summarize", model: "google/gemma-4-12b", masked_preview: "…", bytes_sent: 120 },
+      ]);
+    render(<HomeView onLock={vi.fn()} sourcesApi={new MockSourcesApi()} />);
+    await screen.findByText(/현재 사용 중/);
+
+    await user.click(screen.getByRole("tab", { name: /전송 기록/ }));
+    expect(await screen.findByText("summarize")).toBeInTheDocument();
+    expect(ipc.listTransfers).toHaveBeenCalledTimes(2);
+  });
+
   it("toggles the local API server", async () => {
     const user = userEvent.setup();
     vi.mocked(ipc.setServerEnabled).mockResolvedValue();

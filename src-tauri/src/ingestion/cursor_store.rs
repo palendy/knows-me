@@ -22,6 +22,8 @@ fn source_tag(source: SourceKind) -> &'static str {
         SourceKind::Notion => "notion",
         SourceKind::Gmail => "gmail",
         SourceKind::File => "file",
+        SourceKind::Confluence => "confluence",
+        SourceKind::Jira => "jira",
     }
 }
 

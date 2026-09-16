@@ -50,6 +50,40 @@ impl FieldSpec {
             required: true,
         }
     }
+
+    fn optional_text(key: &str, label: &str, placeholder: &str) -> Self {
+        Self {
+            required: false,
+            ..Self::text(key, label, placeholder)
+        }
+    }
+}
+
+/// The two Atlassian connectors share one credential shape (Server/DC PAT).
+/// Confluence adds an optional web address because the in-house API host is a
+/// read-only mirror while the links people click live on the real server.
+fn atlassian_fields(product: &str, example_host: &str, web_link: bool) -> Vec<FieldSpec> {
+    use super::atlassian::{KEY_BASE_URL, KEY_PAT, KEY_WEB_BASE_URL};
+    let mut fields = vec![
+        FieldSpec::text(
+            KEY_BASE_URL,
+            &format!("{product} 서버 주소"),
+            &format!("https://{example_host}  (API가 열려 있는 주소, 끝에 / 없이)"),
+        ),
+        FieldSpec::secret(
+            KEY_PAT,
+            "개인 액세스 토큰 (PAT)",
+            &format!("{product} 프로필 → Personal Access Tokens 에서 발급"),
+        ),
+    ];
+    if web_link {
+        fields.push(FieldSpec::optional_text(
+            KEY_WEB_BASE_URL,
+            "링크용 주소 (선택)",
+            "API 주소가 mirror 서버라면 사람이 여는 원본 서버 주소",
+        ));
+    }
+    fields
 }
 
 /// The credential fields a source declares. Empty = no credentials needed
@@ -70,6 +104,8 @@ pub fn credential_spec(source: SourceKind) -> Vec<FieldSpec> {
                 "Google 계정 → 보안 → 앱 비밀번호에서 발급",
             ),
         ],
+        SourceKind::Confluence => atlassian_fields("Confluence", "confluence.example.com", true),
+        SourceKind::Jira => atlassian_fields("Jira", "jira.example.com", false),
     }
 }
 
@@ -132,7 +168,17 @@ pub async fn verify_credentials(
         )));
     }
 
-    // 2. Live handshake where supported.
+    // 2. Shape checks that need no network: an Atlassian PAT copied through
+    //    an IME, or a base URL that is a bare host, fails later with a message
+    //    that hides the cause — reject them here with one that says it.
+    if matches!(source, SourceKind::Confluence | SourceKind::Jira) {
+        use super::atlassian::{validate_base_url, validate_pat, KEY_BASE_URL, KEY_PAT};
+        let field = |k: &str| values.get(k).and_then(|v| v.as_str()).unwrap_or_default();
+        validate_base_url(field(KEY_BASE_URL))?;
+        validate_pat(field(KEY_PAT).trim())?;
+    }
+
+    // 3. Live handshake where supported.
     match source {
         #[cfg(feature = "notion-http")]
         SourceKind::Notion => {
@@ -148,6 +194,31 @@ pub async fn verify_credentials(
                     .to_string()
             } else {
                 format!("연결됨 · 접근 가능한 페이지 {reachable}개 이상")
+            });
+        }
+        #[cfg(feature = "atlassian-http")]
+        SourceKind::Confluence => {
+            let creds =
+                super::atlassian::creds_from(Some(&Credential(values.clone())), "confluence")?;
+            let (who, count) = super::confluence::http::verify(&creds).await?;
+            return Ok(match count {
+                Some(0) => format!(
+                    "연결됨 · {who} · 내가 작성·수정한 페이지가 검색되지 않습니다. 이 계정으로 쓴 페이지가 있는 서버인지 확인하세요."
+                ),
+                Some(n) => format!("연결됨 · {who} · 내가 작성·수정한 페이지 {n}개"),
+                None => format!("연결됨 · {who}"),
+            });
+        }
+        #[cfg(feature = "atlassian-http")]
+        SourceKind::Jira => {
+            let creds = super::atlassian::creds_from(Some(&Credential(values.clone())), "jira")?;
+            let (who, count) = super::jira::http::verify(&creds).await?;
+            return Ok(match count {
+                Some(0) => format!(
+                    "연결됨 · {who} · 내가 담당·보고한 이슈가 검색되지 않습니다. 이 계정으로 일한 Jira인지 확인하세요."
+                ),
+                Some(n) => format!("연결됨 · {who} · 내가 담당·보고한 이슈 {n}개"),
+                None => format!("연결됨 · {who}"),
             });
         }
         _ => {}
@@ -174,6 +245,46 @@ mod tests {
         assert!(!credential_satisfies(SourceKind::Notion, Some(&empty)));
         let filled = Credential(json!({ "token": "secret_abc" }));
         assert!(credential_satisfies(SourceKind::Notion, Some(&filled)));
+    }
+
+    #[test]
+    fn atlassian_sources_need_base_url_and_pat() {
+        for kind in [SourceKind::Confluence, SourceKind::Jira] {
+            assert!(!credential_satisfies(kind, None));
+            let no_pat = Credential(json!({ "base_url": "https://x.example.com" }));
+            assert!(!credential_satisfies(kind, Some(&no_pat)));
+            let full = Credential(json!({ "base_url": "https://x.example.com", "pat": "tok" }));
+            assert!(credential_satisfies(kind, Some(&full)));
+        }
+        // The optional link address is not required and Jira does not have it.
+        let conf = credential_spec(SourceKind::Confluence);
+        assert_eq!(conf.iter().filter(|f| f.required).count(), 2);
+        assert!(conf.iter().any(|f| f.key == "web_base_url" && !f.required));
+        assert!(credential_spec(SourceKind::Jira)
+            .iter()
+            .all(|f| f.key != "web_base_url"));
+        assert!(conf.iter().find(|f| f.key == "pat").unwrap().secret);
+    }
+
+    #[tokio::test]
+    async fn atlassian_shape_checks_run_before_any_network() {
+        // A bare host and an IME-polluted PAT are rejected in every build,
+        // with the cause in the message.
+        let bare = json!({ "base_url": "jira.example.com", "pat": "tok" });
+        let err = verify_credentials(SourceKind::Jira, &bare)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("http://"));
+        let polluted = json!({ "base_url": "https://jira.example.com", "pat": "tokㅇ" });
+        let err = verify_credentials(SourceKind::Jira, &polluted)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("이상 문자"));
+        let missing = json!({ "base_url": "https://jira.example.com" });
+        let err = verify_credentials(SourceKind::Confluence, &missing)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("필수 항목"));
     }
 
     #[test]

@@ -14,7 +14,13 @@ export type QueueItemId = Uuid;
 /** ISO-8601 timestamp (UTC). */
 export type IsoDateTime = string;
 
-export type SourceKind = "Session" | "Notion" | "Gmail" | "File";
+export type SourceKind =
+  | "Session"
+  | "Notion"
+  | "Gmail"
+  | "File"
+  | "Confluence"
+  | "Jira";
 export type Scope = "Company" | "Personal" | "Unknown";
 export type TransferPolicy = "MaskAndMinimize" | "AllowAll" | "LocalOnlyNoLlm";
 export type DraftKind = "Email" | "Message" | "Post";
@@ -233,6 +239,9 @@ export interface AppConfig {
   /** Which local Claude Code install the CLI backend drives, as a command line
    * ("claude", a path, or "wsl -d <distro> claude"). null = default `claude`. */
   llm_binary: string | null;
+  /** Extra HTTP headers for the URL backends, as a `Name: Value` block (one per
+   * line). null = none. Ignored by the CLI backend. */
+  llm_headers: string | null;
 }
 
 /** A detected local Claude Code CLI install offered in the settings picker. */
@@ -252,7 +261,9 @@ export interface ClaudeInstall {
  * plus two read-only signals for the settings screen.
  */
 export interface ConfigDto extends AppConfig {
-  /** The model actually in effect right now, e.g. "claude-sonnet-5 (로컬 Claude Code)". */
+  /** What the live backend reports itself to be, e.g. "claude-sonnet-5 (로컬
+   * Claude Code)". Comes from the running client, not from the settings, so a
+   * backend that fell back says so instead of echoing the chosen model. */
   llm_label: string;
   /** Whether an API key is stored for the selected HTTP provider (never the key itself). */
   has_api_key: boolean;
@@ -267,6 +278,8 @@ export interface LlmConfigInput {
   api_key: string | null;
   /** claude-cli only: the selected install's command line (null = default). */
   binary: string | null;
+  /** Extra HTTP headers as a `Name: Value` block; null = none. */
+  headers: string | null;
 }
 
 /** One recorded outbound cloud-LLM call (masked content only). */

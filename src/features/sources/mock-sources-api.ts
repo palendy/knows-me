@@ -46,6 +46,55 @@ const CATALOG: SourceStatus[] = [
     connected: false,
     ready: false,
   },
+  {
+    kind: "Confluence",
+    fields: [
+      {
+        key: "base_url",
+        label: "Confluence 서버 주소",
+        placeholder: "https://confluence.example.com  (API가 열려 있는 주소, 끝에 / 없이)",
+        secret: false,
+        required: true,
+      },
+      {
+        key: "pat",
+        label: "개인 액세스 토큰 (PAT)",
+        placeholder: "Confluence 프로필 → Personal Access Tokens 에서 발급",
+        secret: true,
+        required: true,
+      },
+      {
+        key: "web_base_url",
+        label: "링크용 주소 (선택)",
+        placeholder: "API 주소가 mirror 서버라면 사람이 여는 원본 서버 주소",
+        secret: false,
+        required: false,
+      },
+    ],
+    connected: false,
+    ready: false,
+  },
+  {
+    kind: "Jira",
+    fields: [
+      {
+        key: "base_url",
+        label: "Jira 서버 주소",
+        placeholder: "https://jira.example.com  (API가 열려 있는 주소, 끝에 / 없이)",
+        secret: false,
+        required: true,
+      },
+      {
+        key: "pat",
+        label: "개인 액세스 토큰 (PAT)",
+        placeholder: "Jira 프로필 → Personal Access Tokens 에서 발급",
+        secret: true,
+        required: true,
+      },
+    ],
+    connected: false,
+    ready: false,
+  },
 ];
 
 /** Browser-mode stand-in so the sources screen is runnable without Tauri. Keeps
@@ -105,7 +154,10 @@ export class MockSourcesApi implements SourcesApi {
 
   async triggerIngest(source?: SourceKind): Promise<IngestSummary> {
     if (
-      (source === "Notion" || source === "Gmail") &&
+      (source === "Notion" ||
+        source === "Gmail" ||
+        source === "Confluence" ||
+        source === "Jira") &&
       !this.connected.has(source)
     ) {
       await new Promise((r) => setTimeout(r, 300));

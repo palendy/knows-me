@@ -60,6 +60,17 @@ pub trait Masker: Send + Sync {
 /// Cloud LLM gateway. Callers MUST pass already-masked input for text paths.
 #[async_trait]
 pub trait LlmClient: Send + Sync {
+    /// What this client *is*, for the settings screen and the logs.
+    ///
+    /// The screen used to derive its label from the environment, which only
+    /// predicts what the next client build would select. When a build fell
+    /// back — a missing key, a provider whose feature is off — the screen went
+    /// on naming a backend that nothing was using, and a run that silently
+    /// returned canned text looked like a run against the chosen model.
+    /// Asking the live client closes that gap: the label cannot disagree with
+    /// the object answering the calls.
+    fn backend_label(&self) -> String;
+
     async fn summarize(&self, input: &MaskedText) -> Result<String>;
     async fn classify(&self, input: &MaskedText) -> Result<Vec<String>>;
     async fn vision_extract(&self, image_png: &[u8]) -> Result<MaskedText>;

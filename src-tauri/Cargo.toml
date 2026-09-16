@@ -30,6 +30,14 @@ llm-http = ["dep:reqwest"]
 # core builds/tests offline with the skeleton connector; turn on with
 # `--features notion-http`. Shares the `reqwest` dependency with `llm-http`.
 notion-http = ["dep:reqwest"]
+# Enables the real Confluence + Jira connectors (Atlassian Server/Data Center
+# REST, Personal Access Token). Off by default for the same reason; turn on
+# with `--features atlassian-http`. Shares `reqwest`.
+atlassian-http = ["dep:reqwest"]
+# In-house edition: only the sources that exist inside a corporate network
+# (Claude/Codex sessions, files, Confluence, Jira). Notion and Gmail are left
+# out of the catalog and the connector registry. Pure cfg switch, no deps.
+internal = []
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -57,7 +65,10 @@ base64 = "0.22"
 regex = "1"
 
 # Real cloud LLM client (optional; feature `llm-http`).
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
+# `rustls-tls-native-roots`: trust the OS certificate store (plus `SSL_CERT_FILE`)
+# rather than a bundled root list, so an in-house Confluence/Jira/LLM gateway
+# behind a corporate CA verifies without a rebuild.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "rustls-tls-native-roots"], optional = true }
 
 # --- U2 INTEGRATION-TODO: external connectors / parsers ---------------------
 # These are intentionally NOT enabled yet. The U2 connectors (Notion/Gmail) and

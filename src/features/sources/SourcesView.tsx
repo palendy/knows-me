@@ -30,20 +30,19 @@ interface Props {
 }
 
 /** A card as shown to the owner. `sourceKind` is what the backend collects for
- * (Claude/Codex both map to `Session`); the rest is display. `comingSoon` cards
- * are planned connectors with no backend yet — icon only, controls disabled. */
+ * (Claude/Codex both map to `Session`); the rest is display. Every card is a
+ * real source — nothing is shown that cannot actually be connected. */
 interface CardModel {
   id: string;
-  /** Absent for coming-soon cards (no backend source). */
-  sourceKind?: SourceKind;
+  sourceKind: SourceKind;
   label: string;
   detail: string;
   icon: string;
-  comingSoon?: boolean;
 }
 
 /** How each backend source expands into display cards. Session → Claude+Codex.
- * Coming-soon cards (Confluence/Jira/Knox Mail) are shown dimmed as a roadmap. */
+ * A card whose source the backend does not list (e.g. Notion/Gmail in the
+ * in-house edition) is simply not rendered. */
 const CARDS: CardModel[] = [
   {
     id: "claude",
@@ -82,24 +81,17 @@ const CARDS: CardModel[] = [
   },
   {
     id: "confluence",
+    sourceKind: "Confluence",
     label: "Confluence",
-    detail: "곧 지원 예정 — 스페이스·페이지 수집",
+    detail: "사내 서버(Server/DC) + 개인 액세스 토큰 — 내가 쓴 페이지 수집",
     icon: "/source-icons/confluence.svg",
-    comingSoon: true,
   },
   {
     id: "jira",
+    sourceKind: "Jira",
     label: "Jira",
-    detail: "곧 지원 예정 — 이슈·코멘트 수집",
+    detail: "사내 서버(Server/DC) + 개인 액세스 토큰 — 내 이슈·댓글 수집",
     icon: "/source-icons/jira.svg",
-    comingSoon: true,
-  },
-  {
-    id: "knox-mail",
-    label: "Knox Mail",
-    detail: "곧 지원 예정 — 사내 메일 수집",
-    icon: "/source-icons/knox-mail.svg",
-    comingSoon: true,
   },
 ];
 
@@ -241,41 +233,9 @@ export function SourcesView({ api, onIngested }: Props) {
       ) : (
         <div className="sources-grid">
           {CARDS.map((card) => {
-            // Coming-soon cards have no backend source: icon only, dimmed,
-            // controls disabled.
-            if (card.comingSoon) {
-              return (
-                <div key={card.id} className="source-card is-dimmed">
-                  <div className="source-card__top">
-                    <div className="source-card__icon">
-                      <img src={card.icon} alt="" />
-                    </div>
-                    <div className="source-card__text">
-                      <h3 className="source-card__title">{card.label}</h3>
-                      <p className="source-card__detail">{card.detail}</p>
-                    </div>
-                    <button
-                      type="button"
-                      className="source-toggle"
-                      role="switch"
-                      aria-checked={false}
-                      aria-label={`${card.label} 연결`}
-                      disabled
-                    >
-                      <span className="source-toggle__thumb" />
-                    </button>
-                  </div>
-                  <div className="source-card__bottom">
-                    <span className="source-badge source-badge--needed">
-                      준비 중
-                    </span>
-                  </div>
-                </div>
-              );
-            }
-
-            const s = card.sourceKind ? status[card.sourceKind] : undefined;
-            // A card whose backend source didn't load is skipped defensively.
+            const s = status[card.sourceKind];
+            // A source this build does not offer (or that failed to load) has
+            // no card — the in-house edition drops Notion/Gmail this way.
             if (!s) return null;
             const needsCredentials = s.fields.length > 0;
             const ready = s.ready;

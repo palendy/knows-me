@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ClaudeInstall, ConfigDto, LlmProvider, TransferPolicy, TransferRecord } from "../../shared/contracts";
 import { ipc } from "../../shared/ipc";
 import { SourcesView } from "../sources/SourcesView";
 import type { SourcesApi } from "../sources/api";
 import { SharingSettings } from "../sharing/SharingSettings";
+import { messageOf } from "../u4-shared/view-state";
 import "./settings.css";
 
 const POLICIES: { value: TransferPolicy; label: string; desc: string }[] = [
@@ -45,8 +46,20 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
   // the one currently selected (its command line; null = default `claude`).
   const [installs, setInstalls] = useState<ClaudeInstall[]>([]);
   const [binary, setBinary] = useState<string | null>(null);
+  /** Extra HTTP headers for the URL backends, as a `Name: Value` block. */
+  const [headers, setHeaders] = useState("");
 
   useEffect(() => { setTab(initialTab); }, [initialTab]);
+
+  /** Re-read the transfer log whenever its tab is opened, and after a
+   * collection. The list is fetched once at mount with everything else, but it
+   * grows while the app runs — a collection fills it. Without this the tab kept
+   * showing what was there when settings first opened, so a collection that had
+   * just sent a dozen requests was reported as "아직 전송된 기록이 없어요". */
+  const refreshTransfers = useCallback(() => {
+    void ipc.listTransfers().then(setTransfers).catch(() => {});
+  }, []);
+  useEffect(() => { if (tab === "transfers") refreshTransfers(); }, [tab, refreshTransfers]);
   // Detect local Claude Code installs once so the claude-cli picker can list them.
   useEffect(() => {
     let active = true;
@@ -69,6 +82,7 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
     setModel(cfg.llm_model);
     setBaseUrl(cfg.llm_base_url ?? "");
     setBinary(cfg.llm_binary);
+    setHeaders(cfg.llm_headers ?? "");
     setApiKey("");
   }
 
@@ -82,6 +96,7 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
     norm(model) !== norm(config.llm_model) ||
     norm(baseUrl) !== norm(config.llm_base_url) ||
     norm(binary) !== norm(config.llm_binary) ||
+    norm(headers) !== norm(config.llm_headers) ||
     apiKey.trim().length > 0
   );
 
@@ -103,10 +118,17 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
         api_key: apiKey.trim() ? apiKey.trim() : null,
         // Which claude install to drive (claude-cli only; null = default `claude`).
         binary: provider === "claude-cli" ? binary : null,
+        // Extra gateway headers apply to the URL backends only.
+        headers: providerInfo.needsKey ? (headers.trim() || null) : null,
       });
       const next = await ipc.getConfig();
       setConfig(next); syncLlmForm(next); setLlmSaved(true);
-    } catch { setError("AI 설정을 저장하지 못했습니다. 다시 시도해 주세요."); }
+    } catch (e) {
+      // The backend rejects a malformed header block with the line number and
+      // the reason. Swallowing that for a generic message would leave the owner
+      // rereading the whole field to find a missing colon.
+      setError(messageOf(e) || "AI 설정을 저장하지 못했습니다. 다시 시도해 주세요.");
+    }
     finally { setBusy(false); }
   }
 
@@ -175,6 +197,10 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
                 <label className="settings-field"><span>API 키 {provider === "openai" && <small>(로컬 서버는 비워 둠)</small>}{config?.has_api_key && <small>(저장됨 · 비워 두면 유지)</small>}</span>
                   <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setLlmSaved(false); }} placeholder={config?.has_api_key ? "••••••••" : provider === "openai" ? "sk-... (LM Studio·Ollama는 필요 없음)" : "sk-..."} autoComplete="off" spellCheck={false} />
                 </label>
+                <label className="settings-field"><span>추가 헤더 <small>(선택 · 한 줄에 <code>이름: 값</code>)</small></span>
+                  <textarea value={headers} onChange={(e) => { setHeaders(e.target.value); setLlmSaved(false); }} rows={3} placeholder={"api-key: ...\nX-Gateway-Id: team-a"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                </label>
+                <p className="hint">사내 게이트웨이처럼 호출에 별도 헤더가 필요한 경우에만 씁니다. 여기 적은 헤더가 마지막에 붙으므로 <code>Authorization</code>을 적으면 위의 API 키 대신 그 값이 나갑니다. 암호화 보관함에 저장됩니다.</p>
                 {provider === "openai" && <p className="hint">LM Studio: 앱에서 서버를 켜고(기본 포트 1234) 모델을 로드한 뒤, 모델 이름에 LM Studio가 보여주는 식별자를 그대로 적습니다.</p>}
               </>}
             </>}
@@ -192,7 +218,7 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
         </section>
         <section className="settings-lock"><div><h3>보관함 잠금</h3><p>다시 열 때 비밀번호를 입력해야 합니다.</p></div><button className="secondary" onClick={() => void lock()} disabled={busy}>지금 잠그기</button></section>
       </div>}
-      {tab === "sources" && <SourcesView api={sourcesApi} onIngested={onIngested} />}
+      {tab === "sources" && <SourcesView api={sourcesApi} onIngested={() => { refreshTransfers(); onIngested?.(); }} />}
       {tab === "sharing" && <SharingSettings />}
       {tab === "transfers" && <section className="settings-transfer-section"><div className="settings-block-title"><h3>기기 밖으로 전달된 기록</h3><p>AI 요청에 사용된 모델과 전송 내용을 확인합니다.</p></div>
         {loading ? <p className="settings-empty">전송 기록을 불러오고 있습니다.</p> : transfers.length === 0 ? <div className="settings-empty"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M7 3h10v5l3 4v9H4v-9l3-4Z"/><path d="M4 14h5l1 3h4l1-3h5M7 8h10"/></svg><h4>아직 전송된 기록이 없어요</h4><p>클라우드 AI에 요청을 보내면 여기에 기록됩니다.</p></div> : <ul className="settings-transfer-list">{transfers.map((t, i) => <li key={`${t.at}-${i}`}><div className="settings-transfer-top"><strong>{t.purpose}</strong><time dateTime={t.at}>{new Date(t.at).toLocaleString("ko-KR")}</time></div><p className="settings-transfer-meta">{t.model} · {t.bytes_sent.toLocaleString("ko-KR")} bytes</p><p className="settings-transfer-preview">{t.masked_preview}</p></li>)}</ul>}

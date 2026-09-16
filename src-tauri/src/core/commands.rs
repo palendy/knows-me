@@ -113,19 +113,38 @@ pub struct SourceStatus {
 }
 
 /// Which sources the app can connect. The order is the display order.
-const CATALOG: [SourceKind; 4] = [
+#[cfg(not(feature = "internal"))]
+const CATALOG: &[SourceKind] = &[
     SourceKind::Session,
     SourceKind::File,
     SourceKind::Notion,
     SourceKind::Gmail,
+    SourceKind::Confluence,
+    SourceKind::Jira,
 ];
+
+/// In-house edition: only what exists inside the corporate network. Notion
+/// and Gmail are unreachable there, so they are not offered at all rather
+/// than shown as cards that can never connect.
+#[cfg(feature = "internal")]
+const CATALOG: &[SourceKind] = &[
+    SourceKind::Session,
+    SourceKind::File,
+    SourceKind::Confluence,
+    SourceKind::Jira,
+];
+
+/// The sources this build offers (see [`CATALOG`]).
+pub fn source_catalog() -> &'static [SourceKind] {
+    CATALOG
+}
 
 /// The connection status of every catalog source. Reads (not writes) the
 /// encrypted credential store, so it requires an unlocked vault.
 pub async fn list_sources(state: &AppState) -> Result<Vec<SourceStatus>> {
     let store = state.store();
     let mut out = Vec::with_capacity(CATALOG.len());
-    for kind in CATALOG {
+    for &kind in CATALOG {
         let cred = store.load(kind).await?;
         let fields = credential_spec(kind);
         out.push(SourceStatus {
@@ -242,6 +261,10 @@ mod tests {
         assert_eq!(loaded.0, cred.0);
     }
 
+    // Gmail is the credential-backed source whose connect never touches the
+    // network in any build (Notion/Atlassian do a live handshake behind their
+    // HTTP features), so it is the one this offline test connects.
+    #[cfg(not(feature = "internal"))]
     #[tokio::test]
     async fn list_sources_reflects_connection_state() {
         let dir = tempdir().unwrap();
@@ -249,13 +272,10 @@ mod tests {
         setup_password(&state, "pw-pw-pw").await.unwrap();
 
         let before = list_sources(&state).await.unwrap();
-        let notion = before
-            .iter()
-            .find(|s| s.kind == SourceKind::Notion)
-            .unwrap();
-        assert!(!notion.connected);
-        assert!(!notion.ready);
-        assert!(!notion.fields.is_empty());
+        let gmail = before.iter().find(|s| s.kind == SourceKind::Gmail).unwrap();
+        assert!(!gmail.connected);
+        assert!(!gmail.ready);
+        assert!(!gmail.fields.is_empty());
         // Credential-less sources are ready without being "connected".
         let session = before
             .iter()
@@ -266,15 +286,25 @@ mod tests {
 
         connect_source(
             &state,
-            SourceKind::Notion,
-            serde_json::json!({ "token": "secret_x" }),
+            SourceKind::Gmail,
+            serde_json::json!({ "address": "me@gmail.com", "app_password": "pw" }),
         )
         .await
         .unwrap();
         let after = list_sources(&state).await.unwrap();
-        let notion = after.iter().find(|s| s.kind == SourceKind::Notion).unwrap();
-        assert!(notion.connected);
-        assert!(notion.ready);
+        let gmail = after.iter().find(|s| s.kind == SourceKind::Gmail).unwrap();
+        assert!(gmail.connected);
+        assert!(gmail.ready);
+    }
+
+    #[test]
+    fn catalog_matches_the_edition() {
+        let cat = source_catalog();
+        assert!(cat.contains(&SourceKind::Session));
+        assert!(cat.contains(&SourceKind::Confluence));
+        assert!(cat.contains(&SourceKind::Jira));
+        let has_public_only = cat.contains(&SourceKind::Notion) || cat.contains(&SourceKind::Gmail);
+        assert_eq!(has_public_only, !cfg!(feature = "internal"));
     }
 
     #[tokio::test]

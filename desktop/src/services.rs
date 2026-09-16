@@ -20,8 +20,10 @@ use knows_me_core::core::traits::{
 };
 use knows_me_core::core::types::{Category, SourceConfig};
 use knows_me_core::ingestion::connectors::{
-    FileConnector, GmailConnector, NotionConnector, SessionConnector,
+    ConfluenceConnector, FileConnector, JiraConnector, SessionConnector,
 };
+#[cfg(not(feature = "internal"))]
+use knows_me_core::ingestion::connectors::{GmailConnector, NotionConnector};
 use knows_me_core::ingestion::{ConnectorRegistry, IngestionCursorStore, IngestionService};
 use knows_me_core::interview::InterviewService;
 use knows_me_core::knowledge::KnowledgeService;
@@ -65,6 +67,11 @@ pub struct ServiceSet {
     /// cloudflared quick tunnel fronting the shared listener. `Some` while up.
     /// Dropping it kills cloudflared, so it must live here for the session.
     pub tunnel: Option<TunnelHandle>,
+    /// What the LLM client built for this session actually is. Held so the
+    /// settings screen can report the live backend rather than re-deriving a
+    /// guess from the environment — the two disagree exactly when it matters,
+    /// after a build fell back to the canned client.
+    pub llm_label: String,
 }
 
 impl ServiceSet {
@@ -74,6 +81,7 @@ impl ServiceSet {
         let store: Arc<dyn EncryptedStore> = state.store();
         let masker: Arc<dyn Masker> = state.masker();
         let llm = knows_me_core::llm::build_client(state.transfer_log());
+        let llm_label = llm.backend_label();
 
         let knowledge_svc = Arc::new(KnowledgeService::new(store.clone()));
         // Rebuild the search index from the decrypted store now that we can read.
@@ -191,8 +199,16 @@ impl ServiceSet {
             }
         }
         registry.register(Arc::new(FileConnector::new()));
-        registry.register(Arc::new(NotionConnector::new(credentials.clone())));
-        registry.register(Arc::new(GmailConnector::new(credentials)));
+        // Notion/Gmail are not offered by the in-house edition (no route to
+        // them from the corporate network); keep the registry consistent with
+        // the catalog so "collect all" never runs a source the screen hides.
+        #[cfg(not(feature = "internal"))]
+        {
+            registry.register(Arc::new(NotionConnector::new(credentials.clone())));
+            registry.register(Arc::new(GmailConnector::new(credentials.clone())));
+        }
+        registry.register(Arc::new(ConfluenceConnector::new(credentials.clone())));
+        registry.register(Arc::new(JiraConnector::new(credentials)));
 
         let ingestion: Arc<dyn IngestionApi> = Arc::new(IngestionService::new(
             Arc::new(registry),
@@ -227,6 +243,7 @@ impl ServiceSet {
             mcp_owner,
             mcp_shared,
             tunnel: None,
+            llm_label,
         }
     }
 
@@ -384,6 +401,12 @@ impl Services {
             // Locked mid-build: discard, stopping every server we just started.
             set.stop_servers().await;
         }
+    }
+
+    /// The live LLM backend's own description, or `None` while locked (no
+    /// client exists yet, so there is nothing truthful to report).
+    pub async fn llm_label(&self) -> Option<String> {
+        self.0.lock().await.as_ref().map(|s| s.llm_label.clone())
     }
 
     /// Tear down services on lock, gracefully stopping every running server.
