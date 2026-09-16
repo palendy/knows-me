@@ -8,26 +8,44 @@
 //! Callers MUST pass already-masked text (US-2.2); every call is recorded to the
 //! [`TransferLog`](crate::llm::transfer_log::TransferLog) for transparency (NFR-2).
 
-/// Token budget for classification calls.
+/// Token budget for one LLM call — an upper bound on the reply, not a spend.
 ///
-/// The labels themselves need a handful of tokens; the headroom is for
-/// reasoning models that emit an internal reasoning block before the answer.
-/// The budget is an upper bound, not a spend — unused headroom costs nothing —
-/// and without it the call comes back with `content: null`. Measured on a
-/// local LM Studio `google/gemma-4-12b` (thinking on): the reasoning block
-/// alone used 1021 of a 1024 budget and the answer never arrived, so this
-/// matches the summarize budget rather than assuming a Flash-sized think.
+/// Both the classification and the extraction call ask for this. The answers
+/// themselves are small (a handful of labels; a title plus a few sentences),
+/// so the whole budget exists for **reasoning models**, which emit an internal
+/// reasoning block *before* the answer and are billed the budget in that order.
+/// When the budget runs out mid-reasoning the answer never arrives: the call
+/// comes back truncated, or with `content: null`.
+///
+/// Measured against a local LM Studio `google/gemma-4-12b` with thinking on:
+/// reasoning alone used 1021 of a 1024 budget, and later exhausted 4096 on a
+/// classification. 16384 is headroom for that class of model. Unused headroom
+/// costs nothing — the provider bills the tokens actually produced.
+///
+/// **Lower it when the model rejects the request.** Some providers 400 when
+/// `max_tokens` exceeds the model's own maximum output (a model capped at
+/// 8192 will not accept 16384), so a site whose gateway serves such a model
+/// sets [`MAX_TOKENS_ENV`] rather than rebuilding.
 #[cfg(feature = "llm-http")]
-const CLASSIFY_MAX_TOKENS: u32 = 4096;
+const DEFAULT_MAX_TOKENS: u32 = 16_384;
 
-/// Token budget for extraction calls.
-///
-/// The output is a title plus a few sentences, but on a reasoning model the
-/// budget is spent on reasoning first and the answer gets what is left — at
-/// 1024 the summary came back cut mid-sentence, and a half-sentence stored as a
-/// fact is worse than no fact.
+/// Environment override for [`DEFAULT_MAX_TOKENS`], for a model whose maximum
+/// output is smaller than the default.
 #[cfg(feature = "llm-http")]
-const SUMMARIZE_MAX_TOKENS: u32 = 4096;
+const MAX_TOKENS_ENV: &str = "LLM_MAX_TOKENS";
+
+/// The per-call token budget: [`DEFAULT_MAX_TOKENS`], or `LLM_MAX_TOKENS` when
+/// it parses to a non-zero number. A malformed value is ignored rather than
+/// failing the call — an unusable budget would stop every extraction, and the
+/// default is always a workable answer.
+#[cfg(feature = "llm-http")]
+fn max_tokens() -> u32 {
+    std::env::var(MAX_TOKENS_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<u32>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(DEFAULT_MAX_TOKENS)
+}
 
 /// Normalize a configured base URL so both `https://host` and `https://host/v1`
 /// work.
@@ -64,7 +82,7 @@ mod http_impl {
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
 
-    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS, SUMMARIZE_MAX_TOKENS};
+    use super::{max_tokens, normalize_base_url};
 
     const API_VERSION: &str = "2023-06-01";
     const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -174,12 +192,8 @@ mod http_impl {
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);
-            self.call(
-                prompts::SUMMARIZE_SYSTEM,
-                json!(input.text),
-                SUMMARIZE_MAX_TOKENS,
-            )
-            .await
+            self.call(prompts::SUMMARIZE_SYSTEM, json!(input.text), max_tokens())
+                .await
         }
 
         async fn classify(&self, input: &MaskedText) -> Result<Vec<String>> {
@@ -189,11 +203,7 @@ mod http_impl {
                 // Classification output is a few short labels, but reasoning
                 // models spend the budget on internal reasoning before emitting
                 // any of them — 128 tokens leaves nothing for the answer.
-                .call(
-                    prompts::CLASSIFY_SYSTEM,
-                    json!(input.text),
-                    CLASSIFY_MAX_TOKENS,
-                )
+                .call(prompts::CLASSIFY_SYSTEM, json!(input.text), max_tokens())
                 .await?;
             Ok(prompts::parse_labels(&raw))
         }
@@ -253,7 +263,7 @@ pub(crate) mod openai_impl {
     use crate::llm::prompts;
     use crate::llm::transfer_log::TransferLog;
 
-    use super::{normalize_base_url, CLASSIFY_MAX_TOKENS, SUMMARIZE_MAX_TOKENS};
+    use super::{max_tokens, normalize_base_url};
 
     const DEFAULT_BASE_URL: &str = "https://api.openai.com";
     const DEFAULT_MODEL: &str = "gpt-4o";
@@ -447,12 +457,8 @@ pub(crate) mod openai_impl {
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.transfer_log
                 .record_text("summarize", &self.config.model, input);
-            self.call(
-                prompts::SUMMARIZE_SYSTEM,
-                json!(input.text),
-                SUMMARIZE_MAX_TOKENS,
-            )
-            .await
+            self.call(prompts::SUMMARIZE_SYSTEM, json!(input.text), max_tokens())
+                .await
         }
 
         async fn classify(&self, input: &MaskedText) -> Result<Vec<String>> {
@@ -462,11 +468,7 @@ pub(crate) mod openai_impl {
                 // Classification output is a few short labels, but reasoning
                 // models spend the budget on internal reasoning before emitting
                 // any of them — 128 tokens leaves nothing for the answer.
-                .call(
-                    prompts::CLASSIFY_SYSTEM,
-                    json!(input.text),
-                    CLASSIFY_MAX_TOKENS,
-                )
+                .call(prompts::CLASSIFY_SYSTEM, json!(input.text), max_tokens())
                 .await?;
             Ok(prompts::parse_labels(&raw))
         }
@@ -535,6 +537,40 @@ pub(crate) mod openai_impl {
             assert!(!OpenAiConfig::allows_missing_key(
                 "https://api.openai.com/v1/"
             ));
+        }
+
+        #[test]
+        fn budget_defaults_and_can_be_lowered_for_a_smaller_model() {
+            // The default is the reasoning-model headroom. The override exists
+            // for a gateway whose model 400s on a budget above its own maximum
+            // output, so it must actually take effect — and a junk value must
+            // fall back rather than stop every extraction.
+            use super::super::{max_tokens, DEFAULT_MAX_TOKENS, MAX_TOKENS_ENV};
+
+            // This test mutates process-wide state, so it restores what it found.
+            let prior = std::env::var(MAX_TOKENS_ENV).ok();
+            std::env::remove_var(MAX_TOKENS_ENV);
+            assert_eq!(max_tokens(), DEFAULT_MAX_TOKENS);
+            assert_eq!(DEFAULT_MAX_TOKENS, 16_384);
+
+            std::env::set_var(MAX_TOKENS_ENV, "8192");
+            assert_eq!(max_tokens(), 8192);
+            std::env::set_var(MAX_TOKENS_ENV, "  4096  ");
+            assert_eq!(max_tokens(), 4096, "값 주변 공백은 무시한다");
+
+            for junk in ["", "0", "많이", "-1", "8192tokens"] {
+                std::env::set_var(MAX_TOKENS_ENV, junk);
+                assert_eq!(
+                    max_tokens(),
+                    DEFAULT_MAX_TOKENS,
+                    "쓸 수 없는 값 {junk:?}은 기본값으로 되돌아가야 한다"
+                );
+            }
+
+            match prior {
+                Some(v) => std::env::set_var(MAX_TOKENS_ENV, v),
+                None => std::env::remove_var(MAX_TOKENS_ENV),
+            }
         }
 
         #[test]
