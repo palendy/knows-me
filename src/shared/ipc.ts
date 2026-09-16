@@ -89,6 +89,7 @@ function defaultConfig(): AppConfig {
     llm_model: "claude-sonnet-5",
     llm_base_url: null,
     llm_binary: null,
+    llm_headers: null,
   };
 }
 
@@ -162,6 +163,8 @@ async function mock<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
       cfg.llm_base_url = base && base.trim() ? base.trim() : null;
       const bin = args?.binary as string | null | undefined;
       cfg.llm_binary = bin && bin.trim() ? bin.trim() : null;
+      const hdrs = args?.headers as string | null | undefined;
+      cfg.llm_headers = hdrs && hdrs.trim() ? hdrs.trim() : null;
       localStorage.setItem(LS.config, JSON.stringify(cfg));
       // Write-only key: only touch storage when a value was supplied.
       const key = args?.api_key as string | null | undefined;

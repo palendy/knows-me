@@ -23,10 +23,12 @@ Claude Code·Codex 같은 AI 코딩 도구를 쓰다 보면, 내가 어떤 프�
 
 | OS | 한 번에 |
 |---|---|
-| **Linux (Ubuntu/Debian, WSL 포함)** | `bash scripts/setup-linux.sh` |
-| **Windows** | PowerShell에서 `.\scripts\setup-windows.ps1` |
+| **Linux (Ubuntu 22.04 이상·Debian, WSL2 포함)** | `bash scripts/setup-linux.sh` |
+| **Windows 10 / 11** | PowerShell에서 `.\scripts\setup-windows.ps1` |
 
-스크립트는 Rust, Node.js, Tauri가 필요로 하는 시스템 라이브러리를 설치하고 `npm install`까지 해 준다. 직접 설치하려면 [docs/build.md](docs/build.md).
+스크립트는 Rust, Node.js 20 이상, Tauri가 필요로 하는 시스템 라이브러리를 설치하고 `npm install`까지 해 준다. 직접 설치하거나 다른 배포판을 쓰려면 [docs/build.md](docs/build.md).
+
+> macOS는 Tauri 자체는 지원하지만 이 저장소에 설치 스크립트와 CI 빌드가 없다. 직접 준비해야 한다.
 
 ### 2. 실행
 
@@ -45,6 +47,10 @@ npx tauri dev
    - Base URL: `http://localhost:1234/v1`
    - API 키: **비워 둔다**
 4. **저장**. "현재 사용 중"에 `google/gemma-4-12b (localhost:1234)`처럼 표시되면 연결된 것.
+
+**"현재 사용 중"은 지금 실제로 호출되는 백엔드를 그대로 보여준다.** 설정을 저장했는데도 여기에 `오프라인 (LLM 미연결 — 고정 응답)`이 뜨면 그 설정으로는 클라이언트를 만들지 못한 것이다 (주소 오타, 키 누락 등). 화면이 고른 모델을 그대로 되읽는 게 아니라서, 여기 표시된 것과 다른 곳으로 요청이 나가는 일은 없다.
+
+사내 게이트웨이처럼 호출에 **별도 헤더**가 필요하면 같은 화면의 **추가 헤더**에 `이름: 값`을 한 줄씩 적는다.
 
 다른 LLM(Claude Code, Ollama, OpenRouter, Anthropic)과 WSL에서 쓸 때의 주의점은 [docs/usage.md](docs/usage.md#2-llm-연결).
 
@@ -76,9 +82,15 @@ npx tauri build
 ## 개발자용
 
 ```bash
-cd src-tauri && cargo test && cargo test --features llm-http   # Rust 코어 (GUI 불필요)
-npm test                                                        # 프론트엔드
-npm run dev                                                     # 브라우저에서 UI만 (목 데이터)
+cd src-tauri
+cargo test                            # Rust 코어 (GUI 불필요, 오프라인)
+cargo test --features llm-http        # HTTP LLM 클라이언트 포함
+cargo test --features atlassian-http  # Confluence·Jira 커넥터 포함
+cargo test --features internal        # 사내 배포판 카탈로그
+
+cd ..
+npm run typecheck && npm test         # 프론트엔드
+npm run dev                           # 브라우저에서 UI만 (목 데이터)
 ```
 
 구조: Rust 코어 라이브러리 `src-tauri/`(암호화 저장·수집·LLM 게이트웨이·MCP 서버), Tauri 2 셸 `desktop/`, React 프론트 `src/`. 라이선스 MIT.

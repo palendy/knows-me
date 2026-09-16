@@ -191,6 +191,10 @@ mod tests {
         }
         #[async_trait::async_trait]
         impl LlmClient for Flaky {
+            fn backend_label(&self) -> String {
+                "테스트 더블".to_string()
+            }
+
             async fn summarize(&self, input: &MaskedText) -> Result<String> {
                 let n = self.calls.fetch_add(1, Ordering::SeqCst);
                 if n < 2 {
@@ -230,6 +234,10 @@ mod tests {
         struct AlwaysFail;
         #[async_trait::async_trait]
         impl LlmClient for AlwaysFail {
+            fn backend_label(&self) -> String {
+                "테스트 더블".to_string()
+            }
+
             async fn summarize(&self, _i: &MaskedText) -> Result<String> {
                 Err(AppError::External("down".into()))
             }

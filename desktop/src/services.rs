@@ -67,6 +67,11 @@ pub struct ServiceSet {
     /// cloudflared quick tunnel fronting the shared listener. `Some` while up.
     /// Dropping it kills cloudflared, so it must live here for the session.
     pub tunnel: Option<TunnelHandle>,
+    /// What the LLM client built for this session actually is. Held so the
+    /// settings screen can report the live backend rather than re-deriving a
+    /// guess from the environment — the two disagree exactly when it matters,
+    /// after a build fell back to the canned client.
+    pub llm_label: String,
 }
 
 impl ServiceSet {
@@ -76,6 +81,7 @@ impl ServiceSet {
         let store: Arc<dyn EncryptedStore> = state.store();
         let masker: Arc<dyn Masker> = state.masker();
         let llm = knows_me_core::llm::build_client(state.transfer_log());
+        let llm_label = llm.backend_label();
 
         let knowledge_svc = Arc::new(KnowledgeService::new(store.clone()));
         // Rebuild the search index from the decrypted store now that we can read.
@@ -237,6 +243,7 @@ impl ServiceSet {
             mcp_owner,
             mcp_shared,
             tunnel: None,
+            llm_label,
         }
     }
 
@@ -394,6 +401,12 @@ impl Services {
             // Locked mid-build: discard, stopping every server we just started.
             set.stop_servers().await;
         }
+    }
+
+    /// The live LLM backend's own description, or `None` while locked (no
+    /// client exists yet, so there is nothing truthful to report).
+    pub async fn llm_label(&self) -> Option<String> {
+        self.0.lock().await.as_ref().map(|s| s.llm_label.clone())
     }
 
     /// Tear down services on lock, gracefully stopping every running server.

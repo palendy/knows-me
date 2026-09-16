@@ -30,7 +30,12 @@ async fn main() {
     use std::time::Instant;
 
     dotenvy::dotenv().ok();
-    let env = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
+    let env = |k: &str| {
+        std::env::var(k)
+            .ok()
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
     let print_chars: usize = env("ATLASSIAN_PRINT_CHARS")
         .and_then(|v| v.parse().ok())
         .unwrap_or(400);
@@ -53,7 +58,11 @@ async fn main() {
                 it.collected_at.to_rfc3339(),
                 text.chars().count(),
                 head,
-                if text.chars().count() > print_chars { "…" } else { "" }
+                if text.chars().count() > print_chars {
+                    "…"
+                } else {
+                    ""
+                }
             );
         }
     }
@@ -70,7 +79,9 @@ async fn main() {
         println!("== Confluence {}", creds.base_url);
         let t = Instant::now();
         match confluence::http::verify(&creds).await {
-            Ok((who, count)) => println!("verify ({:.1?}): {who} · my pages = {count:?}", t.elapsed()),
+            Ok((who, count)) => {
+                println!("verify ({:.1?}): {who} · my pages = {count:?}", t.elapsed())
+            }
             Err(e) => {
                 println!("verify FAILED: {e}");
                 std::process::exit(1);
@@ -79,7 +90,12 @@ async fn main() {
         let t = Instant::now();
         match confluence::http::sync(&creds, None, &Stderr).await {
             Ok((items, cursor)) => {
-                println!("sync #1 ({:.1?}): {} item(s), cursor = {:?}", t.elapsed(), items.len(), cursor.0);
+                println!(
+                    "sync #1 ({:.1?}): {} item(s), cursor = {:?}",
+                    t.elapsed(),
+                    items.len(),
+                    cursor.0
+                );
                 show(&items, print_chars);
                 let t = Instant::now();
                 match confluence::http::sync(&creds, Some(Cursor(cursor.0.clone())), &Stderr).await {
@@ -106,7 +122,10 @@ async fn main() {
         println!("== Jira {}", creds.base_url);
         let t = Instant::now();
         match jira::http::verify(&creds).await {
-            Ok((who, count)) => println!("verify ({:.1?}): {who} · my issues = {count:?}", t.elapsed()),
+            Ok((who, count)) => println!(
+                "verify ({:.1?}): {who} · my issues = {count:?}",
+                t.elapsed()
+            ),
             Err(e) => {
                 println!("verify FAILED: {e}");
                 std::process::exit(1);
@@ -115,7 +134,12 @@ async fn main() {
         let t = Instant::now();
         match jira::http::sync(&creds, None, &Stderr).await {
             Ok((items, cursor)) => {
-                println!("sync #1 ({:.1?}): {} item(s), cursor = {:?}", t.elapsed(), items.len(), cursor.0);
+                println!(
+                    "sync #1 ({:.1?}): {} item(s), cursor = {:?}",
+                    t.elapsed(),
+                    items.len(),
+                    cursor.0
+                );
                 show(&items, print_chars);
                 let t = Instant::now();
                 match jira::http::sync(&creds, Some(Cursor(cursor.0.clone())), &Stderr).await {

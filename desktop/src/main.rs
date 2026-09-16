@@ -152,13 +152,27 @@ fn set_or_clear_env(var: &str, value: Option<&str>) {
 }
 
 #[tauri::command]
-async fn get_config(state: tauri::State<'_, AppState>) -> CmdResult<ConfigDto> {
+async fn get_config(
+    state: tauri::State<'_, AppState>,
+    services: tauri::State<'_, Services>,
+) -> CmdResult<ConfigDto> {
     let config = state.config();
     let has_api_key = load_api_key(state.inner(), &config.llm_provider)
         .await?
         .is_some_and(|k| !k.trim().is_empty());
     Ok(ConfigDto {
-        llm_label: knows_me_core::llm::active_model_label(),
+        // Ask the live client what it is. Deriving the label from the
+        // environment instead only predicts what the *next* build would pick,
+        // so a session whose build fell back to the canned client kept showing
+        // the model the owner chose while nothing was calling it. While locked
+        // there is no client, and the prediction is all there is.
+        llm_label: match services.llm_label().await {
+            Some(live) => live,
+            None => format!(
+                "{} (잠금 해제 전)",
+                knows_me_core::llm::active_model_label()
+            ),
+        },
         has_api_key,
         config,
     })
@@ -186,8 +200,20 @@ async fn set_llm_config(
     // For the `claude-cli` backend: which local install to drive, as a command
     // line ("claude", a path, or "wsl -d <distro> claude"). Ignored otherwise.
     binary: Option<String>,
+    // Extra HTTP headers for the URL backends, as a `Name: Value` block.
+    headers: Option<String>,
 ) -> CmdResult<()> {
     use knows_me_core::core::traits::EncryptedStore;
+
+    // 0. Reject a malformed header block before anything is written. Saving it
+    //    and discovering the problem on the next collection would surface as a
+    //    transport error with nothing pointing at this field.
+    let headers = headers
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty());
+    if let Some(block) = headers.as_deref() {
+        knows_me_core::llm::parse_extra_headers(block).map_err(err)?;
+    }
 
     // 1. Store the key first (if one was supplied), so the env reflects it.
     if let (Some(slot), Some(key)) = (api_key_slot(&provider), api_key.as_deref()) {
@@ -213,6 +239,7 @@ async fn set_llm_config(
     cfg.llm_binary = binary
         .map(|b| b.trim().to_string())
         .filter(|b| !b.is_empty());
+    cfg.llm_headers = headers;
     state.save_config(cfg).await.map_err(err)?;
 
     // 3. Reflect the (possibly just-changed) key for the selected provider.
@@ -812,11 +839,12 @@ fn main() {
     // model was silently ignored.
     let _ = dotenvy::dotenv();
 
-    // Startup diagnostic: which LLM the processing pipeline will actually use.
-    // A summarizer that returns NOTHING for thin pages is the difference between
-    // a Notion page becoming a dashboard fact or being filtered out.
+    // Startup diagnostic. This is the `.env` default only — the vault is still
+    // locked, so the owner's saved selection has not been read yet and will
+    // replace it at unlock. `build_client` logs the backend that actually
+    // answers calls ("[llm] client built: …"); that line is the one to trust.
     eprintln!(
-        "[llm] active backend: {}",
+        "[llm] startup default (.env): {} — 잠금 해제 시 저장된 설정으로 대체됩니다",
         knows_me_core::llm::active_model_label()
     );
 

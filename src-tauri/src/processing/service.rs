@@ -478,6 +478,10 @@ mod tests {
     }
     #[async_trait::async_trait]
     impl LlmClient for Recording {
+        fn backend_label(&self) -> String {
+            "테스트 더블".to_string()
+        }
+
         async fn summarize(&self, input: &MaskedText) -> Result<String> {
             self.seen.lock().unwrap().push(input.text.clone());
             Ok(self.summary.to_string())

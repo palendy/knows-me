@@ -631,6 +631,15 @@ pub struct AppConfig {
     /// on PATH. Ignored by the HTTP providers.
     #[serde(default)]
     pub llm_binary: Option<String>,
+    /// Extra HTTP headers for the two URL-based backends, as a `Name: Value`
+    /// block (one per line). Some gateways need a header this app has no field
+    /// for — an Azure-style `api-key`, a corporate routing header, OpenRouter's
+    /// `X-Title`. Ignored by the CLI backend, which makes no HTTP call.
+    ///
+    /// Stored in the same encrypted vault as the rest of the config, so a
+    /// header carrying a credential is at rest exactly where the API key is.
+    #[serde(default)]
+    pub llm_headers: Option<String>,
 }
 
 /// The backend the app drives when nothing has been configured yet. Matches the
@@ -653,6 +662,7 @@ impl Default for AppConfig {
             llm_model: "claude-sonnet-5".to_string(),
             llm_base_url: None,
             llm_binary: None,
+            llm_headers: None,
         }
     }
 }
@@ -672,6 +682,9 @@ impl AppConfig {
     pub fn apply_to_env(&self) {
         let provider = self.llm_provider.trim();
         std::env::set_var("LLM_PROVIDER", provider);
+        // Shared by both HTTP backends, so it is set outside the per-provider
+        // match — switching provider keeps the gateway headers you configured.
+        Self::set_or_clear("LLM_EXTRA_HEADERS", self.llm_headers.as_deref());
 
         match provider.to_ascii_lowercase().as_str() {
             "openai" => {

@@ -246,6 +246,10 @@ mod tests {
 
     #[async_trait]
     impl LlmClient for FailingLlm {
+        fn backend_label(&self) -> String {
+            "테스트 더블".to_string()
+        }
+
         async fn summarize(&self, _: &MaskedText) -> Result<String> {
             Err(AppError::External("offline".into()))
         }
@@ -448,6 +452,10 @@ mod tests {
     struct EchoClassifyLlm;
     #[async_trait]
     impl LlmClient for EchoClassifyLlm {
+        fn backend_label(&self) -> String {
+            "테스트 더블".to_string()
+        }
+
         async fn summarize(&self, i: &MaskedText) -> Result<String> {
             Ok(i.text.clone())
         }

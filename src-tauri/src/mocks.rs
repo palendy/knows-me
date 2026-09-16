@@ -258,6 +258,12 @@ pub struct CannedLlm;
 
 #[async_trait]
 impl LlmClient for CannedLlm {
+    fn backend_label(&self) -> String {
+        // Named plainly so a silent fallback is visible on the settings screen
+        // instead of hiding behind the model the owner picked.
+        "오프라인 (LLM 미연결 — 고정 응답)".to_string()
+    }
+
     async fn summarize(&self, input: &MaskedText) -> Result<String> {
         Ok(format!("[summary] {}", input.text))
     }

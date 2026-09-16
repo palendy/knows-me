@@ -267,6 +267,10 @@ mod tests {
 
     #[async_trait]
     impl LlmClient for SpyLlm {
+        fn backend_label(&self) -> String {
+            "테스트 더블".to_string()
+        }
+
         async fn summarize(&self, _input: &MaskedText) -> Result<String> {
             Ok(String::new())
         }
@@ -292,6 +296,10 @@ mod tests {
 
     #[async_trait]
     impl LlmClient for FailingLlm {
+        fn backend_label(&self) -> String {
+            "테스트 더블".to_string()
+        }
+
         async fn summarize(&self, _input: &MaskedText) -> Result<String> {
             Err(AppError::External("offline".into()))
         }
