@@ -16,9 +16,18 @@ isolated here.
 
 ## Prerequisites
 
-- A C toolchain + Tauri system deps (webview2 on Windows, `webkit2gtk` +
-  `libsoup` on Linux, Xcode CLT on macOS). See <https://tauri.app/start/prerequisites/>.
+One-shot setup scripts live in `../scripts/` (`setup-linux.sh`,
+`setup-windows.ps1`); the full guide is [`../docs/build.md`](../docs/build.md).
+
+- A C toolchain + Tauri system deps (webview2 on Windows, `libwebkit2gtk-4.1-dev`
+  + friends on Linux, Xcode CLT on macOS). See <https://tauri.app/start/prerequisites/>.
 - Node.js (for the frontend) and the Tauri CLI: `npm install` at the repo root.
+
+## Features
+
+`llm-http` (URL-reachable LLMs: LM Studio, Ollama, OpenRouter, OpenAI, Anthropic)
+and `notion-http` are **on by default**; the local Claude Code CLI backend needs
+neither. `--no-default-features` gives the fully offline shell.
 - App icons (not committed): generate once with `npx tauri icon <a 1024px png>`,
   which writes `desktop/icons/*` referenced by `tauri.conf.json`.
 

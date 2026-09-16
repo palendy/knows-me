@@ -15,7 +15,7 @@ const POLICIES: { value: TransferPolicy; label: string; desc: string }[] = [
 const PROVIDERS: { value: LlmProvider; label: string; desc: string; needsKey: boolean }[] = [
   { value: "claude-cli", label: "로컬 Claude Code", desc: "설치된 claude CLI를 구동합니다. API 키가 필요 없습니다.", needsKey: false },
   { value: "anthropic", label: "Anthropic API", desc: "API 키로 api.anthropic.com에 직접 연결합니다.", needsKey: true },
-  { value: "openai", label: "OpenAI 호환", desc: "OpenAI·OpenRouter 등 호환 게이트웨이에 연결합니다.", needsKey: true },
+  { value: "openai", label: "OpenAI 호환 (LM Studio·Ollama 포함)", desc: "OpenAI·OpenRouter, 또는 내 PC의 LM Studio·Ollama 같은 로컬 서버에 URL로 연결합니다.", needsKey: true },
 ];
 // Claude Code has no "list models" command, so the CLI backend offers a curated
 // set of aliases (the selected install's own configured model is added on top).
@@ -166,15 +166,16 @@ export function HomeView({ onLock, initialTab = "general", sourcesApi, onIngeste
               </label>
             </> : <>
               <label className="settings-field"><span>모델 이름</span>
-                <input type="text" value={model} onChange={(e) => { setModel(e.target.value); setLlmSaved(false); }} placeholder="claude-sonnet-5" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                <input type="text" value={model} onChange={(e) => { setModel(e.target.value); setLlmSaved(false); }} placeholder={provider === "openai" ? "google/gemma-4-12b" : "claude-sonnet-5"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
               </label>
               {providerInfo.needsKey && <>
                 <label className="settings-field"><span>Base URL <small>(선택)</small></span>
-                  <input type="text" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setLlmSaved(false); }} placeholder={provider === "openai" ? "https://api.openai.com" : "https://api.anthropic.com"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+                  <input type="text" value={baseUrl} onChange={(e) => { setBaseUrl(e.target.value); setLlmSaved(false); }} placeholder={provider === "openai" ? "http://localhost:1234/v1  (LM Studio)" : "https://api.anthropic.com"} spellCheck={false} autoCapitalize="off" autoCorrect="off" />
                 </label>
-                <label className="settings-field"><span>API 키 {config?.has_api_key && <small>(저장됨 · 비워 두면 유지)</small>}</span>
-                  <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setLlmSaved(false); }} placeholder={config?.has_api_key ? "••••••••" : "sk-..."} autoComplete="off" spellCheck={false} />
+                <label className="settings-field"><span>API 키 {provider === "openai" && <small>(로컬 서버는 비워 둠)</small>}{config?.has_api_key && <small>(저장됨 · 비워 두면 유지)</small>}</span>
+                  <input type="password" value={apiKey} onChange={(e) => { setApiKey(e.target.value); setLlmSaved(false); }} placeholder={config?.has_api_key ? "••••••••" : provider === "openai" ? "sk-... (LM Studio·Ollama는 필요 없음)" : "sk-..."} autoComplete="off" spellCheck={false} />
                 </label>
+                {provider === "openai" && <p className="hint">LM Studio: 앱에서 서버를 켜고(기본 포트 1234) 모델을 로드한 뒤, 모델 이름에 LM Studio가 보여주는 식별자를 그대로 적습니다.</p>}
               </>}
             </>}
             <div className="settings-llm-actions">

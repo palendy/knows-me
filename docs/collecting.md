@@ -145,7 +145,9 @@ npx tauri dev
 기본값은 **로컬 Claude Code CLI**(`claude -p`)다. 별도 API 키도, `llm-http`
 피처도 필요 없다 — 이 프로젝트를 쓰는 사람은 이미 Claude를 쓰고 있다는 전제다.
 
-`.env`(`.env.example` 참고)로 바꾼다. `.env`는 **모든 빌드에서** 읽힌다:
+**앱에서는 설정 → AI 모델 화면이 기준이다** (LM Studio·Ollama·OpenRouter 등 URL 연결
+포함, [`usage.md` §2](usage.md#2-llm-연결)). 아래 `.env`는 이 문서의 example들
+(명령줄 도구)이 읽는다:
 
 ```bash
 LLM_PROVIDER=claude-cli
@@ -163,7 +165,9 @@ CLAUDE_CLI_MODEL=claude-sonnet-5   # 급하면 claude-haiku-4-5
   않는다. 환경변수로 추측하던 시절엔 모든 호출이 로컬 CLI로 가는 동안 헤더가
   "anthropic"이라고 적혀 있었다.
 
-HTTP 백엔드(OpenRouter 등)를 쓰려면 `--features llm-http` + 해당 키가 필요하다.
+HTTP 백엔드(LM Studio·Ollama·OpenRouter 등)는 데스크탑 앱 기본 빌드에 포함돼 있다.
+코어 example에서 쓰려면 `--features llm-http`를 붙인다. 연결 확인은
+`cargo run --features llm-http --example llm_probe`.
 
 ## 4. 뭐가 들어왔는지 보기
 
